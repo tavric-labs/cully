@@ -46,8 +46,8 @@ jobs:
       - uses: actions/checkout@v4
       - run: brew install xcodegen
       - run: xcodegen generate --spec apps/ios/project.yml
-      - name: Build iOS app for simulator without signing
+      - name: Build complete iOS app for devices without signing
         run: >-
           xcodebuild -project apps/ios/Cully.xcodeproj -scheme Cully
-          -configuration Debug -destination 'generic/platform=iOS Simulator'
+          -configuration Debug -destination 'generic/platform=iOS'
           -derivedDataPath "$RUNNER_TEMP/CullyDerivedData" CODE_SIGNING_ALLOWED=NO build

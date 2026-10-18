@@ -9,7 +9,7 @@ Open `Cully.xcodeproj` in a compatible Xcode. The project is generated from `pro
 ```sh
 brew install xcodegen
 xcodegen generate --spec apps/ios/project.yml
-xcodebuild -project apps/ios/Cully.xcodeproj -scheme Cully -configuration Debug -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build
+xcodebuild -project apps/ios/Cully.xcodeproj -scheme Cully -configuration Debug -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build
 ```
 
 Select your development team in Xcode to install on an iPhone. Device trust, Developer Mode and a compatible Xcode/iOS pairing are required. No signing identity or team is stored in source. App Store and TestFlight distribution are not configured.
@@ -22,4 +22,6 @@ Today, Tasks and Advisor share the Ask Cully composer and microphone. Tasks are 
 
 Browser sign-in uses the official SDK's OAuth authorizer, ASWebAuthenticationSession and device-only Keychain token storage. MCP connections close when the app pauses. Reconnect using the connection sheet; automatic background work is not enabled. The model can request the discovered, private `cully_context` tool; the host enforces read-only Self policy and at most three notes. No write tools or Workspace actions are exposed.
 
-Source/build checks and the Apple inference runtime have been tested on Mac. Physical iPhone sign-in, microphone, Keychain and chat round trips remain device verification work. Simulator compilation is enforced by Mobile clients CI.
+Source/build checks and the Apple inference runtime have been tested on Mac. Physical iPhone sign-in, microphone, Keychain and chat round trips remain device verification work. Device compilation without signing is enforced by Mobile clients CI.
+
+The pinned upstream XCFramework contains iOS arm64 device and macOS slices, with no iOS Simulator slice. CI builds the complete app against the device SDK with signing disabled; use a physical iPhone for installation. A simulator-specific llama.cpp build is future work. This does not affect the standalone mcp-mobile SDK, whose simulator compilation is tested independently.

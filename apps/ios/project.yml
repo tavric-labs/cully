@@ -35,6 +35,7 @@ targets:
         product: CullyEngine
     settings:
       base:
+        SUPPORTED_PLATFORMS: iphoneos
         PRODUCT_BUNDLE_IDENTIFIER: net.cully.mobile
         TARGETED_DEVICE_FAMILY: '1,2'
         CODE_SIGN_STYLE: Automatic
