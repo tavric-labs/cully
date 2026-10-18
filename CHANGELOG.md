@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.14.0
+
 - Add native Android and iOS Cully Self clients under `apps/`: Today briefs, personal task/focus management, Advisor handoffs, and a shared Ask Cully composer with microphone input. Reuse the Cully icon and the released mcp-mobile native SDKs; browser sign-in keeps service credentials on the server.
 - Add explicit local-model Setup downloads with pinned checksums, on-device Qwen inference, Android Whisper speech and iOS on-device speech capture. The model follows the canonical Cully skill's short mobile profile and chooses bounded read-only context lookups; task changes remain explicit UI actions. Add mobile build CI and document preview/device-verification limits.
 

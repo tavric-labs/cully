@@ -38,7 +38,9 @@ def main():
     sdk = Path(args.android_sdk) if args.android_sdk else args.engine_home / 'toolchains/android-sdk'
     tools = sdk / 'build-tools/35.0.0'
     BUILD.mkdir(parents=True, exist_ok=True)
-    classes = BUILD / 'classes'; classes.mkdir(exist_ok=True)
+    classes = BUILD / 'classes'
+    if classes.exists(): shutil.rmtree(classes)
+    classes.mkdir()
     dex = BUILD / 'dex'; dex.mkdir(exist_ok=True)
     platform = sdk / 'platforms/android-30/android.jar'
     sdk_jar = args.mcp_sdk / 'mcp-mobile-client-0.1.0.jar'

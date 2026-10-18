@@ -31,6 +31,9 @@ jobs:
           cache: maven
       - run: mvn -B -ntp -f .mobile-sdk/pom.xml verify dependency:copy-dependencies -DincludeScope=runtime
       - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+          log-accepted-android-sdk-licenses: false
       - run: sdkmanager 'platforms;android-30' 'build-tools;35.0.0'
       - name: Compile and dex native Android client
         run: >-
