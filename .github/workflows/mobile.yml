@@ -1,0 +1,50 @@
+name: Mobile clients
+on:
+  push:
+    branches: [main]
+    paths: ['apps/**', 'skills/cully/**', '.github/workflows/mobile.yml']
+  pull_request:
+    paths: ['apps/**', 'skills/cully/**', '.github/workflows/mobile.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r apps/requirements-dev.txt
+      - run: python3 apps/scripts/build_skill_assets.py --check
+      - run: python3 apps/scripts/check_models.py
+      - uses: actions/checkout@v4
+        with:
+          repository: mcp-runtime/mcp-mobile
+          ref: v0.1.0
+          path: .mobile-sdk
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+      - run: mvn -B -ntp -f .mobile-sdk/pom.xml verify dependency:copy-dependencies -DincludeScope=runtime
+      - uses: android-actions/setup-android@v3
+      - run: sdkmanager 'platforms;android-30' 'build-tools;35.0.0'
+      - name: Compile and dex native Android client
+        run: >-
+          python3 apps/android/scripts/build_app.py --compile-only
+          --engine-home "$RUNNER_TEMP/cully-engine" --mcp-sdk "$GITHUB_WORKSPACE/.mobile-sdk/target"
+          --android-sdk "$ANDROID_HOME"
+  ios:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - run: brew install xcodegen
+      - run: xcodegen generate --spec apps/ios/project.yml
+      - name: Build iOS app for simulator without signing
+        run: >-
+          xcodebuild -project apps/ios/Cully.xcodeproj -scheme Cully
+          -configuration Debug -destination 'generic/platform=iOS Simulator'
+          -derivedDataPath "$RUNNER_TEMP/CullyDerivedData" CODE_SIGNING_ALLOWED=NO build

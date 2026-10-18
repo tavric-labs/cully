@@ -25,3 +25,5 @@ cully setup --agent codex --mcp-url https://mcp.example.com/mcp
 Add `--oauth` if the server requires sign-in. A team can connect Cully to its identity provider through [MCP Auth](../docs/team-deployment.md). The agent receives only the MCP URL; private database and service credentials stay with the operator.
 
 For client-specific sign-in instructions, see the [agent guide](../docs/agents.md). For the MCP resource, scopes and authorization flow, see [MCP OAuth](../docs/oauth.md).
+
+Native Cully phone clients live under [`apps/`](../apps/README.md). They use the same canonical skill through its mobile profile and consume mcp-mobile; they do not run a coding terminal on the phone.

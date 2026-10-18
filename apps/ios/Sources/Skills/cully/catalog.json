@@ -1,0 +1,12 @@
+{
+  "format": "agent-skills",
+  "name": "cully",
+  "description": "Use Cully to check session health, find and fix a stuck coding session, replay or hand off work, and save or recall project context through its MCP server. Works with Claude Code, Codex, Cursor and other coding agents.",
+  "profile": "references/mobile-self.md",
+  "source": "skills/cully/SKILL.md",
+  "sha256": {
+    "SKILL.md": "f8487f22db41bbe8ba7d7c782692083653e044293d411c5b0d15faead548b2ff",
+    "references/mobile-self.md": "4b11259027c6f0ba4c65d6ad04e19d1273ceb24b8d6e2560380590bb737d39f0",
+    "references/mobile-workflows.md": "fdd145ee3e728f88ef2c7bf4b1b61e9eb03d32fecc378faf1af15b0e5c486b25"
+  }
+}

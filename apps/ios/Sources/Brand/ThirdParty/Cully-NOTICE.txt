@@ -1,0 +1,4 @@
+Cully
+Copyright 2026 Prince Roshan and Cully contributors.
+
+Cully includes earlier open source agent guidance and memory work.

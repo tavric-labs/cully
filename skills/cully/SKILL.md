@@ -1,10 +1,14 @@
 ---
 name: cully
 description: Use Cully to check session health, find and fix a stuck coding session, replay or hand off work, and save or recall project context through its MCP server. Works with Claude Code, Codex, Cursor and other coding agents.
+metadata:
+  mobile-profile: references/mobile-self.md
 ---
 
 <!-- cully:skill:managed -->
 # Cully
+
+Mobile hosts use the [Self-mode profile](references/mobile-self.md) from this same skill. They expose their own allowed capabilities; the terminal commands below require a desktop host. The profile is an app integration hint, not a permission grant. Read the [mobile workflow guide](references/mobile-workflows.md) only when planning personal tasks or a brief.
 
 Cully is the intelligent workspace around coding agents. It observes a session, keeps a private journal of what the agent did, detects problems such as loops, and keeps durable project memory through MCP. Use the installed `cully` CLI for session guidance and the configured Cully MCP tools for durable records. The connected agent makes memory calls with its own MCP identity; the local advisor does not hold OAuth credentials. Local guidance works without a server. Do not assume a particular URL or login flow.
 

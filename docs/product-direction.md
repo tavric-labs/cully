@@ -170,3 +170,12 @@ Ideas that need new data, new instrumentation or a lot of history first.
 - **Measure before you claim.** Anything shown as a number comes from a signal Cully has.
 - **Stay around the agent.** Cully is not another coding agent and does not intercept your agent's model traffic.
 - **Keep it private by default.** New data must justify itself in [privacy](/privacy).
+
+
+## Cully Self on mobile
+
+The native phone app is a personal companion to Cully: a dated daily brief from saved context, a small task list with one focus, Advisor handoffs, and an Ask Cully composer with microphone input. Mobile calls this personal experience Self; it maps to the existing owner-scoped Solo/private service behavior. Workspace mode is a later surface and is not enabled by the mobile preview.
+
+Local language inference chooses from a discovered, host-restricted MCP tool catalog, guided by the canonical Cully skill's mobile profile. Embeddings may later help retrieval; they are not the voice recognizer or tool-calling agent. Engines ship with the app and users explicitly download weights through Setup. Private Cully context still requires the user's authenticated server connection. Local tasks, saved evidence and measured live coding-session health must remain distinguishable.
+
+Android and iOS app source belongs in `apps/`; native connection libraries are versioned and released independently from `mcp-runtime/mcp-mobile`. The mobile preview is a consumer of these SDKs, not an alternate protocol implementation. It does not replace the phone OS or expose dialer, camera, settings, agent terminals, Team writes or background automation.

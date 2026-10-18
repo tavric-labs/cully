@@ -1,0 +1,57 @@
+name: Cully
+options:
+  bundleIdPrefix: net.cully
+  deploymentTarget:
+    iOS: '16.0'
+packages:
+  MCPMobile:
+    url: https://github.com/mcp-runtime/mcp-mobile.git
+    exactVersion: 0.1.0
+  CullyNative:
+    path: .
+settings:
+  base:
+    SWIFT_VERSION: '6.0'
+    MARKETING_VERSION: '0.14.0'
+    CURRENT_PROJECT_VERSION: '6'
+targets:
+  Cully:
+    type: application
+    platform: iOS
+    sources:
+      - path: Sources
+        excludes: [Brand, Skills, Models]
+      - path: Sources/Brand
+        type: folder
+      - path: Sources/Skills
+        type: folder
+      - path: Sources/Models
+        type: folder
+      - path: Assets.xcassets
+    dependencies:
+      - package: MCPMobile
+        product: MCPMobile
+      - package: CullyNative
+        product: CullyEngine
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: net.cully.mobile
+        TARGETED_DEVICE_FAMILY: '1,2'
+        CODE_SIGN_STYLE: Automatic
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+    info:
+      path: Info.plist
+      properties:
+        CFBundleDisplayName: Cully
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
+        NSMicrophoneUsageDescription: Cully uses the microphone only when you tap it to speak a question.
+        NSSpeechRecognitionUsageDescription: Cully transcribes your words on your device when supported by your language and iPhone.
+        CFBundleURLTypes:
+          - CFBundleURLName: Cully sign-in
+            CFBundleURLSchemes: [dev.cully.mobile]
+schemes:
+  Cully:
+    build:
+      targets:
+        Cully: all

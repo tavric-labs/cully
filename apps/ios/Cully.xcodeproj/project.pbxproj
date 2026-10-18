@@ -1,0 +1,397 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		03FC836F1447F4CA2F4F0277 /* CullyModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 32B2C92D9CB486E51F295F79 /* CullyModel.swift */; };
+		1D5C15A98125F445FD9BD2D4 /* Skills in Resources */ = {isa = PBXBuildFile; fileRef = AA64FFFCDF3A42E04E266F1C /* Skills */; };
+		2DAEEB0E7C192B4C719AE8EE /* CullyEngine in Frameworks */ = {isa = PBXBuildFile; productRef = E9731AD9359D639ADCDBC8F2 /* CullyEngine */; };
+		44950F39F4F2E18C478A8C75 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 39435892E75DE9076143B684 /* Assets.xcassets */; };
+		69543F26564752D993DCCB04 /* CullyRootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB4E6FC4A8D2A682935BD085 /* CullyRootView.swift */; };
+		6AEC6BB31B7D26F6A59E9508 /* CullyResources.swift in Sources */ = {isa = PBXBuildFile; fileRef = 06D969EDC3A9D32BFF628958 /* CullyResources.swift */; };
+		8220C5D7EEE5E083F00C0744 /* Brand in Resources */ = {isa = PBXBuildFile; fileRef = 6BA5DF875716221B75261927 /* Brand */; };
+		824E999541498436166ED806 /* CullyApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8648CCB99B106BE3C1EFE7BB /* CullyApp.swift */; };
+		997A8B0BC48E57B1B2159B0A /* Models in Resources */ = {isa = PBXBuildFile; fileRef = 47879223A07A715F877C8602 /* Models */; };
+		ABFFEDC02663D8EB9D09D6CE /* MCPMobile in Frameworks */ = {isa = PBXBuildFile; productRef = AA21EB9BEE36DF67795D25E2 /* MCPMobile */; };
+		C6EFC8F8E48DFF6306C23266 /* ModelSetup.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36BDAAD8F7351212CB22A764 /* ModelSetup.swift */; };
+		CA9B3250B11DB498B220D121 /* VoiceCaptureView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6CA3BB5A1905F2DCD45DC626 /* VoiceCaptureView.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		06D969EDC3A9D32BFF628958 /* CullyResources.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CullyResources.swift; sourceTree = "<group>"; };
+		32B2C92D9CB486E51F295F79 /* CullyModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CullyModel.swift; sourceTree = "<group>"; };
+		36BDAAD8F7351212CB22A764 /* ModelSetup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelSetup.swift; sourceTree = "<group>"; };
+		39435892E75DE9076143B684 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		47879223A07A715F877C8602 /* Models */ = {isa = PBXFileReference; lastKnownFileType = folder; name = Models; path = Sources/Models; sourceTree = SOURCE_ROOT; };
+		6BA5DF875716221B75261927 /* Brand */ = {isa = PBXFileReference; lastKnownFileType = folder; name = Brand; path = Sources/Brand; sourceTree = SOURCE_ROOT; };
+		6CA3BB5A1905F2DCD45DC626 /* VoiceCaptureView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceCaptureView.swift; sourceTree = "<group>"; };
+		79701514E357C72B307EEDC6 /* ios */ = {isa = PBXFileReference; lastKnownFileType = folder; name = ios; path = .; sourceTree = SOURCE_ROOT; };
+		8648CCB99B106BE3C1EFE7BB /* CullyApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CullyApp.swift; sourceTree = "<group>"; };
+		A0A600A2B16EE8893B57D197 /* Cully.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Cully.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		AA64FFFCDF3A42E04E266F1C /* Skills */ = {isa = PBXFileReference; lastKnownFileType = folder; name = Skills; path = Sources/Skills; sourceTree = SOURCE_ROOT; };
+		DB4E6FC4A8D2A682935BD085 /* CullyRootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CullyRootView.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		3C2B7EB0EE95C6A881132D56 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				ABFFEDC02663D8EB9D09D6CE /* MCPMobile in Frameworks */,
+				2DAEEB0E7C192B4C719AE8EE /* CullyEngine in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		16CED11F3ECEB8A7DBA65090 = {
+			isa = PBXGroup;
+			children = (
+				39435892E75DE9076143B684 /* Assets.xcassets */,
+				6BA5DF875716221B75261927 /* Brand */,
+				47879223A07A715F877C8602 /* Models */,
+				AA64FFFCDF3A42E04E266F1C /* Skills */,
+				93C6CC28D29A73227F4C6984 /* Packages */,
+				E8F1706A38A0357832BF6301 /* Sources */,
+				18C923270D8001B407B4BE9C /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		18C923270D8001B407B4BE9C /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				A0A600A2B16EE8893B57D197 /* Cully.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		93C6CC28D29A73227F4C6984 /* Packages */ = {
+			isa = PBXGroup;
+			children = (
+				79701514E357C72B307EEDC6 /* ios */,
+			);
+			name = Packages;
+			sourceTree = "<group>";
+		};
+		E8F1706A38A0357832BF6301 /* Sources */ = {
+			isa = PBXGroup;
+			children = (
+				8648CCB99B106BE3C1EFE7BB /* CullyApp.swift */,
+				32B2C92D9CB486E51F295F79 /* CullyModel.swift */,
+				06D969EDC3A9D32BFF628958 /* CullyResources.swift */,
+				DB4E6FC4A8D2A682935BD085 /* CullyRootView.swift */,
+				36BDAAD8F7351212CB22A764 /* ModelSetup.swift */,
+				6CA3BB5A1905F2DCD45DC626 /* VoiceCaptureView.swift */,
+			);
+			path = Sources;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		1D3E78D443CA8223F5A321B7 /* Cully */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 0FA6D8B138134EB49A011BDC /* Build configuration list for PBXNativeTarget "Cully" */;
+			buildPhases = (
+				9044954DD347EC275BF35D7A /* Sources */,
+				B3D4DD3ABAB91EE5C98FEB8C /* Resources */,
+				3C2B7EB0EE95C6A881132D56 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = Cully;
+			packageProductDependencies = (
+				AA21EB9BEE36DF67795D25E2 /* MCPMobile */,
+				E9731AD9359D639ADCDBC8F2 /* CullyEngine */,
+			);
+			productName = Cully;
+			productReference = A0A600A2B16EE8893B57D197 /* Cully.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		F4B12D36EC3FD66806AE7668 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+					1D3E78D443CA8223F5A321B7 = {
+						ProvisioningStyle = Automatic;
+					};
+				};
+			};
+			buildConfigurationList = 8C5EAE31F87FCEC403B20B96 /* Build configuration list for PBXProject "Cully" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = 16CED11F3ECEB8A7DBA65090;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				D7978C6824B20456BDF5C9A0 /* XCRemoteSwiftPackageReference "mcp-mobile" */,
+				9368C7992E69633AEF8AD820 /* XCLocalSwiftPackageReference "." */,
+			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 18C923270D8001B407B4BE9C /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				1D3E78D443CA8223F5A321B7 /* Cully */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		B3D4DD3ABAB91EE5C98FEB8C /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				44950F39F4F2E18C478A8C75 /* Assets.xcassets in Resources */,
+				8220C5D7EEE5E083F00C0744 /* Brand in Resources */,
+				997A8B0BC48E57B1B2159B0A /* Models in Resources */,
+				1D5C15A98125F445FD9BD2D4 /* Skills in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		9044954DD347EC275BF35D7A /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				824E999541498436166ED806 /* CullyApp.swift in Sources */,
+				03FC836F1447F4CA2F4F0277 /* CullyModel.swift in Sources */,
+				6AEC6BB31B7D26F6A59E9508 /* CullyResources.swift in Sources */,
+				69543F26564752D993DCCB04 /* CullyRootView.swift in Sources */,
+				C6EFC8F8E48DFF6306C23266 /* ModelSetup.swift in Sources */,
+				CA9B3250B11DB498B220D121 /* VoiceCaptureView.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		5AA5E02E907CE6E99232063F /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 6;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				MARKETING_VERSION = 0.14.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 6.0;
+			};
+			name = Debug;
+		};
+		7A9EF3928A7FBE41F120279F /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CODE_SIGN_STYLE = Automatic;
+				INFOPLIST_FILE = Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = net.cully.mobile;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		7E2C61C7704A7B1B6F82235D /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CODE_SIGN_STYLE = Automatic;
+				INFOPLIST_FILE = Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = net.cully.mobile;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		E27D7D598F4F8765C9967DD7 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 6;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				MARKETING_VERSION = 0.14.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 6.0;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		0FA6D8B138134EB49A011BDC /* Build configuration list for PBXNativeTarget "Cully" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				7E2C61C7704A7B1B6F82235D /* Debug */,
+				7A9EF3928A7FBE41F120279F /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		8C5EAE31F87FCEC403B20B96 /* Build configuration list for PBXProject "Cully" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				5AA5E02E907CE6E99232063F /* Debug */,
+				E27D7D598F4F8765C9967DD7 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		9368C7992E69633AEF8AD820 /* XCLocalSwiftPackageReference "." */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = .;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		D7978C6824B20456BDF5C9A0 /* XCRemoteSwiftPackageReference "mcp-mobile" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/mcp-runtime/mcp-mobile.git";
+			requirement = {
+				kind = exactVersion;
+				version = 0.1.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		AA21EB9BEE36DF67795D25E2 /* MCPMobile */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D7978C6824B20456BDF5C9A0 /* XCRemoteSwiftPackageReference "mcp-mobile" */;
+			productName = MCPMobile;
+		};
+		E9731AD9359D639ADCDBC8F2 /* CullyEngine */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = CullyEngine;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = F4B12D36EC3FD66806AE7668 /* Project object */;
+}

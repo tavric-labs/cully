@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Same geometry and colors as https://cully.net/favicon.svg. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="64dp" android:height="64dp" android:viewportWidth="64" android:viewportHeight="64">
+    <path android:fillColor="#184b38" android:pathData="M17,0 H47 A17,17 0,0 1,64,17 V47 A17,17 0,0 1,47,64 H17 A17,17 0,0 1,0,47 V17 A17,17 0,0 1,17,0 Z" />
+    <path android:fillColor="#00000000" android:strokeColor="#e7f6db" android:strokeWidth="8"
+        android:strokeLineCap="round" android:pathData="M42,20 a18,18 0,1 0,0 24" />
+    <path android:fillColor="#eeb96e" android:pathData="M48,32 a5,5 0,1 0,-10 0 a5,5 0,1 0,10 0 Z" />
+</vector>

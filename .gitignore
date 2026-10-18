@@ -21,3 +21,21 @@ build/
 /cully-mcp
 /cully-data
 *.test
+
+# Mobile build products, local credentials and verification output
+/apps/**/.build/
+/apps/**/.swiftpm/
+/apps/**/DerivedData/
+/apps/**/results/
+/apps/**/private/
+/apps/**/vendor/
+/apps/**/*.gguf
+/apps/**/*.bin
+/apps/**/*.keystore
+/apps/**/*.apk
+/apps/**/*.xcframework/
+
+/.mobile-sdk/
+/apps/**/xcuserdata/
+/apps/**/*.xcuserstate
+/apps/**/core*
