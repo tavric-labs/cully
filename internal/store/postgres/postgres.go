@@ -166,7 +166,11 @@ func (s *Store) execute(ctx context.Context, tx pgx.Tx, owner string, r memory.R
 			where += fmt.Sprintf(" AND occurred_at < $%d", len(args))
 		}
 		args = append(args, v.Limit)
-		return rows(ctx, tx, "SELECT "+record+" FROM cully_entries e WHERE "+where+fmt.Sprintf(" ORDER BY occurred_at DESC,id LIMIT $%d", len(args)), args...)
+		result, err := rows(ctx, tx, "SELECT "+record+" FROM cully_entries e WHERE "+where+fmt.Sprintf(" ORDER BY occurred_at DESC,id LIMIT $%d", len(args)), args...)
+		if err == nil {
+			result.Since, result.Until = v.Since, v.Until
+		}
+		return result, err
 	case "search":
 		v := r.Search
 		where, args := filters(owner, v.ProjectURL, v.SessionRef, v.Section, v.Category, v.EntryType, v.Since)

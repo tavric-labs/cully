@@ -12,7 +12,7 @@ Dated cards surface saved outcomes, explicit learnings and next-step drafts. Pro
 
 When models are ready, a fresh foreground brief starts one local reflection; “Find my next step” / “Reflect on my week” can run it again. The app runs the downloaded model locally over the loaded evidence using the canonical Cully skill. It proposes continuations and questions to explore, labels the result as an AI draft, and never scores knowledge or infers expertise from a mentioned topic. No notes are sent to a paid inference service. Notes and reflections are held in memory and cleared on disconnect/pause.
 
-The server must support the optional `since`/`until` recent-context filters. A brief uses inclusive/exclusive RFC3339 bounds, a fixed refresh time, authenticated owner/section scoping, and exact timestamps rendered in the phone’s timezone. Older servers retain chat/task compatibility; the brief shows an update-needed state rather than mislabeling an unfiltered response.
+Both the MCP server and its private data API must support the optional `since`/`until` recent-context filters. A brief uses inclusive/exclusive RFC3339 bounds, a fixed refresh time, authenticated owner/section scoping, and exact timestamps rendered in the phone’s timezone. Older servers retain chat/task compatibility; the brief shows an update-needed state rather than mislabeling an unfiltered response.
 
 ## Local intelligence
 

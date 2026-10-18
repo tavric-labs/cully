@@ -155,6 +155,8 @@ type Request struct {
 	Projects   *ProjectsInput   `json:"projects,omitempty"`
 }
 type Result struct {
+	Since     string            `json:"since,omitempty"` // verified recent-store bounds
+	Until     string            `json:"until,omitempty"`
 	Workspace *workspace.Result `json:"workspace,omitempty"`
 	Session   *Session          `json:"session,omitempty"`
 	Entry     *Entry            `json:"entry,omitempty"`

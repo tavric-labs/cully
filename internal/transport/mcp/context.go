@@ -87,7 +87,11 @@ func compactContext(ctx context.Context, service memory.Service, owner string, i
 	if err != nil {
 		return ContextResult{}, err
 	}
-	out := ContextResult{Since: in.Since, Until: in.Until, Source: mode, Notes: make([]ContextNote, 0, limit), HasMore: len(result.Entries) > limit}
+	// Refuse mixed-version deployments whose private data API ignores window fields.
+	if (in.Since != "" && result.Since != in.Since) || (in.Until != "" && result.Until != in.Until) {
+		return ContextResult{}, fmt.Errorf("%w: recent store does not support the requested time window", memory.ErrUnavailable)
+	}
+	out := ContextResult{Since: result.Since, Until: result.Until, Source: mode, Notes: make([]ContextNote, 0, limit), HasMore: len(result.Entries) > limit}
 	for i, entry := range result.Entries {
 		if i >= limit {
 			break

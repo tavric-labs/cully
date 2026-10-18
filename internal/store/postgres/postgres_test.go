@@ -443,7 +443,7 @@ func TestDatabaseRecentTimeWindowAndOwner(t *testing.T) {
 		execute(t, s, row.owner, memory.Request{Operation: "log", Log: &memory.LogInput{Summary: "Window boundary evidence", Assistant: "codex", Section: row.section, OccurredAt: row.when}})
 	}
 	result := execute(t, s, "window-owner-a", memory.Request{Operation: "recent", Recent: &memory.RecentInput{Section: &personal, Since: "2026-10-18T03:30:00Z", Until: "2026-10-19T03:30:00Z", Limit: 3}})
-	if len(result.Entries) != 1 || result.Entries[0].OccurredAt.Format(time.RFC3339) != "2026-10-18T09:00:00+05:30" {
+	if result.Since != "2026-10-18T03:30:00Z" || result.Until != "2026-10-19T03:30:00Z" || len(result.Entries) != 1 || result.Entries[0].OccurredAt.Format(time.RFC3339) != "2026-10-18T09:00:00+05:30" {
 		t.Fatalf("half-open time window or owner/section scoping failed: %+v", result.Entries)
 	}
 }

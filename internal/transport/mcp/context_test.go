@@ -11,14 +11,19 @@ import (
 )
 
 type contextStore struct {
-	owner   string
-	request memory.Request
-	entries []memory.Entry
+	echoWindow bool
+	owner      string
+	request    memory.Request
+	entries    []memory.Entry
 }
 
 func (s *contextStore) Execute(_ context.Context, owner string, request memory.Request) (memory.Result, error) {
 	s.owner, s.request = owner, request
-	return memory.Result{Entries: s.entries}, nil
+	result := memory.Result{Entries: s.entries}
+	if s.echoWindow && request.Recent != nil {
+		result.Since, result.Until = request.Recent.Since, request.Recent.Until
+	}
+	return result, nil
 }
 
 func TestCompactContextBoundsAndOwner(t *testing.T) {
@@ -82,7 +87,7 @@ func TestCompactContextUsesSharedValidation(t *testing.T) {
 func TestCompactContextRecentWindowAndEvidence(t *testing.T) {
 	project := "https://github.com/tavric-labs/cully"
 	when := time.Date(2026, 10, 19, 8, 0, 0, 0, time.FixedZone("local", 19800))
-	store := &contextStore{entries: []memory.Entry{{ID: "note", ProjectURL: &project, OccurredAt: when, Summary: "Learned about PKCE"}}}
+	store := &contextStore{echoWindow: true, entries: []memory.Entry{{ID: "note", ProjectURL: &project, OccurredAt: when, Summary: "Learned about PKCE"}}}
 	in := ContextInput{Mode: "recent", Since: "2026-10-18T08:00:00+05:30", Until: "2026-10-19T08:00:00+05:30", Limit: 3}
 	out, err := compactContext(context.Background(), memory.Service{Store: store}, "owner-a", in)
 	if err != nil {
@@ -105,5 +110,13 @@ func TestCompactContextRecentWindowAndEvidence(t *testing.T) {
 		if _, err := compactContext(context.Background(), memory.Service{Store: store}, "owner-a", bad); !errors.Is(err, memory.ErrInvalid) {
 			t.Fatalf("invalid window accepted: %+v %v", bad, err)
 		}
+	}
+}
+
+func TestCompactContextRefusesUnverifiedStoreWindow(t *testing.T) {
+	store := &contextStore{}
+	_, err := compactContext(context.Background(), memory.Service{Store: store}, "owner-a", ContextInput{Mode: "recent", Since: "2026-10-18T00:00:00Z"})
+	if !errors.Is(err, memory.ErrUnavailable) {
+		t.Fatalf("older data API silently accepted: %v", err)
 	}
 }
