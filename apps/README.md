@@ -24,6 +24,6 @@ python3 apps/scripts/check_models.py
 ## Build and verification
 
 - [Android](android/README.md): native Java UI, Kotlin SDK, bundled llama.cpp and Whisper executables; arm64 Android 9+ preview.
-- [iOS](ios/README.md): SwiftUI, Swift SDK and pinned llama.cpp Apple framework; iOS 16+.
+- [iOS](ios/README.md): SwiftUI, Swift SDK and pinned llama.cpp Apple framework; iOS 16.4+.
 - [Verification](VERIFICATION.md) separates checks completed from device work still pending.
 - [Third-party sources](THIRD_PARTY.md) documents pinned runtimes/models. Weights, private keys, OAuth sessions and device output do not belong in Git.

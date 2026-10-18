@@ -2,7 +2,7 @@ name: Cully
 options:
   bundleIdPrefix: net.cully
   deploymentTarget:
-    iOS: '16.0'
+    iOS: '16.4'
 packages:
   MCPMobile:
     url: https://github.com/mcp-runtime/mcp-mobile.git

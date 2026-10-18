@@ -15,7 +15,7 @@ if !skipRuntime {
 }
 let package = Package(
     name: "CullyMobile",
-    platforms: [.iOS(.v16), .macOS(.v13)],
+    platforms: [.iOS("16.4"), .macOS("13.3")],
     products: [.executable(name: "CullyMobile", targets: ["CullyMobile"]), .library(name: "CullyEngine", targets: ["CullyEngine"])],
     dependencies: [mobile],
     targets: engineTargets + [.executableTarget(name: "CullyMobile", dependencies: [

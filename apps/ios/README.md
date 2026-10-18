@@ -1,6 +1,6 @@
 # Cully for iOS
 
-SwiftUI Self-mode developer preview for iOS 16+. It uses mcp-mobile 0.1.0, the official Swift MCP SDK, a pinned llama.cpp XCFramework and a user-downloaded Qwen model. Speech transcription is explicitly on-device; languages/devices without support can use typed questions.
+SwiftUI Self-mode developer preview for iOS 16.4+. It uses mcp-mobile 0.1.0, the official Swift MCP SDK, a pinned llama.cpp XCFramework and a user-downloaded Qwen model. Speech transcription is explicitly on-device; languages/devices without support can use typed questions.
 
 ## Build
 
