@@ -1,5 +1,13 @@
 # Mobile verification
 
+Daily-brief checks from October 19, 2026:
+
+- Go formatting, vet and the full race suite passed locally. PostgreSQL-backed tests require CI's disposable database; the new test checks inclusive/exclusive UTC-offset boundaries plus owner and personal/company isolation.
+- Updated Android source compiled/dexed, the APK passed signature verification, and it installed over the existing app on the Moto G10 Power while preserving its app storage. Today was visually reviewed in the disconnected state, including compact navigation, the floating microphone dock and honest unloaded-history state.
+- The production Android `DailyBrief` helper executed on-device with synthetic inputs: disjoint date windows, both MCP result envelopes, `has_more`, older-server refusal and nullable evidence projection passed.
+- Shared SwiftUI source built with the real pinned Apple inference framework on Mac. Full unsigned iOS device compilation runs in CI.
+- The dated brief requires the new server fields; production end-to-end retrieval/reflection has not been verified before that server update is deployed. This check does not establish the small model's summarization accuracy. No additional voice-quality or physical iPhone checks were performed.
+
 Checks from the October 18, 2026 development session:
 
 - Kotlin and Swift mcp-mobile 0.1.0 clients initialized, discovered the authenticated Cully catalog and performed synthetic, bounded read-only `cully_context` searches. No write tools were invoked. SDK CI passed Kotlin tests, Swift XCTest and iOS library compilation before the tag was released.
