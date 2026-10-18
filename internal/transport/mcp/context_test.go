@@ -78,3 +78,32 @@ func TestCompactContextUsesSharedValidation(t *testing.T) {
 		t.Fatal("invalid request reached store")
 	}
 }
+
+func TestCompactContextRecentWindowAndEvidence(t *testing.T) {
+	project := "https://github.com/tavric-labs/cully"
+	when := time.Date(2026, 10, 19, 8, 0, 0, 0, time.FixedZone("local", 19800))
+	store := &contextStore{entries: []memory.Entry{{ID: "note", ProjectURL: &project, OccurredAt: when, Summary: "Learned about PKCE"}}}
+	in := ContextInput{Mode: "recent", Since: "2026-10-18T08:00:00+05:30", Until: "2026-10-19T08:00:00+05:30", Limit: 3}
+	out, err := compactContext(context.Background(), memory.Service{Store: store}, "owner-a", in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if store.request.Recent.Since != in.Since || store.request.Recent.Until != in.Until || store.owner != "owner-a" {
+		t.Fatal("window or owner was lost")
+	}
+	if out.Since != in.Since || out.Until != in.Until || out.Notes[0].OccurredAt != when.Format(time.RFC3339) || *out.Notes[0].ProjectURL != project {
+		t.Fatal("evidence metadata was lost")
+	}
+	for _, bad := range []ContextInput{
+		{Mode: "recent", Since: "yesterday"},
+		{Mode: "recent", Until: "2026-10-19"},
+		{Mode: "recent", Since: in.Until, Until: in.Since},
+		{Mode: "recent", Since: in.Since, Until: in.Since},
+		{Mode: "text", Query: "learning", Since: in.Since},
+		{Mode: "semantic", Query: "learning", Until: in.Until},
+	} {
+		if _, err := compactContext(context.Background(), memory.Service{Store: store}, "owner-a", bad); !errors.Is(err, memory.ErrInvalid) {
+			t.Fatalf("invalid window accepted: %+v %v", bad, err)
+		}
+	}
+}

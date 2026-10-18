@@ -23,6 +23,20 @@ final class SelfHomeView extends ScrollView {
     private final java.util.function.Consumer<String> navigate;
     private final LinearLayout body;
     private JSONArray tasks = new JSONArray(), notes = new JSONArray();
+    private JSONObject brief = new JSONObject();
+    private String analysis = "", analysisStatus = "";
+    private boolean weekly, loading;
+    Runnable analyze;
+    private android.view.View setupView;
+    private int generation;
+    boolean hasEvidence(){return notes.length()>0;}
+    int generation(){return generation;}
+    void setSetupView(android.view.View view){setupView=view;render();}
+    void clearBrief(){generation++;brief=new JSONObject();notes=new JSONArray();analysis="";analysisStatus="";loading=false;briefStatus="Connect Cully to bring in your last 24 hours and past week.";render();}
+    String briefSnapshot(){return brief.toString();}
+    void analysisStarted(){analysisStatus="Finding a useful next step on your phone…";render();}
+    void analysisFinished(String text){analysis=text;analysisStatus="Local AI draft · check the dated evidence below";render();}
+    void analysisFailed(){analysisStatus="Local analysis unavailable. Your dated notes are still below.";render();}
     private String page = "Today", focusId, briefStatus = "Connect Cully, then refresh to bring in recent work.";
 
     SelfHomeView(Activity activity, Runnable talk, Runnable refresh, java.util.function.Consumer<String> navigate) {
@@ -33,24 +47,15 @@ final class SelfHomeView extends ScrollView {
         render();
     }
     void showPage(String name) { page=name; render(); smoothScrollTo(0,0); }
-    void loadingBrief() { briefStatus="Refreshing your recent context…"; render(); }
-    void briefFailed(String message) { briefStatus=message; render(); }
+    void loadingBrief() { generation++; loading=true; briefStatus="Gathering your last 24 hours and past week…"; render(); }
+    void briefFailed(String message) { loading=false; briefStatus=message; render(); }
     void updateBrief(String raw) {
         try {
-            JSONObject result=new JSONObject(raw);
-            if (result.optBoolean("isError", false)) throw new Exception();
-            JSONObject data=result.optJSONObject("structuredContent");
-            if (data == null) {
-                JSONArray content=result.optJSONArray("content");
-                if (content != null) for (int i=0; i<content.length(); i++) {
-                    JSONObject part=content.getJSONObject(i);
-                    if (part.optString("type").equals("text")) { data=new JSONObject(part.getString("text")); break; }
-                }
-            }
-            if (data == null || !data.has("notes")) throw new Exception();
-            notes=data.optJSONArray("notes"); if (notes == null) notes=new JSONArray();
-            briefStatus="Refreshed " + new SimpleDateFormat("h:mm a",Locale.getDefault()).format(new Date()) + " · saved context, not live activity";
-        } catch (Exception invalid) { briefStatus="Could not read the brief. Your local tasks are still available."; }
+            brief=new JSONObject(raw); notes=new JSONArray();
+            for(String key:new String[]{"last24h","earlier6days"}){JSONArray rows=brief.getJSONObject(key).getJSONArray("notes");for(int i=0;i<rows.length();i++)notes.put(rows.get(i));}
+            analysis="";analysisStatus="";loading=false;
+            briefStatus="Refreshed " + new SimpleDateFormat("h:mm a",Locale.getDefault()).format(new Date()) + " · saved notes, not live activity";
+        } catch (Exception invalid) { loading=false; briefStatus="Could not read the brief. Your local tasks are still available."; }
         render();
     }
     private void render() {
@@ -59,24 +64,48 @@ final class SelfHomeView extends ScrollView {
     }
     private void todayPage() {
         text(body,new SimpleDateFormat("EEEE, MMM d",Locale.getDefault()).format(new Date()).toUpperCase(Locale.getDefault()),11,GOLD);
-        title("A little clarity.\nA good next step.");
-        text(body,"Your work, gathered into one calm place.",14,MUTED);
+        title("Today starts here.");
+        text(body,"Pick up the thread. Make room for what comes next.",14,MUTED);
         LinearLayout focus=card("YOUR FOCUS"); JSONObject selected=focused();
         text(focus, selected == null ? "One thing at a time." : selected.optString("title"),21,TEXT);
         text(focus,selected == null ? "Choose a task to keep close today." : "A personal task saved on this phone.",13,MUTED);
         action(focus,selected == null ? "Choose a focus" : "View your tasks",()->navigate.accept("Tasks"));
-        LinearLayout brief=card("YOUR BRIEF");
-        text(brief,openCount()+" open · "+doneCount()+" completed",18,TEXT);
-        text(brief,briefStatus,12,MUTED);
-        if (notes.length()==0) text(brief,"Your recent handoffs and next steps will appear here. No updates have been loaded yet.",14,TEXT);
-        for (int i=0;i<Math.min(notes.length(),3);i++) {
-            JSONObject note=notes.optJSONObject(i); if(note==null)continue;
-            text(brief,note.optString("summary"),15,TEXT);
-            text(brief,"Saved · "+note.optString("date")+" · "+note.optString("assistant"),11,MUTED);
-        }
-        action(brief,"Refresh brief",()->{ loadingBrief(); refresh.run(); });
+        LinearLayout summary=card("YOUR DAY, IN CONTEXT");
+        text(summary,briefStatus,12,MUTED);
+        LinearLayout periods=new LinearLayout(activity);summary.addView(periods);
+        for(boolean week:new boolean[]{false,true}){Button choice=new Button(activity);choice.setText(week?"Past 7 days":"Last 24 hours");choice.setAllCaps(false);choice.setTextSize(12);choice.setTextColor(weekly==week?TEXT:MUTED);GradientDrawable pill=new GradientDrawable();pill.setColor(weekly==week?0xff344e3c:0xff1b2e25);pill.setCornerRadius(dp(18));choice.setBackground(pill);choice.setStateListAnimator(null);choice.setOnClickListener(v->{weekly=week;render();});periods.addView(choice,new LinearLayout.LayoutParams(0,dp(44),1));}
+        if(!analysis.isEmpty())text(summary,analysis,16,TEXT);
+        if(!analysisStatus.isEmpty())text(summary,analysisStatus,11,MUTED);
+        if(notes.length()>0)action(summary,"Find my next step · on-device AI",()->{if(analyze!=null)analyze.run();});
+        action(summary,loading?"Gathering notes…":"Refresh my day",()->{if(!loading){loadingBrief();refresh.run();}});
+        evidenceCards();
+        if(setupView!=null){if(setupView.getParent() instanceof android.view.ViewGroup)((android.view.ViewGroup)setupView.getParent()).removeView(setupView);LinearLayout local=card("READY WHEN YOU ARE");local.addView(setupView);}
         action(body,"Ask Cully",talk);
-        text(body,"Personal tasks stay on this device. Your brief reads your private Cully context when you ask.",11,MUTED);
+        text(body,"Personal tasks stay on this device. Your brief loads private saved notes when you connect. Nothing is changed automatically.",11,MUTED);
+    }
+    private void evidenceCards(){
+        if(!brief.has("last24h"))return;
+        java.util.LinkedHashSet<String> projects=new java.util.LinkedHashSet<>();
+        int count=0;boolean more=false;
+        for(String key:weekly?new String[]{"last24h","earlier6days"}:new String[]{"last24h"}){
+            JSONObject window=brief.optJSONObject(key);if(window==null)continue;
+            more|=window.optBoolean("has_more");JSONArray rows=window.optJSONArray("notes");if(rows==null)continue;
+            for(int i=0;i<rows.length();i++){JSONObject n=rows.optJSONObject(i);if(n==null)continue;count++;
+                String project=value(n,"project_url");if(!project.isEmpty())projects.add(project);
+                LinearLayout c=card(key.equals("last24h")?"LAST 24 HOURS":"EARLIER THIS WEEK");
+                text(c,n.optString("summary"),16,TEXT);
+                text(c,localDate(n)+" · "+n.optString("assistant"),11,MUTED);
+                if(!value(n,"outcome").isEmpty())text(c,value(n,"outcome"),14,MUTED);
+                if(!n.optString("next_steps").isEmpty())action(c,"Make a task: "+n.optString("next_steps"),()->addTask(n.optString("next_steps")));
+                if(!value(n,"learning").isEmpty())text(c,"Learned · "+value(n,"learning"),14,GOLD);
+            }
+        }
+        LinearLayout coverage=card("WHAT THIS COVERS");
+        text(coverage,count==0?"No saved notes in this window yet. This does not mean you did no work.":count+" sampled notes"+(more?" · more notes available":"")+". This is not a complete activity report.",13,MUTED);
+        text(coverage,"Rolling "+(weekly?"7 days":"24 hours")+" ending at refresh. Times use your phone's timezone.",11,MUTED);
+        LinearLayout p=card("PROJECTS IN THESE NOTES");
+        if(projects.isEmpty())text(p,"No project was attached to these sampled notes.",14,MUTED);
+        for(String project:projects)text(p,project.replace("https://github.com/",""),15,TEXT);
     }
     private void tasksPage() {
         title("Make space\nfor what matters."); text(body,"Personal tasks · saved on this phone",12,MUTED);
@@ -99,12 +128,14 @@ final class SelfHomeView extends ScrollView {
         text(next,selected!=null?"Start with “"+selected.optString("title")+"”.":openCount()>0?"Choose one open task to focus on.":"Capture the thing on your mind.",20,TEXT);
         text(next,"A suggestion from your local task list. You stay in control.",12,MUTED);
         action(next,openCount()>0?"Choose a task":"Add your first task",()->{ if(openCount()>0)navigate.accept("Tasks");else addTask(); });
+        if(!analysis.isEmpty()){LinearLayout ai=card("YOUR LOCAL ADVISOR");text(ai,analysis,16,TEXT);text(ai,"AI suggestions from sampled saved notes. Review before acting.",11,MUTED);}
+        if(notes.length()>0)action(body,"Reflect on my week · on-device AI",()->{if(analyze!=null)analyze.run();});
         boolean found=false;
         for(int i=0;i<Math.min(notes.length(),3);i++) {
             JSONObject note=notes.optJSONObject(i); if(note==null)continue;
             String issue=note.optString("issue"), nextStep=note.optString("next_steps");
             if(issue.isEmpty()&&nextStep.isEmpty())continue;
-            found=true; LinearLayout card=card("FROM A SAVED HANDOFF · "+note.optString("date"));
+            found=true; LinearLayout card=card("FROM A SAVED HANDOFF · "+localDate(note));
             if(!issue.isEmpty())text(card,issue,16,TEXT);
             if(!nextStep.isEmpty())text(card,nextStep,15,TEXT);
             text(card,"Reported by "+note.optString("assistant")+" · may have changed since this note",11,MUTED);
@@ -141,10 +172,12 @@ final class SelfHomeView extends ScrollView {
         }catch(Exception ignored){}
         return data.toString();
     }
+    private static String value(JSONObject n,String key){return n.isNull(key)?"":n.optString(key);}
+    private static String localDate(JSONObject n){try{return java.time.OffsetDateTime.parse(n.getString("occurred_at")).atZoneSameInstant(java.time.ZoneId.systemDefault()).format(java.time.format.DateTimeFormatter.ofPattern("MMM d · h:mm a"));}catch(Exception e){return n.optString("date");}}
     private int dp(int n){return Math.round(n*getResources().getDisplayMetrics().density);}
     private LinearLayout column(){LinearLayout v=new LinearLayout(activity);v.setOrientation(1);return v;}
     private void title(String value){TextView v=text(body,value,30,TEXT);v.setTypeface(null,Typeface.BOLD);}
     private TextView text(LinearLayout parent,String value,int size,int color){TextView v=new TextView(activity);v.setText(value);v.setTextColor(color);v.setTextSize(size);v.setPadding(0,dp(5),0,dp(6));parent.addView(v);return v;}
-    private LinearLayout card(String eyebrow){LinearLayout v=column();GradientDrawable bg=new GradientDrawable();bg.setColor(CARD);bg.setCornerRadius(dp(18));v.setBackground(bg);v.setPadding(dp(18),dp(14),dp(18),dp(14));LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,-2);p.setMargins(0,dp(16),0,dp(4));body.addView(v,p);text(v,eyebrow,10,GOLD);return v;}
-    private void action(LinearLayout parent,String label,Runnable run){Button b=new Button(activity);b.setText(label);b.setAllCaps(false);b.setGravity(Gravity.START|Gravity.CENTER_VERTICAL);b.setTextColor(GOLD);b.setBackgroundTintList(android.content.res.ColorStateList.valueOf(CARD));b.setOnClickListener(v->run.run());parent.addView(b,new LinearLayout.LayoutParams(-1,-2));}
+    private LinearLayout card(String eyebrow){LinearLayout v=column();GradientDrawable bg=new GradientDrawable();bg.setColor(CARD);bg.setCornerRadius(dp(22));bg.setStroke(dp(1),0xff344a3d);v.setBackground(bg);v.setPadding(dp(18),dp(14),dp(18),dp(14));LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,-2);p.setMargins(0,dp(16),0,dp(4));body.addView(v,p);text(v,eyebrow,10,GOLD);return v;}
+    private void action(LinearLayout parent,String label,Runnable run){Button b=new Button(activity);b.setText(label);b.setAllCaps(false);b.setGravity(Gravity.START|Gravity.CENTER_VERTICAL);b.setTextColor(GOLD);GradientDrawable surface=new GradientDrawable();surface.setColor(0xff20372b);surface.setCornerRadius(dp(18));b.setBackground(surface);b.setStateListAnimator(null);b.setMinHeight(dp(44));b.setPadding(dp(12),0,dp(12),0);b.setTextSize(13);b.setOnClickListener(v->run.run());parent.addView(b,new LinearLayout.LayoutParams(-1,-2));}
 }

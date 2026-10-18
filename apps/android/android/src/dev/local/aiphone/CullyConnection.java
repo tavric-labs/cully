@@ -40,12 +40,16 @@ final class CullyConnection implements AutoCloseable {
         if (!name.equals("cully_context")) throw new IOException("This tool is not enabled in Self mode.");
         if (rawArguments.length() > 4096) throw new IOException("Tool arguments exceeded the local limit.");
         JSONObject arguments = new JSONObject(rawArguments);
-        java.util.Set<String> allowed = new java.util.HashSet<>(java.util.Arrays.asList("query", "project_url", "session_ref", "section", "mode", "limit"));
+        java.util.Set<String> allowed = new java.util.HashSet<>(java.util.Arrays.asList("query", "project_url", "session_ref", "section", "mode", "limit", "since", "until"));
         java.util.Iterator<String> keys = arguments.keys();
         while(keys.hasNext()) if(!allowed.contains(keys.next())) throw new IOException("Unsupported tool argument.");
         if (!arguments.optString("section", "personal").equals("personal")) throw new IOException("Only private personal context is enabled.");
         String mode = arguments.optString("mode", arguments.optString("query").isEmpty()?"recent":"text");
         if (!mode.equals("recent") && !mode.equals("text")) throw new IOException("Only recent and text lookups are enabled.");
+        for(String field:new String[]{"since","until"})if(arguments.has(field)){
+            if(!mode.equals("recent")||arguments.getString(field).length()>40)throw new IOException("Date windows require recent mode.");
+            java.time.OffsetDateTime.parse(arguments.getString(field));
+        }
         if (arguments.optString("query").length() > 180) throw new IOException("Keep the context query short.");
         int limit = arguments.optInt("limit", 3);
         if(limit<1 || limit>3) throw new IOException("Request one to three notes.");
@@ -64,13 +68,14 @@ final class CullyConnection implements AutoCloseable {
             JSONObject data=value.optJSONObject("structuredContent");
             if(data==null){JSONArray content=value.optJSONArray("content");if(content!=null)for(int i=0;i<content.length();i++){JSONObject part=content.getJSONObject(i);if(part.optString("type").equals("text")){data=new JSONObject(part.getString("text"));break;}}}
             if(data==null)throw new IOException("Cully returned no usable context.");
+            for(String field:new String[]{"since","until"})if(arguments.has(field)&&!arguments.optString(field).equals(data.optString(field)))throw new IOException("This server does not support dated context lookups.");
             JSONArray notes=data.optJSONArray("notes"), compact=new JSONArray();
             if(notes!=null)for(int i=0;i<Math.min(notes.length(),3);i++){
                 JSONObject note=notes.getJSONObject(i), selected=new JSONObject();
-                for(String key:new String[]{"date","summary","outcome","issue","next_steps"}){String text=note.optString(key);selected.put(key,text.substring(0,Math.min(text.length(),180)));}
+                for(String key:new String[]{"date","summary","outcome","issue","next_steps","learning","project_url"}){String text=note.isNull(key)?"":note.optString(key);selected.put(key,text.substring(0,Math.min(text.length(),180)));}
                 compact.put(selected);
             }
-            return new JSONObject().put("source",data.optString("source")).put("notes",compact).toString();
+            return new JSONObject().put("source",data.optString("source")).put("notes",compact).put("has_more",data.optBoolean("has_more")).toString();
         } finally { if(done.getCount()!=0)request.cancel(); }
     }
 
@@ -101,14 +106,31 @@ final class CullyConnection implements AutoCloseable {
 
     void handleRedirect(Uri uri) { signIn.handleRedirect(uri); }
 
+    Runnable onConnected, onDisconnected;
     void refreshContext(java.util.function.Consumer<String> success, java.util.function.Consumer<String> failure) {
         McpMobileJavaClient session = client;
         if (!active || session == null || session.getState() != org.mcpruntime.mobile.ConnectionState.CONNECTED) {
-            failure.accept("Connect Cully to refresh your private context."); return;
+            failure.accept("Connect Cully to bring in your private work notes."); return;
         }
-        session.callTool("cully_context", "{\"mode\":\"recent\",\"limit\":3,\"section\":\"personal\"}", new McpCallback() {
-            public void onSuccess(String result) { activity.runOnUiThread(() -> { if(current(session))success.accept(result); }); }
-            public void onError(String code, String message) { activity.runOnUiThread(() -> { if(current(session))failure.accept(message); }); }
+        final java.time.Instant now=java.time.Instant.now();
+        final JSONObject todayArgs, weekArgs;
+        try { todayArgs=DailyBrief.arguments(1,now);weekArgs=DailyBrief.arguments(7,now); }
+        catch(Exception e){failure.accept("Could not prepare your brief.");return;}
+        session.callTool("cully_context",todayArgs.toString(),new McpCallback(){
+            public void onSuccess(String raw){
+                if(!current(session))return;
+                final JSONObject today;
+                try{today=DailyBrief.window(raw,todayArgs);}catch(Exception e){failed();return;}
+                session.callTool("cully_context",weekArgs.toString(),new McpCallback(){
+                    public void onSuccess(String raw){try{
+                        String brief=new JSONObject().put("last24h",today).put("earlier6days",DailyBrief.window(raw,weekArgs)).toString();
+                        activity.runOnUiThread(()->{if(current(session))success.accept(brief);});
+                    }catch(Exception e){failed();}}
+                    public void onError(String code,String message){failed();}
+                });
+            }
+            public void onError(String code,String message){failed();}
+            private void failed(){activity.runOnUiThread(()->{if(current(session))failure.accept("Could not load the dated brief. Check your connection and that your Cully server supports daily briefs. Your local tasks are still available.");});}
         });
     }
 
@@ -173,6 +195,7 @@ final class CullyConnection implements AutoCloseable {
                             activity.runOnUiThread(() -> { if (current(session)) { status.setText("Self mode · Cully connected · " + count + " personal tools"); button.setText("Disconnect Cully"); button.setEnabled(true); } });
                             report(true, false, count);
                             if (debugReadTest) testRead(session, count);
+                            activity.runOnUiThread(()->{if(current(session)&&onConnected!=null)onConnected.run();});
                         } catch (Exception invalid) { fail(session, "Could not read the Cully tool catalog"); }
                     }
                     public void onError(String code, String message) { fail(session, message); }
@@ -205,7 +228,8 @@ final class CullyConnection implements AutoCloseable {
                 .toString().getBytes(StandardCharsets.UTF_8));
         } catch (Exception ignored) {}
     }
-    private void disconnect() { modelTools="[]"; if (client != null) { client.close(); client = null; } }
+    private void disconnect() {
+        if(onDisconnected!=null)activity.runOnUiThread(onDisconnected); modelTools="[]"; if (client != null) { client.close(); client = null; } }
     void onStop() { active = false; disconnect(); status.setText("Self mode · Cully connection paused"); }
     @Override public void close() { onStop(); token = null; signIn.close(); }
 }

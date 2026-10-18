@@ -44,7 +44,9 @@ final class ModelSetup implements AutoCloseable {
             finally { busy = false; label(ready ? "Local models ready" : "Set up Cully · 499 MiB"); }
         });
     }
-    private void label(String value) { activity.runOnUiThread(() -> { button.setText(value); button.setEnabled(!ready); }); }
+    Runnable onReady;
+    boolean isReady(){return ready;}
+    private void label(String value) { activity.runOnUiThread(() -> { button.setText(value); button.setEnabled(!ready);if(ready&&onReady!=null)onReady.run(); }); }
     private File file(JSONObject model, String suffix) { return new File(activity.getExternalFilesDir(null), model.optString("file") + suffix); }
     private boolean verified(JSONObject model, File file) throws Exception {
         if (!file.isFile() || file.length() != model.getLong("bytes")) return false;

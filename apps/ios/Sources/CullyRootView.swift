@@ -12,6 +12,7 @@ private enum Theme {
 
 struct CullyRootView: View {
     @EnvironmentObject private var model: CullyModel
+    @State private var weekly = false
     @State private var tab = CullyTab.today
     @State private var showConnect = false
     @State private var showTask = false
@@ -26,12 +27,13 @@ struct CullyRootView: View {
             HStack(spacing: 12) {
                 CullyBrandMark().frame(width: 44, height: 44).accessibilityLabel("Cully")
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Cully").font(.system(size: 30, weight: .semibold, design: .rounded))
+                    Text("Cully").font(.title.weight(.semibold))
                     Text("A little clarity. A good next step.").font(.caption).foregroundStyle(.secondary)
                 }
                 Spacer()
-                Text("SELF").font(.caption2.weight(.semibold)).tracking(2).padding(10)
-                    .background(Theme.card, in: Capsule()).foregroundStyle(Theme.gold)
+                Button { showConnect = true } label: {
+                    HStack(spacing: 6) { Circle().fill(model.connection == "Cully connected" ? Color.green : Theme.gold).frame(width: 6, height: 6); Text(model.connection == "Cully connected" ? "SELF" : "Connect").font(.caption.weight(.semibold)) }.padding(12).background(Theme.card, in: Capsule())
+                }.buttonStyle(.plain).accessibilityLabel(model.connection)
             }.padding(.horizontal, 22).padding(.top, 18).padding(.bottom, 14)
             TabView(selection: $tab) {
                 today.tag(CullyTab.today).tabItem { Label("Today", systemImage: CullyTab.today.icon) }
@@ -41,18 +43,13 @@ struct CullyRootView: View {
             HStack(spacing: 12) {
                 TextField("Ask Cully…", text: $question).textFieldStyle(.roundedBorder).onSubmit { ask() }
                 Button { Task { await voice.toggle() } } label: { Image(systemName: voice.recording ? "stop.fill" : "mic.fill") }
-                    .accessibilityLabel(voice.recording ? "Stop listening" : "Speak to Cully")
+                    .frame(minWidth: 44, minHeight: 44).background(Theme.gold, in: Circle()).foregroundStyle(Theme.background).accessibilityLabel(voice.recording ? "Stop listening" : "Speak to Cully").disabled(model.chatBusy || model.reflectionBusy)
                 Button { ask() } label: { Image(systemName: "arrow.up.circle.fill").font(.title2) }
-                    .accessibilityLabel("Send question").disabled(question.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || model.chatBusy)
-            }.padding(.horizontal, 22).padding(.top, 10).tint(Theme.gold)
-            if voice.recording { Text(voice.status).font(.caption).foregroundStyle(.secondary) }
-            Button { showConnect = true } label: {
-                HStack { Circle().fill(model.connection == "Cully connected" ? .green : .secondary).frame(width: 6, height: 6)
-                    Text(model.connection).font(.caption); Spacer(); Image(systemName: "arrow.up.right") }
-                    .foregroundStyle(.secondary).padding(.horizontal, 22).padding(.vertical, 10)
-            }.buttonStyle(.plain)
+                    .accessibilityLabel("Send question").disabled(question.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || model.chatBusy || model.reflectionBusy)
+            }.padding(12).background(Theme.card, in: RoundedRectangle(cornerRadius: 26)).overlay(RoundedRectangle(cornerRadius: 26).stroke(Theme.gold.opacity(0.22), lineWidth: 1)).shadow(color: .black.opacity(0.2), radius: 12, y: 5).padding(.horizontal, 16).padding(.top, 10).tint(Theme.gold)
+            Label(model.chatBusy || model.reflectionBusy ? "Thinking on your device…" : voice.recording ? voice.status : "Tap the mic or type · on-device voice", systemImage: model.chatBusy || model.reflectionBusy ? "sparkles" : voice.recording ? "waveform" : "mic").font(.caption).foregroundStyle(Theme.gold).padding(.top, 5)
         }.foregroundStyle(Theme.ink).background(Theme.background)
-        .frame(minWidth: 330, minHeight: 600)
+        .frame(minWidth: 330, minHeight: 600).preferredColorScheme(.dark)
         .sheet(isPresented: $showConnect) { connectionSheet }
         .sheet(isPresented: $showTask) { taskSheet }
         .sheet(isPresented: $showConversation) { conversationSheet }
@@ -66,33 +63,53 @@ struct CullyRootView: View {
     private var today: some View {
         page {
             Text(Date(), format: .dateTime.weekday(.wide).month(.abbreviated).day()).font(.caption).foregroundStyle(Theme.gold)
-            heading("A little clarity.\nA good next step.", subtitle: "Your work, gathered into one calm place.")
+            heading("Today starts here.", subtitle: "Pick up the thread. Make room for what comes next.")
             card("YOUR FOCUS") {
                 Text(model.focus?.title ?? "One thing at a time.").font(.title2.weight(.medium))
                 Text(model.focus == nil ? "Choose a task to keep close today." : "A personal task saved on this device.").font(.subheadline).foregroundStyle(.secondary)
                 Button(model.focus == nil ? "Choose a focus" : "View your tasks") { tab = .tasks }.buttonStyle(.bordered)
             }
-            card("YOUR BRIEF") {
-                Text("\(model.openTasks.count) open · \(model.tasks.filter(\.completed).count) completed").font(.headline)
-                if let updated = model.briefUpdated {
-                    Text("Refreshed \(updated.formatted(date: .omitted, time: .shortened)) · saved context, not live activity").font(.caption).foregroundStyle(.secondary)
-                } else { Text("Bring in recent work when you are ready.").font(.subheadline).foregroundStyle(.secondary) }
-                if model.notes.isEmpty {
-                    Text("Your recent handoffs and next steps will appear here. No updates have been loaded yet.").foregroundStyle(.secondary)
+            card("YOUR DAY, IN CONTEXT") {
+                Text(model.briefStatus).font(.subheadline).foregroundStyle(.secondary)
+                Picker("Review period", selection: $weekly) { Text("Last 24 hours").tag(false); Text("Past 7 days").tag(true) }.pickerStyle(.segmented)
+                if let updated = model.briefUpdated { Text("Refreshed \(updated.formatted(date: .omitted, time: .shortened))").font(.caption) }
+                if !model.reflection.isEmpty { Text(model.reflection).textSelection(.enabled) }
+                if !model.reflectionStatus.isEmpty { Text(model.reflectionStatus).font(.caption).foregroundStyle(.secondary) }
+                if !model.notes.isEmpty {
+                    Button { model.reflectOnBrief() } label: { Label(model.reflectionBusy ? "Reflecting…" : "Find my next step", systemImage: "sparkles") }.buttonStyle(.bordered).disabled(model.reflectionBusy || model.chatBusy || model.reflectionBusy)
                 }
-                ForEach(model.notes.prefix(3)) { note in
-                    VStack(alignment: .leading, spacing: 5) {
-                        Text(note.summary).font(.subheadline)
-                        Text("Saved · \(note.date) · \(note.assistant)").font(.caption2).foregroundStyle(.secondary)
-                    }.padding(.vertical, 4)
+                Button { model.refreshBrief() } label: { Label(model.busy ? "Gathering notes…" : "Refresh my day", systemImage: "arrow.clockwise") }.buttonStyle(.bordered).disabled(model.busy)
+            }
+            ForEach(visibleNotes) { note in
+                card(model.dayNotes.contains(where: { $0.id == note.id }) ? "LAST 24 HOURS" : "EARLIER THIS WEEK") {
+                    Text(note.summary).font(.headline)
+                    Text("\(localDate(note)) · \(note.assistant)").font(.caption).foregroundStyle(.secondary)
+                    if let outcome = note.outcome, !outcome.isEmpty { Text(outcome).font(.subheadline) }
+                    if let learning = note.learning, !learning.isEmpty { Label(learning, systemImage: "book.closed").font(.subheadline).foregroundStyle(Theme.gold) }
+                    if let next = note.nextSteps, !next.isEmpty { Button("Make a task: \(next)") { draft = next; showTask = true }.buttonStyle(.bordered) }
                 }
-                Button { model.refreshBrief() } label: { Label(model.busy ? "Refreshing…" : "Refresh brief", systemImage: "arrow.clockwise") }
-                    .buttonStyle(.bordered).disabled(model.busy)
+            }
+            if model.briefUpdated != nil {
+            card("WHAT THIS COVERS") {
+                Text(visibleNotes.isEmpty ? "No saved notes in this window yet. This does not mean you did no work." : "\(visibleNotes.count) sampled notes\(model.hasMoreDay || (weekly && model.hasMoreWeek) ? " · more notes available" : ""). This is not a complete activity report.").font(.subheadline)
+                Text("Rolling \(weekly ? "7 days" : "24 hours") ending at refresh. Times use your device’s timezone.").font(.caption).foregroundStyle(.secondary)
+            }
+            card("PROJECTS IN THESE NOTES") {
+                if projects.isEmpty { Text("No project was attached to these sampled notes.").foregroundStyle(.secondary) }
+                ForEach(projects, id: \.self) { project in Text(project.replacingOccurrences(of: "https://github.com/", with: "")).font(.subheadline) }
+            }
             }
             LocalSetupCard(setup: model.setup)
-            Text("Personal tasks stay on this device. Your brief reads your private Cully context when you ask.").font(.caption).foregroundStyle(.secondary)
+            Text("Personal tasks stay on this device. Your brief loads private saved notes when you connect. Nothing changes automatically.").font(.caption).foregroundStyle(.secondary)
         }
     }
+
+    private func localDate(_ note: ContextNote) -> String {
+        guard let stamp = note.occurredAt, let date = ISO8601DateFormatter().date(from: stamp) else { return note.date }
+        return date.formatted(date: .abbreviated, time: .shortened)
+    }
+    private var visibleNotes: [ContextNote] { weekly ? model.notes : model.dayNotes }
+    private var projects: [String] { Array(Set(visibleNotes.compactMap(\.projectURL))).sorted() }
 
     private var tasks: some View {
         page {
@@ -122,8 +139,10 @@ struct CullyRootView: View {
                 Text("A suggestion from your local task list. You stay in control.").font(.caption).foregroundStyle(.secondary)
                 Button("Choose your next step") { tab = .tasks }.buttonStyle(.bordered)
             }
+            if !model.reflection.isEmpty { card("YOUR LOCAL ADVISOR") { Text(model.reflection); Text("AI suggestions from sampled saved notes. Review before acting.").font(.caption).foregroundStyle(.secondary) } }
+            if !model.notes.isEmpty { Button("Reflect on my week") { model.reflectOnBrief() }.buttonStyle(.bordered).disabled(model.reflectionBusy || model.chatBusy || model.reflectionBusy) }
             ForEach(model.notes.filter { !($0.issue ?? "").isEmpty || !($0.nextSteps ?? "").isEmpty }.prefix(3)) { note in
-                card("FROM A SAVED HANDOFF · \(note.date)") {
+                card("FROM A SAVED HANDOFF · \(localDate(note))") {
                     if let issue = note.issue, !issue.isEmpty { Text(issue).font(.headline) }
                     if let next = note.nextSteps, !next.isEmpty {
                         Text(next)
@@ -138,7 +157,7 @@ struct CullyRootView: View {
 
     private func ask() {
         let text = question.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else { return }
+        guard !text.isEmpty, !model.chatBusy, !model.reflectionBusy else { return }
         voice.stop(); question = ""; showConversation = true; model.ask(text)
     }
     private var conversationSheet: some View {
@@ -158,7 +177,7 @@ struct CullyRootView: View {
             HStack {
                 TextField("Ask Cully…", text: $question).textFieldStyle(.roundedBorder).onSubmit { ask() }
                 Button { Task { await voice.toggle() } } label: { Image(systemName: voice.recording ? "stop.fill" : "mic.fill") }.accessibilityLabel("Speak to Cully")
-                Button("Send") { ask() }.disabled(question.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || model.chatBusy)
+                Button("Send") { ask() }.disabled(question.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || model.chatBusy || model.reflectionBusy)
             }
             Text("Small local model · review important answers. Private Cully context is read only when the model requests it.").font(.caption).foregroundStyle(.secondary)
         }.padding(22).foregroundStyle(Theme.ink).background(Theme.background).tint(Theme.gold).frame(minWidth: 330, minHeight: 480)
@@ -186,11 +205,11 @@ struct CullyRootView: View {
         ScrollView { VStack(alignment: .leading, spacing: 18, content: content).padding(22).frame(maxWidth: 700, alignment: .leading).frame(maxWidth: .infinity) }.background(Theme.background)
     }
     private func heading(_ title: String, subtitle: String) -> some View {
-        VStack(alignment: .leading, spacing: 10) { Text(title).font(.system(size: 34, weight: .semibold, design: .rounded)); Text(subtitle).foregroundStyle(.secondary).font(.subheadline) }.padding(.bottom, 4)
+        VStack(alignment: .leading, spacing: 10) { Text(title).font(.largeTitle.weight(.semibold)); Text(subtitle).foregroundStyle(.secondary).font(.subheadline) }.padding(.bottom, 4)
     }
     private func card<Content: View>(_ title: String, @ViewBuilder _ content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 12) { Text(title).font(.caption2.weight(.semibold)).tracking(1.4).foregroundStyle(Theme.gold); content() }
-            .padding(20).frame(maxWidth: .infinity, alignment: .leading).background(Theme.card, in: RoundedRectangle(cornerRadius: 22))
+            .padding(20).frame(maxWidth: .infinity, alignment: .leading).background(Theme.card, in: RoundedRectangle(cornerRadius: 22)).overlay(RoundedRectangle(cornerRadius: 22).stroke(.white.opacity(0.07), lineWidth: 1))
     }
 }
 
@@ -220,7 +239,7 @@ private struct LocalSetupCard: View {
             if setup.busy { ProgressView(value: setup.progress); Button("Pause download") { setup.cancel() } }
             else if !setup.ready { Button("Set up Cully · 469 MiB") { confirm = true }.buttonStyle(.borderedProminent) }
             Text("One language model download. Voice uses your iPhone’s on-device speech support. No cloud inference fee.").font(.caption).foregroundStyle(.secondary)
-        }.padding(20).frame(maxWidth: .infinity, alignment: .leading).background(Theme.card, in: RoundedRectangle(cornerRadius: 22))
+        }.padding(20).frame(maxWidth: .infinity, alignment: .leading).background(Theme.card, in: RoundedRectangle(cornerRadius: 22)).overlay(RoundedRectangle(cornerRadius: 22).stroke(.white.opacity(0.07), lineWidth: 1))
         .alert("Set up local AI?", isPresented: $confirm) {
             Button("Later", role: .cancel) {}; Button("Download") { setup.start() }
         } message: { Text("Download 469 MiB of model weights. Allow 650 MiB of free space and use Wi-Fi if possible. Nothing downloads until you press Download.") }

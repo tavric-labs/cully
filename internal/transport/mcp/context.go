@@ -17,12 +17,16 @@ type ContextInput struct {
 	ProjectURL *string `json:"project_url,omitempty"`
 	SessionRef *string `json:"session_ref,omitempty"`
 	Section    *string `json:"section,omitempty"`
-	Mode       string  `json:"mode,omitempty"` // text, semantic, or recent
+	Mode       string  `json:"mode,omitempty"`  // text, semantic, or recent
+	Since      string  `json:"since,omitempty"` // recent mode only; inclusive RFC3339
+	Until      string  `json:"until,omitempty"` // recent mode only; exclusive RFC3339
 	Limit      int     `json:"limit,omitempty"`
 }
 
 type ContextNote struct {
 	ID             string  `json:"id"`
+	OccurredAt     string  `json:"occurred_at"`
+	ProjectURL     *string `json:"project_url,omitempty"`
 	Date           string  `json:"date"`
 	EntryType      string  `json:"entry_type"`
 	Assistant      string  `json:"assistant"`
@@ -37,6 +41,8 @@ type ContextNote struct {
 }
 
 type ContextResult struct {
+	Since   string        `json:"since,omitempty"`
+	Until   string        `json:"until,omitempty"`
 	Source  string        `json:"source"`
 	Notes   []ContextNote `json:"notes"`
 	HasMore bool          `json:"has_more"`
@@ -64,8 +70,11 @@ func compactContext(ctx context.Context, service memory.Service, owner string, i
 		if strings.TrimSpace(in.Query) != "" {
 			return ContextResult{}, fmt.Errorf("%w: recent mode does not use query", memory.ErrInvalid)
 		}
-		request = memory.Request{Operation: "recent", Recent: &memory.RecentInput{ProjectURL: in.ProjectURL, SessionRef: in.SessionRef, Section: in.Section, Limit: limit + 1}}
+		request = memory.Request{Operation: "recent", Recent: &memory.RecentInput{ProjectURL: in.ProjectURL, SessionRef: in.SessionRef, Section: in.Section, Since: in.Since, Until: in.Until, Limit: limit + 1}}
 	case "text", "semantic":
+		if in.Since != "" || in.Until != "" {
+			return ContextResult{}, fmt.Errorf("%w: time windows require recent mode", memory.ErrInvalid)
+		}
 		operation := "search"
 		if mode == "semantic" {
 			operation = "recall"
@@ -78,13 +87,13 @@ func compactContext(ctx context.Context, service memory.Service, owner string, i
 	if err != nil {
 		return ContextResult{}, err
 	}
-	out := ContextResult{Source: mode, Notes: make([]ContextNote, 0, limit), HasMore: len(result.Entries) > limit}
+	out := ContextResult{Since: in.Since, Until: in.Until, Source: mode, Notes: make([]ContextNote, 0, limit), HasMore: len(result.Entries) > limit}
 	for i, entry := range result.Entries {
 		if i >= limit {
 			break
 		}
 		out.Notes = append(out.Notes, ContextNote{
-			ID: entry.ID, Date: entry.OccurredAt.Format(time.DateOnly), EntryType: entry.EntryType,
+			ID: entry.ID, OccurredAt: entry.OccurredAt.Format(time.RFC3339), ProjectURL: entry.ProjectURL, Date: entry.OccurredAt.Format(time.DateOnly), EntryType: entry.EntryType,
 			Assistant: entry.Assistant, SessionRef: entry.SessionRef, AgentSessionID: entry.AgentSessionID, Summary: preview(entry.Summary, 180),
 			Approach: previewPtr(entry.Approach, 120), Outcome: previewPtr(entry.Outcome, 120),
 			Issue: previewPtr(entry.Issue, 120), Learning: previewPtr(entry.Learning, 120),

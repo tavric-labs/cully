@@ -56,23 +56,22 @@ public final class MainActivity extends Activity {
         StringBuilder key = new StringBuilder();
         for (byte b : random) key.append(String.format("%02x", b & 255));
         apiKey = key.toString();
-        LinearLayout root = column(); root.setBackgroundColor(BG); root.setPadding(dp(20), dp(18), dp(20), dp(12));
-        TextView eyebrow = label("SELF · YOUR PERSONAL CULLY", 11, ACCENT); root.addView(eyebrow);
-        LinearLayout brand = new LinearLayout(this); brand.setGravity(Gravity.CENTER_VERTICAL); brand.setPadding(0, dp(12), 0, dp(8));
+        LinearLayout root = column(); root.setBackgroundColor(BG); root.setPadding(dp(18), dp(12), dp(18), dp(12));
+        LinearLayout brand = new LinearLayout(this); brand.setGravity(Gravity.CENTER_VERTICAL); brand.setPadding(0, dp(4), 0, dp(8));
         ImageView icon = new ImageView(this);
         icon.setImageResource(getResources().getIdentifier("cully_icon", "drawable", getPackageName()));
         icon.setContentDescription("Cully");
-        LinearLayout.LayoutParams iconSize = new LinearLayout.LayoutParams(dp(48), dp(48)); iconSize.setMargins(0, 0, dp(12), 0);
+        LinearLayout.LayoutParams iconSize = new LinearLayout.LayoutParams(dp(34), dp(34)); iconSize.setMargins(0, 0, dp(12), 0);
         brand.addView(icon, iconSize);
-        TextView title = label("Cully", 36, TEXT); title.setTypeface(null, Typeface.BOLD); brand.addView(title); root.addView(brand);
-        status = label("Private by design · engine starts when you ask", 12, MUTED); root.addView(status);
-        Button setupButton = new Button(this); setupButton.setAllCaps(false); setupButton.setTextColor(ACCENT); setupButton.setBackgroundTintList(android.content.res.ColorStateList.valueOf(CARD)); root.addView(setupButton);
+        TextView title = label("Cully", 25, TEXT); title.setTypeface(null, Typeface.BOLD); brand.addView(title); root.addView(brand);
+        status = label("Tap the mic or type · voice stays on this phone", 12, MUTED);
+        Button setupButton = new Button(this); setupButton.setAllCaps(false); setupButton.setTextColor(ACCENT); setupButton.setBackgroundTintList(android.content.res.ColorStateList.valueOf(CARD));
         try { setup = new ModelSetup(this, setupButton); } catch (Exception e) { setupButton.setText("Setup unavailable"); setupButton.setEnabled(false); }
-        LinearLayout navigation = new LinearLayout(this); navigation.setPadding(0, dp(10), 0, dp(2)); root.addView(navigation);
+        LinearLayout navigation = new LinearLayout(this); navigation.setPadding(dp(3), dp(3), dp(3), dp(3)); navigation.setBackground(shape(CARD)); root.addView(navigation);
         for (String page : new String[]{"Today", "Tasks", "Advisor"}) {
-            Button tab = new Button(this); tab.setText(page); tab.setAllCaps(false); tab.setTextSize(12); tab.setPadding(0,0,0,0);
+            Button tab = new Button(this); tab.setText(page); tab.setAllCaps(false); tab.setTextSize(12); tab.setPadding(0,0,0,0); tab.setMinHeight(0);tab.setMinimumHeight(0);tab.setStateListAnimator(null);tab.setBackground(shape(CARD));
             tab.setContentDescription("Open " + page); tab.setOnClickListener(v -> showPage(page));
-            navigation.addView(tab, new LinearLayout.LayoutParams(0, dp(44), 1)); tabs.put(page, tab);
+            navigation.addView(tab, new LinearLayout.LayoutParams(0, dp(40), 1)); tabs.put(page, tab);
         }
         content = new FrameLayout(this); root.addView(content, new LinearLayout.LayoutParams(-1, 0, 1));
         talkPanel = column();
@@ -80,27 +79,32 @@ public final class MainActivity extends Activity {
         messages = column(); scroll.addView(messages);
         talkPanel.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
         bubble("Cully", "Start a conversation. Tap the microphone to speak, or type below. Cully is running locally in Self mode.", false);
-        LinearLayout compose = new LinearLayout(this); compose.setGravity(Gravity.BOTTOM); compose.setPadding(0, dp(10), 0, 0);
+        LinearLayout compose = new LinearLayout(this); compose.setGravity(Gravity.BOTTOM); compose.setPadding(0,0,0,0);
         input = new EditText(this); input.setTextColor(TEXT); input.setHintTextColor(MUTED); input.setHint("Ask Cully…");
         input.setTextSize(16); input.setMinLines(1); input.setMaxLines(4); input.setPadding(dp(12), dp(8), dp(12), dp(8)); input.setBackground(shape(CARD));
         compose.addView(input, new LinearLayout.LayoutParams(0, -2, 1));
-        talk = new ImageButton(this); talk.setImageResource(android.R.drawable.ic_btn_speak_now); talk.setColorFilter(TEXT); talk.setContentDescription("Speak to Cully");
-        talk.setBackgroundTintList(android.content.res.ColorStateList.valueOf(CARD));
+        talk = new ImageButton(this); talk.setImageResource(android.R.drawable.ic_btn_speak_now); talk.setColorFilter(BG); talk.setContentDescription("Speak to Cully");
+        talk.setBackground(shape(ACCENT));
         talk.setOnClickListener(v -> {
             if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
                 requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, 7);
             } else voice.toggle();
         });
         compose.addView(talk, new LinearLayout.LayoutParams(dp(48), dp(48)));
-        send = new Button(this); send.setText("Send"); send.setAllCaps(false); send.setTextColor(BG); send.setBackgroundTintList(android.content.res.ColorStateList.valueOf(ACCENT));
-        send.setOnClickListener(v -> submit()); compose.addView(send);
-        root.addView(compose);
-        TextView footer = label("Self mode · Cully MCP not connected", 11, MUTED); footer.setPadding(0, dp(10), 0, 0); root.addView(footer);
+        send = new Button(this); send.setText("↑");send.setTextSize(24);send.setContentDescription("Send question");send.setMinWidth(0);send.setMinimumWidth(0);send.setPadding(0,0,0,0);send.setStateListAnimator(null);send.setBackground(shape(CARD)); send.setAllCaps(false); send.setTextColor(BG); send.setBackgroundTintList(android.content.res.ColorStateList.valueOf(ACCENT));
+        send.setOnClickListener(v -> submit()); LinearLayout.LayoutParams sendSize=new LinearLayout.LayoutParams(dp(44),dp(48));sendSize.setMargins(dp(6),0,0,0);compose.addView(send,sendSize);
+        LinearLayout dock=column();dock.setPadding(dp(12),dp(8),dp(12),dp(8));GradientDrawable dockSurface=new GradientDrawable(GradientDrawable.Orientation.TL_BR,new int[]{CARD,Color.rgb(34,59,47)});dockSurface.setCornerRadius(dp(26));dockSurface.setStroke(dp(1),0xff49624d);dock.setBackground(dockSurface);dock.setElevation(dp(8));dock.addView(status);dock.addView(compose);LinearLayout.LayoutParams floating=new LinearLayout.LayoutParams(-1,-2);floating.setMargins(0,dp(10),0,dp(4));root.addView(dock,floating);
+        TextView footer = label("Self mode · Cully MCP not connected", 11, MUTED); footer.setVisibility(View.GONE);
         Button connect = new Button(this); connect.setText("Connect Cully"); connect.setAllCaps(false); connect.setTextColor(TEXT);
-        connect.setBackgroundTintList(android.content.res.ColorStateList.valueOf(CARD)); root.addView(connect);
+        connect.setBackground(shape(CARD));connect.setStateListAnimator(null);connect.setTextSize(11);connect.setMinHeight(0);connect.setMinimumHeight(0);connect.setPadding(dp(12),0,dp(12),0);android.view.View space=new android.view.View(this);brand.addView(space,new LinearLayout.LayoutParams(0,1,1));brand.addView(connect,new LinearLayout.LayoutParams(-2,dp(38)));
         connection = new CullyConnection(this, footer, connect);
         connect.setOnClickListener(v -> connection.configure());
-        home = new SelfHomeView(this, () -> { showPage("Talk"); input.requestFocus(); }, () -> connection.refreshContext(home::updateBrief, home::briefFailed), this::showPage);
+        home = new SelfHomeView(this, () -> { showPage("Talk"); input.requestFocus(); }, () -> connection.refreshContext(this::updateDailyBrief, home::briefFailed), this::showPage);
+        home.setSetupView(setupButton);
+        home.analyze = this::analyzeBrief;
+        if(setup!=null)setup.onReady=()->{if(foreground&&home.hasEvidence())analyzeBrief();};
+        connection.onDisconnected = home::clearBrief;
+        connection.onConnected = () -> { home.loadingBrief(); connection.refreshContext(this::updateDailyBrief,home::briefFailed); };
         showPage("Today");
         setContentView(root);
         voice = new VoiceIO(this, new VoiceIO.Listener() {
@@ -184,6 +188,25 @@ public final class MainActivity extends Activity {
                 runOnUiThread(() -> { bubble("Cully", "Local engine: " + e.getMessage(), false); status.setText("Could not answer · try again"); });
             } finally { runOnUiThread(() -> { modelBusy = false; updateControls(); }); }
         });
+    }
+
+    private void updateDailyBrief(String raw){
+        home.updateBrief(raw);
+        if(foreground&&setup!=null&&setup.isReady()&&home.hasEvidence())analyzeBrief();
+    }
+
+    private void analyzeBrief() {
+        if(modelBusy||voiceBusy)return;
+        String evidence=home.briefSnapshot();final int version=home.generation();modelBusy=true;updateControls();home.analysisStarted();status.setText("Reflecting on your saved notes…");
+        worker.execute(()->{try{
+            ensureEngine();
+            JSONArray messages=new JSONArray().put(new JSONObject().put("role","system").put("content",MobileSkill.instructions(this)))
+                .put(new JSONObject().put("role","user").put("content",DailyBrief.prompt(new JSONObject(evidence))));
+            JSONObject answer=request("/v1/chat/completions",new JSONObject().put("messages",messages).put("max_tokens",240).put("temperature",0.1).put("stream",false));
+            String text=answer.getJSONArray("choices").getJSONObject(0).getJSONObject("message").optString("content").trim();
+            if(text.isEmpty())throw new IOException("Empty analysis");
+            runOnUiThread(()->{if(foreground&&version==home.generation()){home.analysisFinished(text);status.setText("Your day is ready · local AI draft");}});
+        }catch(Exception e){runOnUiThread(()->{if(foreground&&version==home.generation()){home.analysisFailed();status.setText("Dated notes ready · local reflection unavailable");}});}finally{runOnUiThread(()->{modelBusy=false;updateControls();});}});
     }
 
     private JSONArray agentMessages(String prompt, String tasks) throws Exception {

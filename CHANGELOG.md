@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Give mobile Self a dated Today briefing: last 24 hours, a sampled seven-day review, projects, recorded learnings and explicit continuation drafts. Add optional read-only time-window filters with timestamp/project evidence, clear coverage and older-server states, and local AI reflection in Today and Advisor; keep personal task changes explicit.
+
 ## 0.14.0
 
 - Add native Android and iOS Cully Self clients under `apps/`: Today briefs, personal task/focus management, Advisor handoffs, and a shared Ask Cully composer with microphone input. Reuse the Cully icon and the released mcp-mobile native SDKs; browser sign-in keeps service credentials on the server.

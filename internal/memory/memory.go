@@ -85,6 +85,8 @@ type RecentInput struct {
 	EntryType  *string `json:"entry_type,omitempty"`
 	Section    *string `json:"section,omitempty"`
 	Category   *string `json:"category,omitempty"`
+	Since      string  `json:"since,omitempty"`
+	Until      string  `json:"until,omitempty"`
 	Limit      int     `json:"limit,omitempty"`
 }
 type IDInput struct {
@@ -401,7 +403,14 @@ func (r *Request) Validate() error {
 			break
 		}
 		limit(&v.Limit, 50)
-		checks = append(checks, section(v.Section), category(v.Category), entryType(v.EntryType), project(v.ProjectURL), sessionRef(v.SessionRef))
+		checks = append(checks, section(v.Section), category(v.Category), entryType(v.EntryType), project(v.ProjectURL), sessionRef(v.SessionRef), stamp(v.Since), stamp(v.Until))
+		if v.Since != "" && v.Until != "" {
+			since, e1 := time.Parse(time.RFC3339, v.Since)
+			until, e2 := time.Parse(time.RFC3339, v.Until)
+			if e1 == nil && e2 == nil && !since.Before(until) {
+				return fmt.Errorf("%w: since must precede until", ErrInvalid)
+			}
+		}
 	case "get", "delete":
 		if r.ID == nil {
 			break

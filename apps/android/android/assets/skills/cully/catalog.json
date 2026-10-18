@@ -6,7 +6,7 @@
   "source": "skills/cully/SKILL.md",
   "sha256": {
     "SKILL.md": "f8487f22db41bbe8ba7d7c782692083653e044293d411c5b0d15faead548b2ff",
-    "references/mobile-self.md": "4b11259027c6f0ba4c65d6ad04e19d1273ceb24b8d6e2560380590bb737d39f0",
+    "references/mobile-self.md": "06b56c1f054076bd9e8daa4593c6473aa36e3905de005db60ef15bab7428513d",
     "references/mobile-workflows.md": "fdd145ee3e728f88ef2c7bf4b1b61e9eb03d32fecc378faf1af15b0e5c486b25"
   }
 }

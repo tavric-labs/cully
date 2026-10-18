@@ -159,7 +159,12 @@ func (s *Store) execute(ctx context.Context, tx pgx.Tx, owner string, r memory.R
 		return out, err
 	case "recent":
 		v := r.Recent
-		where, args := filters(owner, v.ProjectURL, v.SessionRef, v.Section, v.Category, v.EntryType, "")
+		where, args := filters(owner, v.ProjectURL, v.SessionRef, v.Section, v.Category, v.EntryType, v.Since)
+		if v.Until != "" {
+			until, _ := time.Parse(time.RFC3339, v.Until)
+			args = append(args, until)
+			where += fmt.Sprintf(" AND occurred_at < $%d", len(args))
+		}
 		args = append(args, v.Limit)
 		return rows(ctx, tx, "SELECT "+record+" FROM cully_entries e WHERE "+where+fmt.Sprintf(" ORDER BY occurred_at DESC,id LIMIT $%d", len(args)), args...)
 	case "search":

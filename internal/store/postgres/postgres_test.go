@@ -429,3 +429,21 @@ func TestDatabaseSessionTaskRepeatAfterClearRelinks(t *testing.T) {
 		t.Fatalf("repeat after clear must not insert a duplicate: %+v", all.Entries)
 	}
 }
+
+func TestDatabaseRecentTimeWindowAndOwner(t *testing.T) {
+	s := testStore(t)
+	personal, company := "personal", "company"
+	for _, row := range []struct{ owner, section, when string }{
+		{"window-owner-a", personal, "2026-10-18T09:00:00+05:30"},
+		{"window-owner-a", personal, "2026-10-19T09:00:00+05:30"},
+		{"window-owner-a", personal, "2026-10-18T08:59:59+05:30"},
+		{"window-owner-b", personal, "2026-10-18T09:00:00+05:30"},
+		{"window-owner-a", company, "2026-10-18T09:00:00+05:30"},
+	} {
+		execute(t, s, row.owner, memory.Request{Operation: "log", Log: &memory.LogInput{Summary: "Window boundary evidence", Assistant: "codex", Section: row.section, OccurredAt: row.when}})
+	}
+	result := execute(t, s, "window-owner-a", memory.Request{Operation: "recent", Recent: &memory.RecentInput{Section: &personal, Since: "2026-10-18T03:30:00Z", Until: "2026-10-19T03:30:00Z", Limit: 3}})
+	if len(result.Entries) != 1 || result.Entries[0].OccurredAt.Format(time.RFC3339) != "2026-10-18T09:00:00+05:30" {
+		t.Fatalf("half-open time window or owner/section scoping failed: %+v", result.Entries)
+	}
+}
