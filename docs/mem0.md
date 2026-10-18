@@ -19,9 +19,9 @@ Each note gets a projection scoped to its owner. Cully derives the Mem0 user nam
 
 ## Manual deployment
 
-The [Compose file](https://github.com/mcp-runtime/cully/blob/main/deploy/self-hosted/compose.yaml) shows the Mem0 service, database, volumes and private network. If you deploy Cully's data API yourself, point `CULLY_MEM0_URL` at the Mem0 REST base URL and give the data API `CULLY_MEM0_API_KEY`. Mem0's `ADMIN_API_KEY` must match. Do not put these values in an agent's configuration or expose Mem0 REST publicly.
+The [Compose file](https://github.com/tavric-labs/cully/blob/main/deploy/self-hosted/compose.yaml) shows the Mem0 service, database, volumes and private network. If you deploy Cully's data API yourself, point `CULLY_MEM0_URL` at the Mem0 REST base URL and give the data API `CULLY_MEM0_API_KEY`. Mem0's `ADMIN_API_KEY` must match. Do not put these values in an agent's configuration or expose Mem0 REST publicly.
 
-The supplied [image build](https://github.com/mcp-runtime/cully/blob/main/Dockerfile.mem0) pins an upstream Mem0 REST commit and uses the local `BAAI/bge-small-en-v1.5` FastEmbed model with 384-dimensional vectors. The model is cached in the image, so the standard stack needs no external embedding provider. Cully's Go services do not need a Python runtime; Mem0 runs Python inside its own container. A separate Mem0 server must provide the REST endpoints Cully calls: `GET /memories`, `POST /memories`, `POST /search` and `DELETE /memories/{id}`, authenticated with `X-API-Key`. Use its base URL, without a trailing `/search` path.
+The supplied [image build](https://github.com/tavric-labs/cully/blob/main/Dockerfile.mem0) pins an upstream Mem0 REST commit and uses the local `BAAI/bge-small-en-v1.5` FastEmbed model with 384-dimensional vectors. The model is cached in the image, so the standard stack needs no external embedding provider. Cully's Go services do not need a Python runtime; Mem0 runs Python inside its own container. A separate Mem0 server must provide the REST endpoints Cully calls: `GET /memories`, `POST /memories`, `POST /search` and `DELETE /memories/{id}`, authenticated with `X-API-Key`. Use its base URL, without a trailing `/search` path.
 
 If you add Mem0 to a database with existing notes, queue them for indexing with the data API's `reindex` command, for example:
 

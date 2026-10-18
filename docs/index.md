@@ -50,7 +50,7 @@ Solo's default stack runs on your laptop with one stable owner and no sign-in. F
 | Where Cully is going | [Product direction](/product-direction) |
 | Manual service settings and system details | [Configuration](/configuration) and [architecture](/architecture) |
 
-For project work, see [development](/development), the [roadmap](/roadmap) and the [changelog](https://github.com/mcp-runtime/cully/blob/main/CHANGELOG.md).
+For project work, see [development](/development), the [roadmap](/roadmap) and the [changelog](https://github.com/tavric-labs/cully/blob/main/CHANGELOG.md).
 
 ## Teams and project work
 

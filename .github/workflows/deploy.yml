@@ -35,7 +35,7 @@ jobs:
       - name: Install mcp-runtime CLI
         run: |
           curl -fsSL -o mcp-runtime \
-            "https://github.com/mcp-runtime/mcp-runtime/releases/download/${MCP_RUNTIME_VERSION}/mcp-runtime-linux-amd64"
+            "https://github.com/tavric-labs/mcp-runtime/releases/download/${MCP_RUNTIME_VERSION}/mcp-runtime-linux-amd64"
           echo "${MCP_RUNTIME_SHA256}  mcp-runtime" | sha256sum -c -
           sudo install -m 0755 mcp-runtime /usr/local/bin/mcp-runtime
           rm mcp-runtime

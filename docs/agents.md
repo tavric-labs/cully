@@ -70,4 +70,4 @@ Use `cully mcp add --agent codex --url URL` to add only the MCP connection. Add 
 
 Running `cully setup --all` starts the standard local memory stack and advisor, and installs integrations for detected agents. Use `--agent AGENT` to select one or `--agent all` for all supported agents. With `--mcp-url URL`, setup connects to that existing server and starts the local advisor without starting Docker services. Setup does not sign you into an OAuth server automatically. For server requirements, see [self-hosting](/hosting) and [team deployment](/team-deployment).
 
-For detailed client configuration, see the [client reference](https://github.com/mcp-runtime/cully/blob/main/clients/README.md).
+For detailed client configuration, see the [client reference](https://github.com/tavric-labs/cully/blob/main/clients/README.md).

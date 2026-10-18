@@ -5,7 +5,7 @@ options:
     iOS: '16.4'
 packages:
   MCPMobile:
-    url: https://github.com/mcp-runtime/mcp-mobile.git
+    url: https://github.com/tavric-labs/mcp-mobile.git
     exactVersion: 0.1.0
   CullyNative:
     path: .

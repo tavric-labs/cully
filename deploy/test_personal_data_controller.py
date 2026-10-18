@@ -32,7 +32,7 @@ class PersonalDataDeploymentTests(unittest.TestCase):
                              {'current': 'v1.0.1', 'previous': 'v1.0.0'})
             self.assertNotIn('test-token', str([args for args, _ in calls]))
             self.assertTrue(any('cully-personal-data' in args for args, _ in calls))
-            self.assertTrue(any('ghcr.io/mcp-runtime/cully-mem0:v1.0.0' in args for args, _ in calls))
+            self.assertTrue(any('ghcr.io/tavric-labs/cully-mem0:v1.0.0' in args for args, _ in calls))
             self.assertTrue(any('migrate' in args for args, _ in calls))
             execute({'action': 'rollback', 'tag': 'v1.0.1'}, root, runner)
             self.assertEqual(json.loads((root / 'state.json').read_text())['current'], 'v1.0.0')

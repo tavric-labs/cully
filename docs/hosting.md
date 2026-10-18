@@ -30,7 +30,7 @@ The command downloads the matching Cully release's Docker files, prepares the lo
 | PostgreSQL | Holds authoritative notes and indexing jobs. | Private Compose network. |
 | Mem0 and its pgvector database | Indexes notes for semantic recall. | Private Compose network. |
 
-The downloaded [Compose file](https://github.com/mcp-runtime/cully/blob/main/deploy/self-hosted/compose.yaml) also defines optional Caddy and MCP Auth services for the [team sign-in path](/oauth). Setup runs the data service's schema migration before the API serves memory requests.
+The downloaded [Compose file](https://github.com/tavric-labs/cully/blob/main/deploy/self-hosted/compose.yaml) also defines optional Caddy and MCP Auth services for the [team sign-in path](/oauth). Setup runs the data service's schema migration before the API serves memory requests.
 
 ### Keep the generated state together
 
@@ -71,6 +71,6 @@ OAuth is optional for a company team deployment. If your ops team exposes Cully 
 
 ## Run the services another way
 
-The [Compose file](https://github.com/mcp-runtime/cully/blob/main/deploy/self-hosted/compose.yaml) is the reference for the containers and private networks. PostgreSQL holds source records. Mem0 uses a separate pgvector database for semantic recall; its local embedding model does not need an embedding API key. The data API, Mem0 and both databases stay private. The [team deployment guide](/team-deployment) covers other container platforms, and the [configuration reference](/configuration) lists settings for a manual deployment.
+The [Compose file](https://github.com/tavric-labs/cully/blob/main/deploy/self-hosted/compose.yaml) is the reference for the containers and private networks. PostgreSQL holds source records. Mem0 uses a separate pgvector database for semantic recall; its local embedding model does not need an embedding API key. The data API, Mem0 and both databases stay private. The [team deployment guide](/team-deployment) covers other container platforms, and the [configuration reference](/configuration) lists settings for a manual deployment.
 
 Setup requires an explicit mode: `--all` starts the stack on this machine; `--mcp-url URL` connects to a deployed stack. With neither option, setup prints guidance and makes no setup changes. The full local setup reports each stage and streams Docker build progress. First builds can take several minutes. Setup checks MCP initialization and Cully tool discovery; OAuth endpoints report authenticated verification as pending until you sign in through your agent.

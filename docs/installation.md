@@ -58,7 +58,7 @@ If a prebuilt release cannot be downloaded, check GitHub release access or insta
 
 <InstallCommand template="curl -fsSL https://cully.net/install.sh | sh -s -- --from-source --agent {agent}" />
 
-A source build can take several minutes while Go downloads its toolchain and dependencies. You can [inspect the installer](https://github.com/mcp-runtime/cully/blob/main/install.sh) before running it.
+A source build can take several minutes while Go downloads its toolchain and dependencies. You can [inspect the installer](https://github.com/tavric-labs/cully/blob/main/install.sh) before running it.
 
 ## If the download stalls
 
