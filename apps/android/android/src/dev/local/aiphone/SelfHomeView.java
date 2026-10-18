@@ -27,6 +27,7 @@ final class SelfHomeView extends ScrollView {
     private String analysis = "", analysisStatus = "";
     private boolean weekly, loading;
     Runnable analyze;
+    java.util.function.Consumer<String> draftQuestion;
     private android.view.View setupView;
     private int generation;
     boolean hasEvidence(){return notes.length()>0;}
@@ -66,10 +67,6 @@ final class SelfHomeView extends ScrollView {
         text(body,new SimpleDateFormat("EEEE, MMM d",Locale.getDefault()).format(new Date()).toUpperCase(Locale.getDefault()),11,GOLD);
         title("Today starts here.");
         text(body,"Pick up the thread. Make room for what comes next.",14,MUTED);
-        LinearLayout focus=card("YOUR FOCUS"); JSONObject selected=focused();
-        text(focus, selected == null ? "One thing at a time." : selected.optString("title"),21,TEXT);
-        text(focus,selected == null ? "Choose a task to keep close today." : "A personal task saved on this phone.",13,MUTED);
-        action(focus,selected == null ? "Choose a focus" : "View your tasks",()->navigate.accept("Tasks"));
         LinearLayout summary=card("YOUR DAY, IN CONTEXT");
         text(summary,briefStatus,12,MUTED);
         LinearLayout periods=new LinearLayout(activity);summary.addView(periods);
@@ -78,6 +75,12 @@ final class SelfHomeView extends ScrollView {
         if(!analysisStatus.isEmpty())text(summary,analysisStatus,11,MUTED);
         if(notes.length()>0)action(summary,"Find my next step · on-device AI",()->{if(analyze!=null)analyze.run();});
         action(summary,loading?"Gathering notes…":"Refresh my day",()->{if(!loading){loadingBrief();refresh.run();}});
+        continueCards();
+        LinearLayout focus=card("YOUR FOCUS"); JSONObject selected=focused();
+        text(focus, selected == null ? "One thing at a time." : selected.optString("title"),21,TEXT);
+        text(focus,selected == null ? "Choose a task to keep close today." : "A personal task saved on this phone.",13,MUTED);
+        action(focus,selected == null ? "Choose a focus" : "View your tasks",()->navigate.accept("Tasks"));
+        learningCards();
         evidenceCards();
         if(setupView!=null){if(setupView.getParent() instanceof android.view.ViewGroup)((android.view.ViewGroup)setupView.getParent()).removeView(setupView);LinearLayout local=card("READY WHEN YOU ARE");local.addView(setupView);}
         action(body,"Ask Cully",talk);
@@ -86,6 +89,13 @@ final class SelfHomeView extends ScrollView {
     private void evidenceCards(){
         if(!brief.has("last24h"))return;
         java.util.LinkedHashSet<String> projects=new java.util.LinkedHashSet<>();
+        for(String key:weekly?new String[]{"last24h","earlier6days"}:new String[]{"last24h"}){
+            JSONObject window=brief.optJSONObject(key);JSONArray rows=window==null?null:window.optJSONArray("notes");
+            if(rows!=null)for(int i=0;i<rows.length();i++){JSONObject n=rows.optJSONObject(i);if(n!=null&&!value(n,"project_url").isEmpty())projects.add(value(n,"project_url"));}
+        }
+        LinearLayout p=card("PROJECTS IN THESE NOTES");
+        if(projects.isEmpty())text(p,"No project was attached to these sampled notes.",14,MUTED);
+        for(String project:projects)text(p,project.replace("https://github.com/",""),15,TEXT);
         int count=0;boolean more=false;
         for(String key:weekly?new String[]{"last24h","earlier6days"}:new String[]{"last24h"}){
             JSONObject window=brief.optJSONObject(key);if(window==null)continue;
@@ -95,17 +105,58 @@ final class SelfHomeView extends ScrollView {
                 LinearLayout c=card(key.equals("last24h")?"LAST 24 HOURS":"EARLIER THIS WEEK");
                 text(c,n.optString("summary"),16,TEXT);
                 text(c,localDate(n)+" · "+n.optString("assistant"),11,MUTED);
-                if(!value(n,"outcome").isEmpty())text(c,value(n,"outcome"),14,MUTED);
-                if(!n.optString("next_steps").isEmpty())action(c,"Make a task: "+n.optString("next_steps"),()->addTask(n.optString("next_steps")));
-                if(!value(n,"learning").isEmpty())text(c,"Learned · "+value(n,"learning"),14,GOLD);
+
+
+                action(c,"Recall how / why",()->recall(n));
             }
         }
         LinearLayout coverage=card("WHAT THIS COVERS");
         text(coverage,count==0?"No saved notes in this window yet. This does not mean you did no work.":count+" sampled notes"+(more?" · more notes available":"")+". This is not a complete activity report.",13,MUTED);
         text(coverage,"Rolling "+(weekly?"7 days":"24 hours")+" ending at refresh. Times use your phone's timezone.",11,MUTED);
-        LinearLayout p=card("PROJECTS IN THESE NOTES");
-        if(projects.isEmpty())text(p,"No project was attached to these sampled notes.",14,MUTED);
-        for(String project:projects)text(p,project.replace("https://github.com/",""),15,TEXT);
+    }
+    private void continueCards(){
+        if(!brief.has("last24h"))return;
+        LinearLayout intro=card("CONTINUE TODAY");
+        text(intro,"Pick up a thread, on your terms.",20,TEXT);
+        text(intro,"Last-planned next steps from sampled seven-day notes. They may have changed; choose what still matters.",12,MUTED);
+        int count=0;
+        for(int i=0;i<notes.length()&&count<3;i++){
+            JSONObject note=notes.optJSONObject(i);if(note==null||value(note,"next_steps").isEmpty())continue;count++;
+            String project=value(note,"project_url").replace("https://github.com/","");
+            text(intro,(project.isEmpty()?"Personal work":project)+" · "+localDate(note),11,GOLD);
+            text(intro,value(note,"next_steps"),16,TEXT);
+            if(!value(note,"issue").isEmpty())text(intro,"Reported blocker · "+value(note,"issue"),13,MUTED);
+            LinearLayout choices=new LinearLayout(activity);intro.addView(choices);
+            action(choices,"Make a task",()->addTask(value(note,"next_steps")));
+            action(choices,"Recall why",()->recall(note));
+            for(int n=0;n<choices.getChildCount();n++)choices.getChildAt(n).setLayoutParams(new LinearLayout.LayoutParams(0,dp(48),1));
+        }
+        if(count==0)text(intro,"No next step was recorded in these notes. Your local focus can still guide today.",14,MUTED);
+    }
+    private void learningCards(){
+        int count=0;
+        for(int i=0;i<notes.length()&&count<2;i++){
+            JSONObject note=notes.optJSONObject(i);if(note==null||value(note,"learning").isEmpty())continue;count++;
+            LinearLayout learn=card("LEARN NEXT · "+localDate(note));
+            text(learn,value(note,"learning"),17,TEXT);
+            text(learn,"A recorded learning, not a measure of what you know. From sampled seven-day notes.",11,MUTED);
+            text(learn,"Optional practice · Explain it without notes, then compare with what you saved.",13,MUTED);
+            action(learn,"Draft a practice question",()->question(note,"Use saved Cully evidence to help me recall this recorded learning: "+value(note,"learning")+". Ask one question and suggest a small exercise; do not assume what I know."));
+        }
+    }
+    private void recall(JSONObject note){
+        StringBuilder detail=new StringBuilder(localDate(note));
+        String project=value(note,"project_url");if(!project.isEmpty())detail.append("\n").append(project);
+        detail.append("\n\n").append(value(note,"summary"));
+        for(String[] field:new String[][]{{"approach","How we approached it"},{"outcome","Saved outcome"},{"issue","Reported blocker"},{"learning","Recorded learning"},{"next_steps","Last planned"}})
+            if(!value(note,field[0]).isEmpty())detail.append("\n\n").append(field[1]).append("\n").append(value(note,field[0]));
+        detail.append("\n\nSaved preview, not live status. Missing details have not been inferred.");
+        new AlertDialog.Builder(activity).setTitle(value(note,"entry_type").equals("decision")?"A saved decision":"Recall how / why").setMessage(detail)
+            .setNegativeButton("Done",null).setPositiveButton("Draft a follow-up",(d,w)->question(note,"Find relevant saved Cully evidence before answering. Recall how we worked on: "+value(note,"summary")+". Explain the recorded approach and what is uncertain; do not invent a reason." )).show();
+    }
+    private void question(JSONObject note,String prompt){
+        String project=value(note,"project_url");
+        if(draftQuestion!=null)draftQuestion.accept(prompt+(project.isEmpty()?"":" Project: "+project));
     }
     private void tasksPage() {
         title("Make space\nfor what matters."); text(body,"Personal tasks · saved on this phone",12,MUTED);

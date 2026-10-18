@@ -72,7 +72,7 @@ final class CullyConnection implements AutoCloseable {
             JSONArray notes=data.optJSONArray("notes"), compact=new JSONArray();
             if(notes!=null)for(int i=0;i<Math.min(notes.length(),3);i++){
                 JSONObject note=notes.getJSONObject(i), selected=new JSONObject();
-                for(String key:new String[]{"date","summary","outcome","issue","next_steps","learning","project_url"}){String text=note.isNull(key)?"":note.optString(key);selected.put(key,text.substring(0,Math.min(text.length(),180)));}
+                for(String key:new String[]{"date","summary","outcome","issue","next_steps","learning","project_url","approach","entry_type"}){String text=note.isNull(key)?"":note.optString(key);selected.put(key,text.substring(0,Math.min(text.length(),180)));}
                 compact.put(selected);
             }
             return new JSONObject().put("source",data.optString("source")).put("notes",compact).put("has_more",data.optBoolean("has_more")).toString();

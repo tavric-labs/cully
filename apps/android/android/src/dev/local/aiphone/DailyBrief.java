@@ -34,7 +34,7 @@ final class DailyBrief {
             JSONArray rows=window==null?null:window.optJSONArray("notes");
             if(rows!=null)for(int i=0;i<Math.min(3,rows.length());i++){
                 JSONObject source=rows.optJSONObject(i);if(source==null)continue;JSONObject note=new JSONObject();
-                for(String field:new String[]{"date","project_url","summary","outcome","learning","issue","next_steps"}){
+                for(String field:new String[]{"date","project_url","summary","outcome","learning","issue","next_steps","approach","entry_type"}){
                     if(source.isNull(field))continue;String value=source.optString(field);int max=field.equals("summary")||field.equals("project_url")?180:120;
                     note.put(field,value.substring(0,Math.min(max,value.length())));
                 }compact.put(note);

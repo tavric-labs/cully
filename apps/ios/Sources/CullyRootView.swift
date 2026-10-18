@@ -17,6 +17,7 @@ struct CullyRootView: View {
     @State private var showConnect = false
     @State private var showTask = false
     @State private var draft = ""
+    @State private var selectedNote: ContextNote?
     @State private var showConversation = false
     @State private var question = ""
     @StateObject private var voice = LocalVoiceCapture()
@@ -52,6 +53,7 @@ struct CullyRootView: View {
         .frame(minWidth: 330, minHeight: 600).preferredColorScheme(.dark)
         .sheet(isPresented: $showConnect) { connectionSheet }
         .sheet(isPresented: $showTask) { taskSheet }
+        .sheet(item: $selectedNote) { note in recallSheet(note) }
         .sheet(isPresented: $showConversation) { conversationSheet }
         .onChange(of: voice.transcript) { question = $0 }
         .onChange(of: phase) { if $0 != .active { voice.stop() } }
@@ -64,11 +66,6 @@ struct CullyRootView: View {
         page {
             Text(Date(), format: .dateTime.weekday(.wide).month(.abbreviated).day()).font(.caption).foregroundStyle(Theme.gold)
             heading("Today starts here.", subtitle: "Pick up the thread. Make room for what comes next.")
-            card("YOUR FOCUS") {
-                Text(model.focus?.title ?? "One thing at a time.").font(.title2.weight(.medium))
-                Text(model.focus == nil ? "Choose a task to keep close today." : "A personal task saved on this device.").font(.subheadline).foregroundStyle(.secondary)
-                Button(model.focus == nil ? "Choose a focus" : "View your tasks") { tab = .tasks }.buttonStyle(.bordered)
-            }
             card("YOUR DAY, IN CONTEXT") {
                 Text(model.briefStatus).font(.subheadline).foregroundStyle(.secondary)
                 Picker("Review period", selection: $weekly) { Text("Last 24 hours").tag(false); Text("Past 7 days").tag(true) }.pickerStyle(.segmented)
@@ -76,27 +73,41 @@ struct CullyRootView: View {
                 if !model.reflection.isEmpty { Text(model.reflection).textSelection(.enabled) }
                 if !model.reflectionStatus.isEmpty { Text(model.reflectionStatus).font(.caption).foregroundStyle(.secondary) }
                 if !model.notes.isEmpty {
-                    Button { model.reflectOnBrief() } label: { Label(model.reflectionBusy ? "Reflecting…" : "Find my next step", systemImage: "sparkles") }.buttonStyle(.bordered).disabled(model.reflectionBusy || model.chatBusy || model.reflectionBusy)
+                    Button { model.reflectOnBrief() } label: { Label(model.reflectionBusy ? "Reflecting…" : "Find my next step", systemImage: "sparkles") }.buttonStyle(.bordered).disabled(model.reflectionBusy || model.chatBusy)
                 }
                 Button { model.refreshBrief() } label: { Label(model.busy ? "Gathering notes…" : "Refresh my day", systemImage: "arrow.clockwise") }.buttonStyle(.bordered).disabled(model.busy)
+            }
+            if model.briefUpdated != nil { continuationCard }
+            card("YOUR FOCUS") {
+                Text(model.focus?.title ?? "One thing at a time.").font(.title2.weight(.medium))
+                Text(model.focus == nil ? "Choose a task to keep close today." : "A personal task saved on this device.").font(.subheadline).foregroundStyle(.secondary)
+                Button(model.focus == nil ? "Choose a focus" : "View your tasks") { tab = .tasks }.buttonStyle(.bordered)
+            }
+            ForEach(learningNotes) { note in
+                card("LEARN NEXT · \(localDate(note))") {
+                    Text(note.learning ?? "").font(.headline)
+                    Text("A recorded learning, not a measure of what you know. From sampled seven-day notes.").font(.caption).foregroundStyle(.secondary)
+                    Text("Optional practice · Explain it without notes, then compare with what you saved.").font(.subheadline)
+                    Button("Draft a practice question") { draftQuestion(note, prompt: "Use saved Cully evidence to help me recall this recorded learning: \(note.learning ?? ""). Ask one question and suggest a small exercise; do not assume what I know.") }.buttonStyle(.bordered)
+                }
+            }
+            if model.briefUpdated != nil {
+            card("PROJECTS IN THESE NOTES") {
+                if projects.isEmpty { Text("No project was attached to these sampled notes.").foregroundStyle(.secondary) }
+                ForEach(projects, id: \.self) { project in Text(project.replacingOccurrences(of: "https://github.com/", with: "")).font(.subheadline) }
+            }
             }
             ForEach(visibleNotes) { note in
                 card(model.dayNotes.contains(where: { $0.id == note.id }) ? "LAST 24 HOURS" : "EARLIER THIS WEEK") {
                     Text(note.summary).font(.headline)
                     Text("\(localDate(note)) · \(note.assistant)").font(.caption).foregroundStyle(.secondary)
-                    if let outcome = note.outcome, !outcome.isEmpty { Text(outcome).font(.subheadline) }
-                    if let learning = note.learning, !learning.isEmpty { Label(learning, systemImage: "book.closed").font(.subheadline).foregroundStyle(Theme.gold) }
-                    if let next = note.nextSteps, !next.isEmpty { Button("Make a task: \(next)") { draft = next; showTask = true }.buttonStyle(.bordered) }
+                    Button("Recall how / why") { selectedNote = note }.buttonStyle(.bordered)
                 }
             }
             if model.briefUpdated != nil {
             card("WHAT THIS COVERS") {
                 Text(visibleNotes.isEmpty ? "No saved notes in this window yet. This does not mean you did no work." : "\(visibleNotes.count) sampled notes\(model.hasMoreDay || (weekly && model.hasMoreWeek) ? " · more notes available" : ""). This is not a complete activity report.").font(.subheadline)
                 Text("Rolling \(weekly ? "7 days" : "24 hours") ending at refresh. Times use your device’s timezone.").font(.caption).foregroundStyle(.secondary)
-            }
-            card("PROJECTS IN THESE NOTES") {
-                if projects.isEmpty { Text("No project was attached to these sampled notes.").foregroundStyle(.secondary) }
-                ForEach(projects, id: \.self) { project in Text(project.replacingOccurrences(of: "https://github.com/", with: "")).font(.subheadline) }
             }
             }
             LocalSetupCard(setup: model.setup)
@@ -107,6 +118,46 @@ struct CullyRootView: View {
     private func localDate(_ note: ContextNote) -> String {
         guard let stamp = note.occurredAt, let date = ISO8601DateFormatter().date(from: stamp) else { return note.date }
         return date.formatted(date: .abbreviated, time: .shortened)
+    }
+    private var continuationNotes: [ContextNote] { Array(model.notes.filter { !($0.nextSteps ?? "").isEmpty }.prefix(3)) }
+    private var learningNotes: [ContextNote] { Array(model.notes.filter { !($0.learning ?? "").isEmpty }.prefix(2)) }
+    private var continuationCard: some View {
+        card("CONTINUE TODAY") {
+            Text("Pick up a thread, on your terms.").font(.title2)
+            Text("Last-planned next steps from sampled seven-day notes. They may have changed; choose what still matters.").font(.caption).foregroundStyle(.secondary)
+            if continuationNotes.isEmpty { Text("No next step was recorded in these notes. Your local focus can still guide today.").foregroundStyle(.secondary) }
+            ForEach(continuationNotes) { note in
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("\((note.projectURL ?? "Personal work").replacingOccurrences(of: "https://github.com/", with: "")) · \(localDate(note))").font(.caption).foregroundStyle(Theme.gold)
+                    Text(note.nextSteps ?? "").font(.headline)
+                    if let issue = note.issue, !issue.isEmpty { Text("Reported blocker · \(issue)").font(.subheadline).foregroundStyle(.secondary) }
+                    HStack { Button("Make a task") { draft = note.nextSteps ?? ""; showTask = true }; Button("Recall why") { selectedNote = note } }.buttonStyle(.bordered)
+                }.padding(.vertical, 8)
+            }
+        }
+    }
+    private func draftQuestion(_ note: ContextNote, prompt: String) {
+        question = prompt + (note.projectURL.map { " Project: \($0)" } ?? "")
+        selectedNote = nil
+    }
+    private func recallSheet(_ note: ContextNote) -> some View {
+        VStack(alignment: .leading, spacing: 18) {
+            HStack { Text(note.entryType == "decision" ? "A saved decision" : "Recall how / why").font(.title2.bold()); Spacer(); Button("Done") { selectedNote = nil } }
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    Text(localDate(note)).font(.caption).foregroundStyle(Theme.gold)
+                    if let project = note.projectURL { Text(project.replacingOccurrences(of: "https://github.com/", with: "")).font(.caption) }
+                    Text(note.summary).font(.headline)
+                    if let value = note.approach, !value.isEmpty { card("HOW WE APPROACHED IT") { Text(value) } }
+                    if let value = note.outcome, !value.isEmpty { card("SAVED OUTCOME") { Text(value) } }
+                    if let value = note.issue, !value.isEmpty { card("REPORTED BLOCKER") { Text(value) } }
+                    if let value = note.learning, !value.isEmpty { card("RECORDED LEARNING") { Text(value) } }
+                    if let value = note.nextSteps, !value.isEmpty { card("LAST PLANNED") { Text(value) } }
+                    Text("Saved preview, not live status. Missing details have not been inferred.").font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            Button("Draft a follow-up") { draftQuestion(note, prompt: "Find relevant saved Cully evidence before answering. Recall how we worked on: \(note.summary). Explain the recorded approach and what is uncertain; do not invent a reason.") }.buttonStyle(.borderedProminent)
+        }.padding(22).foregroundStyle(Theme.ink).background(Theme.background).tint(Theme.gold).frame(minWidth: 330, minHeight: 480)
     }
     private var visibleNotes: [ContextNote] { weekly ? model.notes : model.dayNotes }
     private var projects: [String] { Array(Set(visibleNotes.compactMap(\.projectURL))).sorted() }
@@ -140,7 +191,7 @@ struct CullyRootView: View {
                 Button("Choose your next step") { tab = .tasks }.buttonStyle(.bordered)
             }
             if !model.reflection.isEmpty { card("YOUR LOCAL ADVISOR") { Text(model.reflection); Text("AI suggestions from sampled saved notes. Review before acting.").font(.caption).foregroundStyle(.secondary) } }
-            if !model.notes.isEmpty { Button("Reflect on my week") { model.reflectOnBrief() }.buttonStyle(.bordered).disabled(model.reflectionBusy || model.chatBusy || model.reflectionBusy) }
+            if !model.notes.isEmpty { Button("Reflect on my week") { model.reflectOnBrief() }.buttonStyle(.bordered).disabled(model.reflectionBusy || model.chatBusy) }
             ForEach(model.notes.filter { !($0.issue ?? "").isEmpty || !($0.nextSteps ?? "").isEmpty }.prefix(3)) { note in
                 card("FROM A SAVED HANDOFF · \(localDate(note))") {
                     if let issue = note.issue, !issue.isEmpty { Text(issue).font(.headline) }

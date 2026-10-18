@@ -8,11 +8,13 @@ This is a developer preview. Workspace actions, coding terminals, phone dialer/c
 
 After sign-in, Today loads two small read-only windows: the last 24 hours, and the six preceding days. Switch to Past 7 days to see both. Each window contains at most three recent note previews. The coverage card states when more notes exist; this is a sample, not a complete activity report or an inventory of every project. Empty history never implies no work happened.
 
-Dated cards surface saved outcomes, explicit learnings and next-step drafts. Project names come only from attached project URLs. “Make a task” opens a confirmation form and creates a device-local personal task; it does not update the remote project. The floating Ask Cully dock remains available on Today, Tasks and Advisor, with explicit microphone capture and real listening/thinking status.
+Continue Today promotes at most three last-planned handoffs from the sampled week, grouped with project and date; these are suggestions, not a claim that work is still unfinished. Recall how / why opens the saved approach, outcome, blocker and learning preview without inventing missing reasons. Learn Next surfaces explicit learning and an optional practice prompt; a follow-up drafts a question in Ask Cully, where you review and send it. Dated cards surface saved outcomes, explicit learnings and next-step drafts. Project names come only from attached project URLs. “Make a task” opens a confirmation form and creates a device-local personal task; it does not update the remote project. The floating Ask Cully dock remains available on Today, Tasks and Advisor, with explicit microphone capture and real listening/thinking status.
 
 When models are ready, a fresh foreground brief starts one local reflection; “Find my next step” / “Reflect on my week” can run it again. The app runs the downloaded model locally over the loaded evidence using the canonical Cully skill. It proposes continuations and questions to explore, labels the result as an AI draft, and never scores knowledge or infers expertise from a mentioned topic. No notes are sent to a paid inference service. Notes and reflections are held in memory and cleared on disconnect/pause.
 
 Both the MCP server and its private data API must support the optional `since`/`until` recent-context filters. A brief uses inclusive/exclusive RFC3339 bounds, a fixed refresh time, authenticated owner/section scoping, and exact timestamps rendered in the phone’s timezone. Older servers retain chat/task compatibility; the brief shows an update-needed state rather than mislabeling an unfiltered response.
+
+See the [mobile product direction](../docs/mobile-product-direction.md) for the evidence and boundaries behind these surfaces.
 
 ## Local intelligence
 

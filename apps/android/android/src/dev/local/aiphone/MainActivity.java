@@ -102,6 +102,7 @@ public final class MainActivity extends Activity {
         home = new SelfHomeView(this, () -> { showPage("Talk"); input.requestFocus(); }, () -> connection.refreshContext(this::updateDailyBrief, home::briefFailed), this::showPage);
         home.setSetupView(setupButton);
         home.analyze = this::analyzeBrief;
+        home.draftQuestion = text -> {input.setText(text);input.requestFocus();};
         if(setup!=null)setup.onReady=()->{if(foreground&&home.hasEvidence())analyzeBrief();};
         connection.onDisconnected = home::clearBrief;
         connection.onConnected = () -> { home.loadingBrief(); connection.refreshContext(this::updateDailyBrief,home::briefFailed); };

@@ -25,9 +25,11 @@ struct ContextNote: Decodable, Identifiable {
     let nextSteps: String?
     let learning: String?
     let outcome: String?
+    let approach: String?
+    let entryType: String?
     let projectURL: String?
     let occurredAt: String?
-    enum CodingKeys: String, CodingKey { case id, date, assistant, summary, issue, learning, outcome; case projectURL = "project_url"; case occurredAt = "occurred_at"; case nextSteps = "next_steps" }
+    enum CodingKeys: String, CodingKey { case id, date, assistant, summary, issue, learning, outcome, approach; case entryType = "entry_type"; case projectURL = "project_url"; case occurredAt = "occurred_at"; case nextSteps = "next_steps" }
 }
 
 struct ConversationItem: Identifiable { let id = UUID(); let role: String; let text: String }
@@ -188,6 +190,9 @@ struct ConversationItem: Identifiable { let id = UUID(); let role: String; let t
                         fields["next_steps"] = String((note.nextSteps ?? "").prefix(180))
                         fields["issue"] = String((note.issue ?? "").prefix(180))
                         fields["learning"] = String((note.learning ?? "").prefix(120))
+                        fields["approach"] = String((note.approach ?? "").prefix(120))
+                        fields["outcome"] = String((note.outcome ?? "").prefix(120))
+                        fields["entry_type"] = note.entryType ?? ""
                         fields["project_url"] = note.projectURL ?? ""
                         bounded.append(fields)
                     }
@@ -260,7 +265,16 @@ struct ConversationItem: Identifiable { let id = UUID(); let role: String; let t
         guard setup.ready else { message = "Set up Cully to reflect on saved notes using the local model."; return }
         reflectionGeneration += 1; let generation = reflectionGeneration
         reflectionBusy = true; reflectionStatus = "Finding a useful next step on your device…"
-        let evidence = notes.prefix(6).map { ["date": $0.date, "summary": $0.summary, "outcome": $0.outcome ?? "", "learning": $0.learning ?? "", "issue": $0.issue ?? "", "next_steps": $0.nextSteps ?? "", "project_url": $0.projectURL ?? ""] }
+        var evidence: [[String: String]] = []
+        for note in notes.prefix(6) {
+            var fields: [String: String] = [:]
+            fields["date"] = note.date; fields["summary"] = note.summary
+            fields["outcome"] = note.outcome ?? ""; fields["learning"] = note.learning ?? ""
+            fields["issue"] = note.issue ?? ""; fields["next_steps"] = note.nextSteps ?? ""
+            fields["project_url"] = note.projectURL ?? ""; fields["approach"] = note.approach ?? ""
+            fields["entry_type"] = note.entryType ?? ""
+            evidence.append(fields)
+        }
         chatTask = Task {
             defer { if generation == reflectionGeneration { reflectionBusy = false } }
             do {

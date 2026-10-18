@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Give mobile Self a dated Today briefing: last 24 hours, a sampled seven-day review, projects, recorded learnings and explicit continuation drafts. Add optional read-only time-window filters with timestamp/project evidence, clear coverage and older-server states, and local AI reflection in Today and Advisor; keep personal task changes explicit.
+- Give mobile Self a dated Today briefing: last 24 hours, a sampled seven-day review, projects, recorded learnings and explicit continuation drafts. Add optional read-only time-window filters with timestamp/project evidence, clear coverage and older-server states, and local AI reflection in Today and Advisor. Promote last-planned continuations, expand the saved approach/outcome in Recall how/why, and draft learning practice questions from recorded lessons; keep personal task changes explicit.
 
 ## 0.14.0
 
