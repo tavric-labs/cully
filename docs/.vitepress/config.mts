@@ -55,7 +55,8 @@ export default withMermaid(defineConfig({
           { text: 'Session intelligence', link: '/session-intelligence' },
           { text: 'Advisor', link: '/advisor' },
           { text: 'Project memory', link: '/memory' },
-          { text: 'Connect an agent', link: '/agents' }
+          { text: 'Connect an agent', link: '/agents' },
+          { text: 'Use Cully in T3 Code', link: '/t3code' }
         ]
       },
       {

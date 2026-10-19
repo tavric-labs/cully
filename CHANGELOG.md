@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Add optional T3 Code support: a guide for running several agents from one T3 Code window with shared Cully memory and handoffs, and a `cully setup` hint when `t3` is installed. Cully stays independent of T3 Code and works the same in a plain terminal.
 - Split E2E coverage into Solo setup/memory/session checks and an authenticated Team handoff, review, sharing and revocation workflow using production binaries. Refactor workspace routing into focused access, task, review and learning handlers with one shared action contract; fix the Go formatting failure.
 - Introduce the manual-launch Team workspace alongside Solo's agent copilot: OAuth-scoped project roles, stable tasks/dependencies, atomic claims, board/inbox, portable checkpoints, revision-pinned reported evidence and noncontributing-maintainer acceptance. Add transactional audit events, private lesson drafts, explicit project publication/edit/withdrawal and source-validated playbook adoption through MCP and `cully workspace`; private memory and journals stay separate. Update the website tagline, product vision, mode guides, architecture, privacy, deployment and capability docs. Migration 006 is required; managed execution and automatic learning remain planned.
 - Fix two macOS test harness issues: resolve temporary-directory symlinks when checking child working directories, and drain terminal output during the hangup test.

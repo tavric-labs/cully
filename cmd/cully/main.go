@@ -4,7 +4,9 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io"
 	"os"
+	"os/exec"
 	"strconv"
 
 	"github.com/mcp-runtime/cully/internal/cully"
@@ -151,9 +153,24 @@ func runSetup(args []string) error {
 			return err
 		}
 		fmt.Println("Setup complete. Restart your coding agent to load the Cully skill, hooks and MCP tools.")
+		printT3CodeHint(os.Stdout, exec.LookPath)
 		return nil
 	}
-	return runSelfHost(options.target, options.oauth, options.prepare)
+	if err := runSelfHost(options.target, options.oauth, options.prepare); err != nil {
+		return err
+	}
+	printT3CodeHint(os.Stdout, exec.LookPath)
+	return nil
+}
+
+// printT3CodeHint tells T3 Code users that Cully already works in it. T3 Code
+// starts the real agent CLIs, so setup needs no T3 Code configuration. The
+// hint is informational and never changes anything.
+func printT3CodeHint(w io.Writer, lookPath func(string) (string, error)) {
+	if _, err := lookPath("t3"); err != nil {
+		return
+	}
+	fmt.Fprintln(w, "T3 Code detected: agents it starts use the Cully MCP and hooks configured above. See https://docs.cully.net/t3code")
 }
 
 type setupOptions struct {
