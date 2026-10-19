@@ -64,6 +64,10 @@ Cursor's shell hook reports no exit code, so a failed Cursor command is not mark
 
 `cully run NAME` starts any executable on your PATH in the same terminal. It gets the health bar, Git state and the advisor panel. It gets tool counts, loops, replay and handoff only if the agent can run Cully's hook, because those come from tool events.
 
+## Running several agents in T3 Code
+
+If you switch between agents, [T3 Code](/t3code) can start them from one window. Cully needs no extra setup there. See [Use Cully in T3 Code](/t3code).
+
 ## If you already installed the advisor
 
 Use `cully mcp add --agent codex --url URL` to add only the MCP connection. Add `--oauth` when the server requires sign-in. If you installed Cully before the terminal hooks were available, rerun `cully setup --agent claude --all` (with your agent name; replace `--all` with `--mcp-url URL` if you use an existing server) to refresh the skill and hooks. Setup preserves unrelated agent configuration and does not replace a Cully connection that points at another URL. Run `cully status` to inspect the local integration.
