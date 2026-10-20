@@ -79,3 +79,20 @@ func TestMCPAddRequiresDeploymentURL(t *testing.T) {
 		t.Fatal("mcp add accepted a missing deployment URL")
 	}
 }
+
+func TestSetupProjectMigrationOptions(t *testing.T) {
+	project := t.TempDir()
+	options, err := parseSetup([]string{"--all", "--migrate-project", project})
+	if err != nil || options.migrateProject != project {
+		t.Fatalf("migration options: %+v, %v", options, err)
+	}
+	for _, args := range [][]string{
+		{"--all", "--migrate-project", ""},
+		{"--all", "--migrate-project", filepath.Join(project, "missing")},
+		{"--all", "--prepare", "--migrate-project", project},
+	} {
+		if _, err := parseSetup(args); err == nil {
+			t.Fatalf("accepted invalid migration args: %v", args)
+		}
+	}
+}

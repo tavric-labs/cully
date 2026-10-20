@@ -63,3 +63,7 @@ For per-user sign-in, set `CULLY_MCP_AUTH_MODE=oauth` or start `cully-mcp --oaut
 On MCP Runtime, `MCP_AUTH_ISSUER` and `MCP_AUTH_RESOURCE` take precedence over the matching `CULLY_AUTH_*` values. `MCP_PATH` changes the internal MCP transport path; it defaults to `/mcp`. These values do not enable OAuth by themselves.
 
 The Docker setup derives the public resource URL from `CULLY_MCP_HOST`; with MCP Auth it derives the issuer and JWKS URL from `CULLY_AUTH_HOST`. Set `CULLY_JWKS_URL` explicitly when an external authorization server uses a different endpoint. The public resource can have a route prefix even when the internal `MCP_PATH` is `/mcp`. See [OAuth setup](/oauth) and the [MCP Runtime example](/team-deployment#example-run-cully-with-mcp-runtime).
+
+## Agent installation scope
+
+Agent integrations are user-level: `~/.claude`, `~/.codex` and `~/.cursor`, honoring their configuration directory overrides. Setup works from any directory and does not create a repository `.cully` folder. See [installation paths and legacy migration](/installation#one-setup-across-projects). Cully deployment configuration under `~/.cully` belongs to your user account; project identity for sessions and memory comes from the active repository.

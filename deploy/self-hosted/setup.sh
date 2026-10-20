@@ -1,7 +1,6 @@
 #!/bin/sh
 set -eu
 
-setup_cwd=${CULLY_SETUP_CWD:-$(pwd)}
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 cd "$script_dir"
 
@@ -46,7 +45,7 @@ if ! command -v "$cli" >/dev/null 2>&1; then
     exit 1
   fi
 fi
-# Resolve before returning to the caller's project for agent integration.
+# Keep the CLI path absolute while configuring user-level integrations.
 cli=$(command -v "$cli")
 case "$cli" in /*) ;; *) cli="$script_dir/$cli" ;; esac
 stage='preparing credentials'
@@ -110,5 +109,4 @@ say '[7/7] Configuring agent skills, hooks and MCP connections; starting the adv
 set -- setup --mcp-url "$endpoint"
 [ -z "$agent" ] || set -- "$@" --agent "$agent"
 [ "$mode" = none ] || set -- "$@" --oauth
-cd "$setup_cwd"
 "$cli" "$@"

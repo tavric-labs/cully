@@ -22,6 +22,7 @@ Usage:
                                          Start the full local stack, integrations and advisor
   cully setup [--agent AGENT] --mcp-url URL [--oauth]
                                          Use an existing server; set up integrations and advisor
+    Add --migrate-project DIR to either setup mode to remove unchanged legacy project files.
   cully uninstall [--purge-data]           Stop local stack and remove managed agent setup
   cully uninstall [claude|codex|cursor|all] Remove one or all agent integrations
   cully update [--check] [--version TAG]   Update this machine's CLI and running advisor
@@ -194,12 +195,22 @@ func runSetup(args []string) error {
 		if err := checkSetupMCP(os.Stdout, options.endpoint, options.oauth); err != nil {
 			return err
 		}
+		if options.migrateProject != "" {
+			if err := cully.MigrateProjectIntegration(options.migrateProject, os.Stdout); err != nil {
+				return fmt.Errorf("user setup completed; project migration failed: %w", err)
+			}
+		}
 		fmt.Println("Setup complete. Restart your coding agent to load the Cully skill, hooks and MCP tools.")
 		printT3CodeHint(os.Stdout, exec.LookPath)
 		return nil
 	}
 	if err := runSelfHost(options.target, options.oauth, options.prepare); err != nil {
 		return err
+	}
+	if options.migrateProject != "" {
+		if err := cully.MigrateProjectIntegration(options.migrateProject, os.Stdout); err != nil {
+			return fmt.Errorf("user setup completed; project migration failed: %w", err)
+		}
 	}
 	printT3CodeHint(os.Stdout, exec.LookPath)
 	return nil
@@ -216,8 +227,8 @@ func printT3CodeHint(w io.Writer, lookPath func(string) (string, error)) {
 }
 
 type setupOptions struct {
-	target, endpoint string
-	oauth, prepare   bool
+	target, endpoint, migrateProject string
+	oauth, prepare                   bool
 }
 
 func parseSetup(args []string) (setupOptions, error) {
@@ -228,6 +239,7 @@ func parseSetup(args []string) (setupOptions, error) {
 	fs.StringVar(&options.endpoint, "mcp-url", "", "connect to an already deployed Cully MCP server")
 	fs.BoolVar(&options.oauth, "oauth", false, "server uses OAuth; print sign-in instructions")
 	fs.BoolVar(&options.prepare, "prepare", false, "with --all, prepare local configuration without starting services")
+	fs.StringVar(&options.migrateProject, "migrate-project", "", "remove unchanged legacy Cully integration from this project after user-level setup")
 	if err := fs.Parse(args); err != nil {
 		return setupOptions{}, err
 	}
@@ -243,12 +255,24 @@ func parseSetup(args []string) (setupOptions, error) {
 	if options.prepare && !*all {
 		return setupOptions{}, fmt.Errorf("--prepare requires --all")
 	}
+	if options.prepare && options.migrateProject != "" {
+		return setupOptions{}, fmt.Errorf("--migrate-project requires completed setup; omit --prepare")
+	}
+	if options.migrateProject != "" {
+		info, err := os.Lstat(options.migrateProject)
+		if err != nil {
+			return setupOptions{}, fmt.Errorf("migration project: %w", err)
+		}
+		if !info.IsDir() {
+			return setupOptions{}, fmt.Errorf("--migrate-project requires a directory, not a symlink or file")
+		}
+	}
 	if options.target != "" && options.target != "claude" && options.target != "codex" && options.target != "cursor" && options.target != "all" {
 		return setupOptions{}, fmt.Errorf("choose --agent claude, codex, cursor, or all")
 	}
 	var emptyFlag string
 	fs.Visit(func(f *flag.Flag) {
-		if f.Name == "agent" && options.target == "" || f.Name == "mcp-url" && options.endpoint == "" {
+		if f.Name == "agent" && options.target == "" || f.Name == "mcp-url" && options.endpoint == "" || f.Name == "migrate-project" && options.migrateProject == "" {
 			emptyFlag = f.Name
 		}
 	})

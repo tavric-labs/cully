@@ -395,72 +395,76 @@ func TestMalformedStopHookReplaced(t *testing.T) {
 	}
 }
 
-func TestInstallCodexAndCursorProjectFiles(t *testing.T) {
-	dir := t.TempDir()
-	codexHome := filepath.Join(dir, "codex-home")
-	t.Setenv("CODEX_HOME", codexHome)
-	t.Setenv("CURSOR_CONFIG_DIR", filepath.Join(dir, "cursor-home"))
-	// Exercise the target helpers directly so the test does not chdir the whole
-	// process or write AGENTS.md into the checked-out repository.
-	if err := installCodex(dir); err != nil {
+func TestInstallCodexAndCursorUserFiles(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("CODEX_HOME", filepath.Join(home, "codex-home"))
+	t.Setenv("CURSOR_CONFIG_DIR", filepath.Join(home, "cursor-home"))
+	if err := os.MkdirAll(CodexConfigDir(), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := installCursor(dir); err != nil {
+	const custom = "# My instructions\n\nPreserve my preferences.\n"
+	if err := os.WriteFile(codexInstructionsPath(), []byte(custom), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := installCodex(dir); err != nil {
-		t.Fatal(err)
+	for i := 0; i < 2; i++ {
+		project := t.TempDir()
+		t.Chdir(project)
+		if err := installCodex(); err != nil {
+			t.Fatal(err)
+		}
+		if err := installCursor(); err != nil {
+			t.Fatal(err)
+		}
+		for _, agent := range []string{"codex", "cursor"} {
+			if err := installMemorySkill(agent); err != nil {
+				t.Fatal(err)
+			}
+		}
+		entries, err := os.ReadDir(project)
+		if err != nil || len(entries) != 0 {
+			t.Fatalf("setup changed project: %v, %v", entries, err)
+		}
 	}
-	if err := installCursor(dir); err != nil {
-		t.Fatal(err)
-	}
-
-	agents, err := os.ReadFile(filepath.Join(dir, "AGENTS.md"))
+	agents, err := os.ReadFile(codexInstructionsPath())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Count(string(agents), managedStart("codex")) != 1 || !strings.Contains(string(agents), ".cully/skills/cully/SKILL.md") {
-		t.Fatalf("Codex AGENTS.md install not idempotent/useful: %s", agents)
+	if !strings.HasPrefix(string(agents), custom) || strings.Count(string(agents), managedStart("codex")) != 1 || !strings.Contains(string(agents), filepath.Join(CodexConfigDir(), "skills", "cully", "SKILL.md")) {
+		t.Fatalf("global instructions lost custom rules or are not idempotent: %s", agents)
 	}
-	skill, err := os.ReadFile(sharedSkillPath(dir, "cully"))
-	if err != nil {
+	for _, dir := range []string{CodexConfigDir(), CursorConfigDir()} {
+		skill, err := os.ReadFile(filepath.Join(dir, "skills", "cully", "SKILL.md"))
+		if err != nil || !strings.Contains(string(skill), "cully apply <n> --dry-run") {
+			t.Fatalf("global skill: %v", err)
+		}
+	}
+	for _, path := range []string{codexPromptPath(), cursorCommandPath()} {
+		if _, err := os.Stat(path); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Uninstall from a third project; legacy repository files must stay untouched.
+	project := t.TempDir()
+	t.Chdir(project)
+	if err := upsertManagedSection(filepath.Join(project, "AGENTS.md"), "codex", legacyCodexAgentInstructions()); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(skill), "cully apply <n> --dry-run") {
-		t.Fatalf("shared skill missing cully workflow: %s", skill)
-	}
-	if !strings.Contains(string(agents), ".cully/skills/cully/SKILL.md") {
-		t.Fatalf("Codex pointer should reference shared skill: %s", agents)
-	}
-	prompt, err := os.ReadFile(codexPromptPath())
-	if err != nil || !strings.Contains(string(prompt), "cully:codex-command:start") {
-		t.Fatalf("Codex install should write the managed cully prompt: %v\n%s", err, prompt)
-	}
-	if _, err := os.Stat(codexConfigPath()); !os.IsNotExist(err) {
-		t.Fatalf("Codex install should leave native footer configuration alone: %v", err)
-	}
-	cursorCommand, err := os.ReadFile(cursorCommandPath(dir))
-	if err != nil || !strings.Contains(string(cursorCommand), "/cully status") {
-		t.Fatalf("Cursor install should write the cully command: %v\n%s", err, cursorCommand)
-	}
-
-	if err := uninstallCodex(dir); err != nil {
+	before, _ := os.ReadFile(filepath.Join(project, "AGENTS.md"))
+	if err := Uninstall("codex", "cursor"); err != nil {
 		t.Fatal(err)
 	}
-	if err := uninstallCursor(dir); err != nil {
-		t.Fatal(err)
+	after, _ := os.ReadFile(filepath.Join(project, "AGENTS.md"))
+	if string(before) != string(after) {
+		t.Fatal("uninstall modified legacy project instructions")
 	}
-	if _, err := os.Stat(sharedSkillPath(dir, "cully")); err != nil {
-		t.Fatalf("shared skill should remain usable by all agents: %v", err)
+	agents, err = os.ReadFile(codexInstructionsPath())
+	if err != nil || string(agents) != custom {
+		t.Fatalf("uninstall lost user guidance: %q, %v", agents, err)
 	}
-	if _, err := os.Stat(codexPromptPath()); !os.IsNotExist(err) {
-		t.Fatalf("Codex prompt should be removed on uninstall: %v", err)
-	}
-	if _, err := os.Stat(codexConfigPath()); !os.IsNotExist(err) {
-		t.Fatalf("Codex config created only by Cully should be removed on uninstall: %v", err)
-	}
-	if _, err := os.Stat(cursorCommandPath(dir)); !os.IsNotExist(err) {
-		t.Fatalf("Cursor command should be removed on uninstall: %v", err)
+	for _, path := range []string{codexPromptPath(), cursorCommandPath(), filepath.Join(CodexConfigDir(), "skills", "cully", "SKILL.md"), filepath.Join(CursorConfigDir(), "skills", "cully", "SKILL.md")} {
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Fatalf("managed user file remains: %s: %v", path, err)
+		}
 	}
 }
 
@@ -482,7 +486,7 @@ func TestCodexInstallPreservesExistingPromptAndStatusLine(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := installCodex(dir); err != nil {
+	if err := installCodex(); err != nil {
 		t.Fatal(err)
 	}
 	prompt, err := os.ReadFile(codexPromptPath())
@@ -494,7 +498,7 @@ func TestCodexInstallPreservesExistingPromptAndStatusLine(t *testing.T) {
 		t.Fatalf("existing Codex status line was overwritten: %v %q", err, config)
 	}
 
-	if err := uninstallCodex(dir); err != nil {
+	if err := uninstallCodex(); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(codexPromptPath()); err != nil {
@@ -518,7 +522,7 @@ func TestCodexManagedStatusLineMigration(t *testing.T) {
 	if err := os.WriteFile(path, []byte("[tui]\n"+legacyBlock+"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := installCodex(dir); err != nil {
+	if err := installCodex(); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
@@ -529,7 +533,7 @@ func TestCodexManagedStatusLineMigration(t *testing.T) {
 	if err := os.WriteFile(path, []byte(existing), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := installCodex(dir); err != nil {
+	if err := installCodex(); err != nil {
 		t.Fatal(err)
 	}
 	b, err := os.ReadFile(path)
@@ -640,24 +644,32 @@ func TestDetectedInstallTargets(t *testing.T) {
 	t.Setenv("CURSOR_CONFIG_DIR", filepath.Join(home, ".cursor"))
 	t.Setenv("PATH", bin)
 
-	if got := strings.Join(detectedInstallTargets(dir), ","); got != "claude" {
+	if err := os.MkdirAll(filepath.Join(dir, ".cursor"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "AGENTS.md"), []byte("# project"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(dir)
+
+	if got := strings.Join(detectedInstallTargets(), ","); got != "claude" {
 		t.Fatalf("empty machine should fall back to claude, got %q", got)
 	}
 
 	if err := os.WriteFile(filepath.Join(bin, "codex"), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(filepath.Join(dir, ".cursor"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(home, ".cursor"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if got := strings.Join(detectedInstallTargets(dir), ","); got != "codex,cursor" {
+	if got := strings.Join(detectedInstallTargets(), ","); got != "codex,cursor" {
 		t.Fatalf("should detect installed/configured agents, got %q", got)
 	}
 
 	if err := os.MkdirAll(filepath.Join(home, ".claude"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if got := strings.Join(detectedInstallTargets(dir), ","); got != "claude,codex,cursor" {
+	if got := strings.Join(detectedInstallTargets(), ","); got != "claude,codex,cursor" {
 		t.Fatalf("should preserve stable install order, got %q", got)
 	}
 }

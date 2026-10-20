@@ -141,7 +141,7 @@ func auditHarness(d harnessDirs) []harnessItem {
 		}
 	}
 	instructions := firstExisting(
-		under(d.Claude, "CLAUDE.md"), under(d.Codex, "AGENTS.md"),
+		under(d.Claude, "CLAUDE.md"), under(d.Codex, "AGENTS.override.md"), under(d.Codex, "AGENTS.md"),
 		under(d.Project, "CLAUDE.md"), under(d.Project, "AGENTS.md"),
 		under(d.Project, ".cursorrules"),
 	)

@@ -23,16 +23,17 @@ func TestSetupLifecycle(t *testing.T) {
 		t.Fatalf("build CLI: %v: %s", err, output)
 	}
 	for _, test := range []struct {
-		name, endpoint, failure string
-		args                    []string
-		agents                  []string
-		prepare, oauth, remote  bool
+		name, endpoint, failure         string
+		args                            []string
+		agents                          []string
+		prepare, oauth, remote, migrate bool
 	}{
 		{name: "detect agents", args: []string{"--all"}, agents: []string{"codex", "cursor"}},
 		{name: "selected agent", args: []string{"--agent", "codex", "--all"}, agents: []string{"codex"}},
 		{name: "all agents", args: []string{"--agent", "all", "--all"}, agents: []string{"claude", "codex", "cursor"}},
 		{name: "OAuth", args: []string{"--agent", "codex", "--oauth", "--mcp-url", "mock"}, agents: []string{"codex"}, oauth: true, remote: true},
 		{name: "existing server", args: []string{"--agent", "codex", "--mcp-url", "https://mcp.example.test/mcp"}, agents: []string{"codex"}, remote: true, endpoint: "https://mcp.example.test/mcp"},
+		{name: "migrate project", args: []string{"--agent", "codex", "--mcp-url", "mock"}, agents: []string{"codex"}, remote: true, migrate: true},
 		{name: "prepare only", args: []string{"--all", "--prepare"}, prepare: true},
 		{name: "Docker failure", args: []string{"--all"}, failure: "Docker"},
 		{name: "advisor failure", args: []string{"--all"}, failure: "advisor"},
@@ -73,6 +74,18 @@ func TestSetupLifecycle(t *testing.T) {
 				if err := os.WriteFile(path, []byte(data), 0o700); err != nil {
 					t.Fatal(err)
 				}
+			}
+			if test.migrate {
+				skill, err := os.ReadFile(filepath.Join("..", "..", "skills", "cully", "SKILL.md"))
+				if err != nil {
+					t.Fatal(err)
+				}
+				path := filepath.Join(project, ".cully", "skills", "cully", "SKILL.md")
+				if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+					t.Fatal(err)
+				}
+				write(path, string(skill))
+				args = append(args, "--migrate-project", project)
 			}
 			for _, name := range []string{"setup.sh", ".env.example", "connectors.keycloak.example.json"} {
 				contents, err := os.ReadFile(filepath.Join("..", "..", "deploy", "self-hosted", name))
@@ -200,8 +213,16 @@ esac
 					t.Fatalf("explicit Codex setup modified Cursor: %v", err)
 				}
 			}
-			if _, err := os.Stat(filepath.Join(project, "AGENTS.md")); err != nil {
-				t.Fatalf("missing project integration: %v", err)
+			if _, err := os.Stat(filepath.Join(root, ".codex", "AGENTS.md")); err != nil {
+				t.Fatalf("missing user-level integration: %v", err)
+			}
+			if entries, err := os.ReadDir(project); err != nil || len(entries) != 0 {
+				t.Fatalf("setup changed project: %v, %v", entries, err)
+			}
+			if len(test.agents) > 1 {
+				if _, err := os.Stat(filepath.Join(root, ".cursor", "commands", "cully.md")); err != nil {
+					t.Fatal(err)
+				}
 			}
 			if _, err := os.Stat(filepath.Join(setupDir, "AGENTS.md")); !os.IsNotExist(err) {
 				t.Fatalf("integration written to downloaded stack: %v", err)
@@ -215,8 +236,15 @@ esac
 			if err != nil {
 				t.Fatal(err)
 			}
+			project = filepath.Join(root, "another project")
+			if err := os.MkdirAll(project, 0o700); err != nil {
+				t.Fatal(err)
+			}
 			if output, err := runCLI(append([]string{"setup"}, args...)...); err != nil {
-				t.Fatalf("repeat setup: %v: %s", err, output)
+				t.Fatalf("repeat setup from another project: %v: %s", err, output)
+			}
+			if entries, err := os.ReadDir(project); err != nil || len(entries) != 0 {
+				t.Fatalf("repeat setup changed project: %v, %v", entries, err)
 			}
 			repeatedPID, err := os.ReadFile(pidPath)
 			if err != nil || string(pid) != string(repeatedPID) {

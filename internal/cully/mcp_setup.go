@@ -19,13 +19,9 @@ func AddMCP(w io.Writer, agent, endpoint string, oauth bool) error {
 		return err
 	}
 	if agent == "" {
-		cwd, err := os.Getwd()
-		if err != nil {
-			return err
-		}
 		var detected []string
 		for _, spec := range agentCatalog() {
-			if codingAgentPresent(spec.ID, cwd) {
+			if codingAgentInstalled(spec.ID) {
 				detected = append(detected, spec.ID)
 			}
 		}

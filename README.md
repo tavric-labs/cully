@@ -29,7 +29,7 @@ cully setup --all      # start local memory services and connect your agents
 cully run codex        # or claude, cursor, another executable
 ```
 
-The local memory stack requires Docker. For an existing server, use `cully setup --mcp-url URL`. See the [quickstart](https://docs.cully.net/quickstart) for prerequisites and other agents.
+Setup is user-wide: run it once, then use Cully in any project. No project `.cully` folder is required. The local memory stack requires Docker. For an existing server, use `cully setup --mcp-url URL`. See the [quickstart](https://docs.cully.net/quickstart) for prerequisites and other agents.
 
 ## What you get
 

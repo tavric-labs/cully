@@ -13,7 +13,7 @@ import (
 )
 
 // Install registers cully for one or more coding agents. With no target it
-// auto-detects coding agents present on this machine/project and installs those
+// auto-detects coding agents installed on this machine and installs those
 // integrations.
 func Install(targets ...string) error {
 	return InstallWithMCP("", false, targets...)
@@ -27,24 +27,23 @@ func InstallWithMCP(endpoint string, oauth bool, targets ...string) error {
 			return err
 		}
 	}
-	cwd, _ := os.Getwd()
 	if len(targets) == 0 {
-		targets = detectedInstallTargets(cwd)
+		targets = detectedInstallTargets()
 		fmt.Printf("Detected coding agents: %s\n", strings.Join(targets, ", "))
 	}
 	for _, target := range expandInstallTargets(targets) {
-		fmt.Printf("Configuring %s hooks and controls in %s\n", target, cwd)
+		fmt.Printf("Configuring %s hooks and controls for this user\n", target)
 		switch target {
 		case "claude":
 			if err := installClaude(); err != nil {
 				return err
 			}
 		case "codex":
-			if err := installCodex(cwd); err != nil {
+			if err := installCodex(); err != nil {
 				return err
 			}
 		case "cursor":
-			if err := installCursor(cwd); err != nil {
+			if err := installCursor(); err != nil {
 				return err
 			}
 		default:
@@ -96,14 +95,14 @@ func installMemorySkill(target string) error {
 	return nil
 }
 
-func detectedInstallTargets(cwd string) []string {
+func detectedInstallTargets() []string {
 	var ordered []string
 	for _, spec := range agentCatalog() {
 		ordered = append(ordered, spec.ID)
 	}
 	var out []string
 	for _, id := range ordered {
-		if codingAgentPresent(id, cwd) {
+		if codingAgentInstalled(id) {
 			out = append(out, id)
 		}
 	}
@@ -112,6 +111,13 @@ func detectedInstallTargets(cwd string) []string {
 		out = []string{"claude"}
 	}
 	return out
+}
+
+// codingAgentInstalled deliberately ignores repository files: setup changes the
+// user's agent configuration, so detection must have the same scope.
+func codingAgentInstalled(id string) bool {
+	spec, ok := lookupAgentSpec(id)
+	return ok && (dirExists(spec.ConfigDir()) || commandExists(spec.Binary) || commandExists(spec.ID))
 }
 
 func codingAgentPresent(id, cwd string) bool {
@@ -176,14 +182,8 @@ func installClaude() error {
 	return nil
 }
 
-func installCodex(cwd string) error {
-	if cwd == "" {
-		cwd, _ = os.Getwd()
-	}
-	if err := upsertManagedSection(filepath.Join(cwd, "AGENTS.md"), "codex", codexAgentInstructions()); err != nil {
-		return err
-	}
-	if err := writeSharedSkill(cwd, "cully", cullySkill()); err != nil {
+func installCodex() error {
+	if err := upsertManagedSection(codexInstructionsPath(), "codex", codexAgentInstructions()); err != nil {
 		return err
 	}
 	// Older Cully installs added a managed native footer. The status view is
@@ -199,31 +199,25 @@ func installCodex(cwd string) error {
 	} else if !wrote {
 		fmt.Printf("Preserved existing Codex prompt -> %s\n", codexPromptPath())
 	}
-	fmt.Printf("\033[32mInstalled.\033[0m Registered Cully for Codex in %s\n", cwd)
+	fmt.Printf("\033[32mInstalled.\033[0m Registered Cully for Codex in %s\n", CodexConfigDir())
 	fmt.Printf("Codex continuity hooks configured in %s; review them with /hooks.\n", codexHooksPath())
 	fmt.Printf("Codex cully prompt available as /prompts:cully -> %s\n", codexPromptPath())
 	fmt.Println("For the live status view, start Codex with: cully run codex")
 	return nil
 }
 
-func installCursor(cwd string) error {
-	if cwd == "" {
-		cwd, _ = os.Getwd()
-	}
-	if err := writeSharedSkill(cwd, "cully", cullySkill()); err != nil {
-		return err
-	}
+func installCursor() error {
 	if err := installCursorContinuityHooks(); err != nil {
 		return fmt.Errorf("configure Cursor continuity hooks: %w", err)
 	}
-	if wrote, err := writeCursorCommand(cwd); err != nil {
+	if wrote, err := writeCursorCommand(); err != nil {
 		return fmt.Errorf("install Cursor cully command: %w", err)
 	} else if !wrote {
-		fmt.Printf("Preserved existing Cursor command -> %s\n", cursorCommandPath(cwd))
+		fmt.Printf("Preserved existing Cursor command -> %s\n", cursorCommandPath())
 	}
-	fmt.Printf("\033[32mInstalled.\033[0m Registered shared Cully skill for Cursor in %s\n", sharedSkillPath(cwd, "cully"))
+	fmt.Printf("\033[32mInstalled.\033[0m Registered Cully for Cursor in %s\n", CursorConfigDir())
 	fmt.Printf("Cursor continuity hooks configured in %s\n", cursorHooksPath())
-	fmt.Printf("Cursor cully command available as /cully -> %s\n", cursorCommandPath(cwd))
+	fmt.Printf("Cursor cully command available as /cully -> %s\n", cursorCommandPath())
 	fmt.Println("For the live status view, start Cursor with: cully run cursor")
 	return nil
 }
@@ -234,7 +228,6 @@ func Uninstall(targets ...string) error {
 	if len(targets) == 0 {
 		targets = []string{"claude"}
 	}
-	cwd, _ := os.Getwd()
 	for _, target := range expandInstallTargets(targets) {
 		switch target {
 		case "claude":
@@ -242,11 +235,11 @@ func Uninstall(targets ...string) error {
 				return err
 			}
 		case "codex":
-			if err := uninstallCodex(cwd); err != nil {
+			if err := uninstallCodex(); err != nil {
 				return err
 			}
 		case "cursor":
-			if err := uninstallCursor(cwd); err != nil {
+			if err := uninstallCursor(); err != nil {
 				return err
 			}
 		default:
@@ -337,12 +330,11 @@ func uninstallClaude() error {
 	return nil
 }
 
-func uninstallCodex(cwd string) error {
-	if cwd == "" {
-		cwd, _ = os.Getwd()
-	}
-	if err := removeManagedSection(filepath.Join(cwd, "AGENTS.md"), "codex"); err != nil {
-		return err
+func uninstallCodex() error {
+	for _, name := range []string{"AGENTS.md", "AGENTS.override.md"} {
+		if err := removeManagedSection(filepath.Join(CodexConfigDir(), name), "codex"); err != nil {
+			return err
+		}
 	}
 	if err := removeOwnedFile(codexPromptPath(), codexCommandMarkerStart); err != nil {
 		return err
@@ -353,28 +345,19 @@ func uninstallCodex(cwd string) error {
 	if err := uninstallCodexContinuityHooks(); err != nil {
 		return err
 	}
-	fmt.Printf("\033[32mUninstalled.\033[0m Removed Cully Codex integration from %s\n", cwd)
+	fmt.Printf("\033[32mUninstalled.\033[0m Removed Cully Codex integration from %s\n", CodexConfigDir())
 	return nil
 }
 
-func uninstallCursor(cwd string) error {
-	if cwd == "" {
-		cwd, _ = os.Getwd()
-	}
-	if err := removeOwnedFile(cursorCommandPath(cwd), cursorCommandMarkerStart); err != nil {
+func uninstallCursor() error {
+	if err := removeOwnedFile(cursorCommandPath(), cursorCommandMarkerStart); err != nil {
 		return err
 	}
 	if err := uninstallCursorContinuityHooks(); err != nil {
 		return err
 	}
-	fmt.Printf("\033[32mUninstalled.\033[0m Removed Cursor cully command; shared skill remains at %s\n", sharedSkillPath(cwd, "cully"))
+	fmt.Printf("\033[32mUninstalled.\033[0m Removed Cully Cursor integration from %s\n", CursorConfigDir())
 	return nil
-}
-
-// RemoveSharedSkillIfUnchanged removes the project skill after all local agent
-// integrations are removed. Modified project instructions remain user-owned.
-func RemoveSharedSkillIfUnchanged(cwd string) error {
-	return removeCullySkillIfUnchanged(sharedSkillPath(cwd, "cully"))
 }
 
 func removeCullySkillIfUnchanged(path string) error {
@@ -606,7 +589,10 @@ func managedEnd(id string) string   { return "<!-- cully:" + id + ":end -->" }
 
 func upsertManagedSection(path, id, section string) error {
 	start, end := managedStart(id), managedEnd(id)
-	existing, _ := os.ReadFile(path)
+	existing, err := os.ReadFile(path)
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
 	body := strings.TrimSpace(section)
 	prefix := ""
 	if strings.HasSuffix(path, ".mdc") && strings.HasPrefix(body, "---\n") {
@@ -675,6 +661,11 @@ func mdcFrontmatterOnly(text string) bool {
 }
 
 func codexAgentInstructions() string {
+	return strings.ReplaceAll(legacyCodexAgentInstructions(), "Use the shared project skill at `.cully/skills/cully/SKILL.md`", "Use the user-level Cully skill at `"+filepath.Join(CodexConfigDir(), "skills", "cully", "SKILL.md")+"`")
+}
+
+// Kept for exact-match migration of older, generated project instructions.
+func legacyCodexAgentInstructions() string {
 	return `## Cully
 
 - Use the shared project skill at ` + "`.cully/skills/cully/SKILL.md`" + ` for Cully session controls.
@@ -685,16 +676,4 @@ func codexAgentInstructions() string {
 
 func cullySkill() string {
 	return cullyskill.Content
-}
-
-func writeSharedSkill(cwd, name, content string) error {
-	name = strings.Trim(name, "/")
-	if name == "" {
-		return fmt.Errorf("empty skill name")
-	}
-	dir := filepath.Dir(sharedSkillPath(cwd, name))
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return err
-	}
-	return os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte(strings.TrimSpace(content)+"\n"), 0o644)
 }

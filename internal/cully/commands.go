@@ -96,7 +96,7 @@ func writeIntegrations(w io.Writer, cwd string) {
 	codexHooks, _ := loadHookConfig(codexHooksPath())
 	printIntegrationLine(w, "Codex continuity", hookConfigured(codexHooks, "SessionStart", "continuity codex start"))
 	printIntegrationLine(w, "Codex terminal signals", hookConfigured(codexHooks, "PostToolUse", "codex-signal"))
-	printIntegrationLine(w, "Cursor /cully", fileExists(cursorCommandPath(cwd)))
+	printIntegrationLine(w, "Cursor /cully", fileExists(cursorCommandPath()))
 	cursorHooks, _ := loadHookConfig(cursorHooksPath())
 	printIntegrationLine(w, "Cursor continuity", cursorHookConfigured(cursorHooks, "sessionStart", "continuity cursor start") && cursorHookConfigured(cursorHooks, "afterAgentResponse", "continuity cursor response") && cursorHookConfigured(cursorHooks, "stop", "continuity cursor stop"))
 	printIntegrationLine(w, "Cursor terminal signals", cursorHookConfigured(cursorHooks, "afterShellExecution", cursorSignalSub) && cursorHookConfigured(cursorHooks, "afterFileEdit", cursorSignalSub) && cursorHookConfigured(cursorHooks, "afterMCPExecution", cursorSignalSub))

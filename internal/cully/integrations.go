@@ -42,22 +42,30 @@ Run the Cully executable for this request.
 <!-- cully:cursor-command:end -->
 `
 
+func codexInstructionsPath() string {
+	override := filepath.Join(CodexConfigDir(), "AGENTS.override.md")
+	if _, err := os.Stat(override); !os.IsNotExist(err) {
+		return override
+	}
+	return filepath.Join(CodexConfigDir(), "AGENTS.md")
+}
+
 func codexConfigPath() string { return filepath.Join(CodexConfigDir(), "config.toml") }
 
 func codexPromptPath() string {
 	return filepath.Join(CodexConfigDir(), "prompts", "cully.md")
 }
 
-func cursorCommandPath(cwd string) string {
-	return filepath.Join(cwd, ".cursor", "commands", "cully.md")
+func cursorCommandPath() string {
+	return filepath.Join(CursorConfigDir(), "commands", "cully.md")
 }
 
 func writeCodexPrompt() (bool, error) {
 	return writeOwnedFile(codexPromptPath(), codexCommandMarkerStart, codexCullyPrompt)
 }
 
-func writeCursorCommand(cwd string) (bool, error) {
-	return writeOwnedFile(cursorCommandPath(cwd), cursorCommandMarkerStart, cursorCullyCommand)
+func writeCursorCommand() (bool, error) {
+	return writeOwnedFile(cursorCommandPath(), cursorCommandMarkerStart, cursorCullyCommand)
 }
 
 // writeOwnedFile creates or refreshes a file written by Cully. An

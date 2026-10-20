@@ -22,7 +22,7 @@ See [how Cully works](/how-cully-works) for the product-level picture.
 
 ## Local session companion
 
-`cully setup --all` owns the complete local startup: Docker memory services, agent integrations in the invoking project, and the advisor daemon. `--mcp-url` uses an existing memory server; `--prepare` only prepares editable configuration. Startup failures return a nonzero exit status.
+`cully setup --all` owns the complete local startup: Docker memory services, user-level agent integrations shared across projects, and the advisor daemon. `--mcp-url` uses an existing memory server; `--prepare` only prepares editable configuration. Startup failures return a nonzero exit status. Setup and uninstall never write into the invoking project. Explicit `--migrate-project DIR` cleanup preserves modified legacy files; session project identity and owner-scoped memory remain separate from installation scope.
 
 `cmd/cully` uses the session-control implementation in `internal/cully`. It runs agents in the terminal, renders instruments, runs advisory analysis, manages suggestions and records the session journal.
 

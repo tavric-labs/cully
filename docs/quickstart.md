@@ -13,17 +13,19 @@ Pick your agent, then copy the command:
 
 <InstallCommand />
 
-The installer puts Cully in that agent's `bin` directory and adds the directory to your zsh or Bash startup file when needed. The setup command in step 2 installs the integrations and starts all components, including the advisor. Open a new terminal before the next step, or use the installed binary path printed by the installer.
+The installer puts Cully at `~/.local/bin/cully`, links it into agent `bin` directories and adds the canonical directory to your shell's PATH when needed. The setup command in step 2 installs the integrations and starts all components, including the advisor. Open a new terminal before the next step, or use the installed binary path printed by the installer.
 
 For source builds, version pinning or custom PATH setup, see [installer options](/installation).
 
-## 2. Set up Cully locally
+## 2. Set up Cully once for your user
 
 With Docker running, connect the agent you installed:
 
 <InstallCommand kind="setup" />
 
 Use the same agent you picked in step 1, or run bare `cully setup --all` to detect installed agents automatically. This one command downloads the matching local stack, creates private credentials that stay stable across restarts, and starts PostgreSQL, Mem0, the private data API and Cully MCP in Docker. It connects your agent to MCP, configures the Cully skill, session hooks and [agent-specific controls](/agents), and starts the local advisor daemon if needed. Setup only reports completion after the advisor is running. A component failure exits with an error; fix it and rerun the same setup command to retry. See [what runs on your laptop](/hosting#what-starts-on-your-laptop).
+
+Setup writes to your home and agent user configuration, regardless of where you run it. No project `.cully` directory or repository changes are required. It works across your projects while keeping memory associated with each active repository. See [paths and migration from older installs](/installation#one-setup-across-projects).
 
 When `Setup complete` appears, restart your agent. In Codex, review and trust the installed Cully hooks in `/hooks` when asked. You do not need a repository checkout or OAuth for this laptop setup.
 
@@ -71,7 +73,7 @@ You can also use Cully inside your agent:
 | --- | --- |
 | Claude Code | Start `cully run claude` for the health bar and advisor panel, or run `/cully suggestions`. |
 | Codex | Start `cully run codex` for the health bar and advisor panel, or run `/prompts:cully suggestions`. |
-| Cursor | Start `cully run cursor` for the health bar and advisor panel, or run the project `/cully suggestions` command. |
+| Cursor | Start `cully run cursor` for the health bar and advisor panel, or run the user-level `/cully suggestions` command. |
 
 If Cully lists a numbered improvement, use its number with `cully apply 1 --dry-run` to inspect the proposed change. Review it before applying. `cully status` also shows whether the advisor daemon is running; if startup failed, run `cully setup --agent codex --all` with your agent name to retry. See the [advisor commands](/advisor#commands) for the rest.
 
