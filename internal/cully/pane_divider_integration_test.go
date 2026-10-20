@@ -81,6 +81,12 @@ func TestPaneDividerResizesRealChildAndPreservesInput(t *testing.T) {
 				_, _ = master.Write([]byte{0x1c})
 				waitFor("\x1b[?1002h")
 			}
+			// Real hover events must reach both the grip and host cursor. These
+			// helpers used to exist without being called by the input loop.
+			_, _ = master.Write([]byte(fmt.Sprintf("\x1b[<35;10;%dM", initial+1)))
+			waitFor("\x1b]22;ns-resize\x1b\\")
+			_, _ = master.Write([]byte("\x1b[<35;10;1M"))
+			waitFor("\x1b]22;default\x1b\\")
 			// Split drag reports across reads, then send ordinary input to the child.
 			_, _ = master.Write([]byte(fmt.Sprintf("\x1b[<0;10;%dM", initial+1)))
 			_, _ = master.Write([]byte("\x1b[<32;10;"))

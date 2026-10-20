@@ -92,6 +92,7 @@ func installMemorySkill(target string) error {
 	if !wrote {
 		fmt.Printf("Preserved user-owned Cully skill -> %s\n", path)
 	}
+	linkWorkflowSkill(os.Stdout, dir)
 	return nil
 }
 

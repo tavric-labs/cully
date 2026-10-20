@@ -86,6 +86,14 @@ After deployment, check that the Cully Deployment's updated and ready replicas m
   <p class="related-product__contact">If your team needs a platform for MCP servers, <a href="mailto:princekrroshan01@gmail.com?subject=MCP%20Runtime%20for%20our%20team">contact the maintainer</a>.</p>
 </div>
 
+## Upgrade services
+
+`cully update` upgrades the CLI on the machine where you run it and restarts an already running local advisor. It does not deploy services or infer whether your stack uses local Compose, a remote VM or Kubernetes. Each user can update their CLI independently; features requiring newer MCP tools also need an operator to upgrade the service stack.
+
+For a service upgrade, review the target release notes and take backups of your databases, persistent volumes and deployment configuration. Select matching release tags for Cully MCP, the data API and Mem0. Use your existing deployment tooling to pull or publish those images, run `cully-data migrate` against the source database, and roll out the services. Preserve your existing environment, secrets, owner/auth settings and volumes. Verify container health, the public MCP route, sign-in where enabled, and a memory read/write with a test owner before declaring the upgrade complete. Retain the prior images and backups; database migrations may require a restore rather than an image-only rollback.
+
+For a stack created by `cully setup --all`, review the generated files under `~/.cully/self-hosted` and the [reference Compose deployment](https://github.com/tavric-labs/cully/tree/main/deploy/self-hosted) before changing service versions. `cully setup` remains the command for local service startup and managed agent integrations; the CLI updater leaves that configuration in place.
+
 ## Connect sign-in
 
 1. Choose the public MCP URL, such as `https://mcp.example.com/mcp`, and an authorization-server URL. The exact MCP URL must be the token's resource audience.

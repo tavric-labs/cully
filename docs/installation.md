@@ -52,6 +52,28 @@ The installer downloads the latest released CLI and runs setup with that URL. Se
 
 `--mcp-url` selects the remote server. Keep `--oauth` for an OAuth-protected team endpoint, as shown above; omit it for a trusted private single-user endpoint. `--agent` selects the integration; if omitted, setup detects installed coding agents. If the CLI is already installed, run `cully setup --agent AGENT --mcp-url URL --oauth` for a team endpoint. See [connect an agent](/agents) for sign-in and the [connection map](/team-deployment#connect-the-components) for remote services.
 
+## Optional workflow skill
+
+On your first interactive Cully launch or setup, Cully offers to create a `dev-workflow-rules` skill. Accept to describe your responsibilities, codebases, build/test/release habits, infrastructure aliases, intended read/write boundaries and advisor preferences. You see a preview and confirm before anything is saved. You can skip; Cully remembers that choice. Run `cully workflow` later, or `cully workflow --skip` to skip onboarding in advance.
+
+The skill lives at `~/.cully/skills/dev-workflow-rules/SKILL.md` with private permissions and is linked into already configured agents' skill directories. Existing skills with that name are preserved. Edit the skill directly as your work changes. The advisor reads up to 12 KiB of this context for its next analysis, with common credential patterns redacted, and supplies it to your configured coding agent/model. Cully does not automatically save it to memory or add it to web research queries.
+
+Use safe repository references, VM/cluster aliases and references to existing tool configuration. Do not include passwords, API tokens, private keys or credential-bearing URLs. The skill records your intended boundaries; it does not grant tool access or enable writes. The advisor remains read-only. Redirected commands, help/version queries and internal hooks do not prompt.
+
+## Update Cully
+
+```sh
+cully update                     # install the latest stable CLI
+cully update --check             # check without changing anything
+cully update --version v0.15.0   # select a release, including a rollback
+```
+
+The updater verifies the release checksum and version before atomically replacing the CLI you invoked. Existing agent symlinks keep using that binary. A running local advisor restarts on the new version; open a new Cully terminal to use the updated wrapper. If the CLI is already at the selected version, nothing changes. If your installation directory requires administrator access, use the installer or package manager that owns it.
+
+`cully update` updates the local CLI and running advisor. Refresh hooks and skills by rerunning `cully setup` with your original options. It preserves agent settings and MCP connections. It does not upgrade services, whether hosted locally or remotely: follow your deployment procedure for Cully MCP, the data API, Mem0 and databases. See [service deployment](/team-deployment) for component compatibility and upgrade steps.
+
+Versions before this command was added can upgrade by rerunning the installer shown above.
+
 ## Build the CLI from source
 
 If a prebuilt release cannot be downloaded, check GitHub release access or install from source with Go 1.26 or newer:
