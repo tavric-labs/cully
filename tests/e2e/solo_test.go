@@ -146,12 +146,31 @@ func TestSolo(t *testing.T) {
 	if err := json.Unmarshal(previewJSON, &contextResult); err != nil || len(contextResult.Notes) == 0 || contextResult.Notes[0].ID != logged.ID {
 		t.Fatalf("context preview did not include the written record: %+v, %v", contextResult, err)
 	}
+	// Mem0 indexes asynchronously and may briefly report itself unavailable, so
+	// poll until the deadline instead of failing on one transient tool error.
+	var lastRecallError string
+recall:
 	for {
-		if found(call("cully_recall", memory.SearchInput{Query: loggedSummary}).Entries) {
-			break
+		response, err := session.CallTool(ctx, &sdk.CallToolParams{Name: "cully_recall", Arguments: memory.SearchInput{Query: loggedSummary}})
+		switch {
+		case err != nil:
+			lastRecallError = err.Error()
+		case response.IsError:
+			data, _ := json.Marshal(response.Content)
+			lastRecallError = string(data)
+		default:
+			var recalled memory.Result
+			data, _ := json.Marshal(response.StructuredContent)
+			if err := json.Unmarshal(data, &recalled); err != nil {
+				t.Fatal(err)
+			}
+			if found(recalled.Entries) {
+				break recall
+			}
+			lastRecallError = ""
 		}
 		if ctx.Err() != nil {
-			t.Fatal("Mem0 did not index and recall the written record before timeout")
+			t.Fatalf("Mem0 did not index and recall the written record before timeout (last error: %q)", lastRecallError)
 		}
 		time.Sleep(2 * time.Second)
 	}
