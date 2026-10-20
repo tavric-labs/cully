@@ -42,6 +42,7 @@ Works across agents. Learns across sessions.
 | [Advisor](/advisor) | A second pair of eyes that warns and suggests while you work |
 | [Project memory](/memory) | Decisions and results that outlive the session |
 | [Agent integration](/agents) | How Claude Code, Codex, Cursor and others connect |
+| [Install as a plugin](/plugins) | Add Cully's hooks and skill from an agent's plugin marketplace |
 | [Team workspace](/team-workflows) | Project access, human-owned tasks, portable checkpoints, review evidence and published lessons |
 
 ## Run Cully

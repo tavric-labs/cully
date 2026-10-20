@@ -1,0 +1,43 @@
+{
+  "hooks": {
+    "afterAgentResponse": [
+      {
+        "command": "cully _internal continuity cursor response"
+      }
+    ],
+    "afterFileEdit": [
+      {
+        "command": "cully _internal pane-signal cursor",
+        "timeout": 5
+      }
+    ],
+    "afterMCPExecution": [
+      {
+        "command": "cully _internal pane-signal cursor",
+        "timeout": 5
+      }
+    ],
+    "afterShellExecution": [
+      {
+        "command": "cully _internal pane-signal cursor",
+        "timeout": 5
+      }
+    ],
+    "sessionEnd": [
+      {
+        "command": "cully _internal continuity cursor end"
+      }
+    ],
+    "sessionStart": [
+      {
+        "command": "cully _internal continuity cursor start"
+      }
+    ],
+    "stop": [
+      {
+        "command": "cully _internal continuity cursor stop",
+        "loop_limit": null
+      }
+    ]
+  }
+}

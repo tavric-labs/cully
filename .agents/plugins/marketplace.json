@@ -1,0 +1,19 @@
+{
+  "interface": {
+    "displayName": "Cully"
+  },
+  "name": "cully",
+  "plugins": [
+    {
+      "category": "Developer Tools",
+      "name": "cully",
+      "policy": {
+        "installation": "AVAILABLE"
+      },
+      "source": {
+        "path": "./plugins/codex",
+        "source": "local"
+      }
+    }
+  ]
+}
