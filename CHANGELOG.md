@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Shorten the README around Cully’s value, first-run setup and core capabilities, with detailed behavior linked to the guides.
+
 - Fix the published-CLI end-to-end check to use the required `cully setup --all` mode, including its preparation check.
 
 ## 0.17.0
