@@ -14,6 +14,8 @@ This page separates what ships today from what is planned. Cully's other pages d
 | Capability | Status | Notes |
 | --- | --- | --- |
 | [Cully terminal](/terminal) for Claude Code, Codex, Cursor CLI and any executable | Shipped | macOS and Linux. Not available on Windows. |
+| [Harness column and CLI audit](/harness) | Shipped | Setup detection across supported configurations; historical estimates sample local Claude transcripts only. Presence does not prove a working connection. |
+| Resizable panel divider | Shipped | Drag to resize; Warp uses `Ctrl+\`. Hover requests a resize cursor where supported. |
 | Agent health bar | Shipped | Agent, project and branch, time, context, loops, unchecked edits. Segments with no data are omitted. |
 | Tool events from hooks | Shipped | Claude Code and Codex hooks, and Cursor shell, file-edit and MCP hooks. Hooks do nothing outside the Cully terminal. |
 | Cursor shell exit codes | Partial | Cursor's shell hook reports no exit code, so a failed Cursor command is not marked failed. Loop detection is weaker for Cursor. |
@@ -48,6 +50,8 @@ This page separates what ships today from what is planned. Cully's other pages d
 | Model-backed advisor analysis | Partial | Uses the agent's own CLI in a headless run. Needs that CLI and its Cully MCP connection. |
 | Clickable advisor in the terminal | Shipped | Click the panel, or `Ctrl+]` / `F6`. |
 | Project workflow hint | Shipped | After three earlier sessions with edits where checks usually followed, it warns when the current session has unchecked edits. |
+| Private workflow profile | Shipped | Optional reviewed `dev-workflow-rules` skill; bounded redacted context goes to the configured advisor model. |
+| Token-spend evidence rule | Shipped | Advisor prompt requires measured figures; generated advice still needs review. |
 | Guardrails that block or approve actions | Planned | |
 
 ## Continue and review
@@ -59,7 +63,7 @@ This page separates what ships today from what is planned. Cully's other pages d
 | `cully handoff` | Shipped | A structured handoff you can print or start another agent with. |
 | `cully rescue` | Shipped | Evidence and recovery steps; an optional headless advisor adds a probable cause. |
 | `cully status` session health | Shipped | |
-| [Session forensics](/use-cases) | Shipped | Flight-recorder postmortems, audit-grade session review and replayable playbooks, composed of timeline, replay, reconcile and handoff. |
+| [Session forensics](/use-cases) | Shipped | Recorded-session postmortems, verification-trail review and replayable examples, composed of timeline, replay, reconcile and handoff. |
 
 ## Coordinate project work
 
@@ -81,12 +85,24 @@ See [team workflows](/team-workflows) for inputs, limits and roles.
 | Capability | Status | Notes |
 | --- | --- | --- |
 | Workflow hint from past sessions | Shipped | Narrow on purpose. |
+| [Impact ledger and savings report](/token-impact) | Shipped | Observed events and estimated costs; benefit comparisons are observational and Claude transcript based. |
+| Advisor replay evaluation | Shipped | Hindsight precision/recall proxies on selected Claude sessions; optional live model/research pass consumes tokens. |
+| Verified CLI updater | Shipped | `cully update`; preserves agent links and restarts an active local advisor. Services upgrade separately. |
 | Learned team workflow | Planned | |
 | Agent performance comparison | Planned | Needs measured outcomes first. See [product direction](/product-direction#later). |
 
+## Mobile Self preview
+
+| Capability | Status | Notes |
+| --- | --- | --- |
+| [Android and iOS clients](/mobile) | Partial | Source-built developer preview; store distribution is not configured. |
+| Today brief and local-model reflection | Partial | Dated, bounded personal-note samples; updated date-filter-capable services required. |
+| Local tasks and read-only Ask Cully | Partial | Explicit task changes stay on device; no memory writes, Team actions or remote agent execution. |
+| Physical device coverage | Partial | Selected Android checks and Mac/unsigned iOS compilation; full iPhone sign-in/voice/chat remains unverified. |
+
 ## What Cully does not claim
 
-- It has not measured token or time savings. A benchmark is on the [roadmap](/product-direction#next).
-- It does not read transcripts or send them anywhere.
+- Token costs and observed differences are estimates, not causal proof of savings or a productivity benchmark. A controlled benchmark remains on the [roadmap](/product-direction#next).
+- The harness, savings and evaluation tools read local Claude transcripts. Raw transcript text is not persisted or uploaded by those measurements; an explicitly requested live advisor evaluation sends signal summaries to the configured adapter.
 - It does not see inside an agent's reasoning. It sees tool calls and results.
 - A missing signal is shown as missing, never guessed.

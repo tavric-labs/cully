@@ -1,11 +1,11 @@
 ---
 title: Use cases
-description: "What teams use Cully for: a flight recorder for agent sessions, audit-grade review of AI-assisted work, and playbooks new engineers can replay."
+description: "What teams use Cully for: a flight recorder for agent sessions, verification-trail review of AI-assisted work, and playbooks new engineers can replay."
 ---
 
 # Use cases
 
-Cully records every session as an append-only local ledger, then turns that record into a timeline, a step-by-step replay, a drift check against Git, and a handoff the next agent can continue. Three jobs teams already have map directly onto those primitives. No new instrumentation is needed for any of them.
+Inside the Cully terminal, supported hooks record coarse events in a bounded local journal, then turns that record into a timeline, a step-by-step replay, a drift check against Git, and a handoff the next agent can continue. Three jobs teams already have map directly onto those primitives. Coverage depends on the agent’s hooks; unsupported or missing events stay unknown.
 
 ## 1. The flight recorder: postmortems for agent sessions
 
@@ -14,9 +14,9 @@ When a session goes wrong, nobody should have to guess what the agent did. Cully
 | Question | Answer |
 | --- | --- |
 | What happened, in order | `cully timeline` gives the forensic timeline |
-| What exactly did it touch and run | `cully replay` reconstructs each step deterministically |
+| What exactly did it touch and run | `cully replay` renders the recorded steps, with available paths and command programs |
 | Why is it stuck | `cully rescue` collects the evidence and the recovery steps |
-| Who continues, and with what context | `cully handoff` passes a chain-of-custody record to the next agent |
+| Who continues, and with what context | `cully handoff --print` summarizes recorded evidence for the next agent |
 
 A detected loop marks its span with ⚠, so the postmortem starts where the session derailed instead of at the beginning. The recording contains file paths and command names but never prompts, file contents, arguments or output, so it reads like a build log and can be pasted into an incident thread.
 
@@ -28,7 +28,7 @@ A diff shows what changed. It does not show whether the change was verified, whe
 - The reconcile section compares the journal against live `git status`. Files Git shows as changed that the journal never saw are drift, and recorded deletions that still exist are called out.
 - `cully replay --html` exports one self-contained offline file that can be attached to a pull request as review evidence.
 
-This is audit-grade review built from the same record as the flight recorder: deterministic reconstruction plus drift reconciliation, with nothing to install on the reviewer's side.
+The export helps a reviewer inspect the observed verification trail. It is not tamper-proof CI attestation, a transcript or proof that every operation was captured. No extra viewer installation is required.
 
 ## 3. Playbooks: onboarding from real sessions
 

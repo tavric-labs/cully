@@ -20,6 +20,10 @@ Works across agents. Learns across sessions.
 | What you want to do | Guide |
 | --- | --- |
 | Install Cully and run your first agent | [Quickstart](/quickstart) |
+| Audit instructions, skills, hooks and memory setup | [Audit your harness](/harness) |
+| Inspect lookup overhead and recent output | [Measure token impact](/token-impact) |
+| Read your own work on a phone | [Mobile developer preview](/mobile) |
+| Update an existing CLI or add workflow context | [Installation and updates](/installation) |
 | See how the parts fit together | [How Cully works](/how-cully-works) |
 | Run any agent with a live health bar and advisor | [The Cully terminal](/terminal) |
 | Replay a session, hand it off or get unstuck | [Session intelligence](/session-intelligence) |
@@ -33,6 +37,8 @@ Works across agents. Learns across sessions.
 | --- | --- |
 | [Terminal](/terminal) | One wrapper for every agent, with a health bar and an advisor panel |
 | [Session intelligence](/session-intelligence) | A private journal of what the agent did, turned into loops, health, replay and handoff |
+| [Harness](/harness) | Read-only setup detection and historical output estimates |
+| [Token impact](/token-impact) | Observed events, estimated overhead and diagnostic comparisons |
 | [Advisor](/advisor) | A second pair of eyes that warns and suggests while you work |
 | [Project memory](/memory) | Decisions and results that outlive the session |
 | [Agent integration](/agents) | How Claude Code, Codex, Cursor and others connect |

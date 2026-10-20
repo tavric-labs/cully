@@ -73,6 +73,12 @@ The optional `dev-workflow-rules` skill is a private file under `~/.cully/skills
 
 These measurements retain aggregate counts and token estimates, not transcript text, prompts, credentials or output. The background panel cache is in memory only. Nothing from these measurements is uploaded or saved to project memory automatically. Codex and Cursor transcripts are not measured. See [the harness guide](/harness) for limitations.
 
+## Cost reports, evaluation and mobile
+
+`cully savings` reads local Claude transcripts and reports aggregate injection and exploration estimates. `cully impact` reads a private local event ledger and may use a transcript-derived comparison for an estimated memory benefit. `cully advisor-eval` replays local Claude history; its explicit `--live` option sends derived signal summaries through the configured agent/model and may use recall or targeted public research. These tools do not save or upload raw transcript text. See [token impact](/token-impact) for the separate cost and sample boundaries.
+
+The [mobile Self preview](/mobile) retrieves bounded private personal notes through your signed-in MCP connection. Local tasks stay on the phone, downloaded models run locally, microphone capture is explicit and inference stops on backgrounding. It does not expose memory writes or Team actions. Device-specific credential handling and unverified preview behavior are documented in the mobile guide.
+
 ## Where file names can appear
 
 - In `cully replay`, `cully timeline`, `cully handoff` and `cully rescue` output on your machine.

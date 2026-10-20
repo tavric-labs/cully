@@ -2,15 +2,13 @@
 
 ## Unreleased
 
-- Keep MCP health and authentication visible as harness rows grow on narrow panels; scope streaming transcript measurements to the exact project, validate positive audit limits, recognize shared project skills and count actual subagent calls consistently in the CLI and panel.
-- Add a harness guide, explain measurement privacy and sampling, and refresh the website with setup auditing, measured output baselines, optional workflow profiles and verified CLI updates.
+## 0.17.0
 
-- Replace the panel's leftmost "Model & activity" counters (tools, searches, subagents, web, edits, checks, commits) with a Harness column: setup readiness with named gaps, the project's measured oversized-output tokens per session, the model, pending verification, and loops. Errors appear only when non-zero, and unavailable quota and Git placeholders are hidden.
-- Require the advisor to cite measured numbers (big_results tokens, full_file_reads, big_bash, top_output_tool) in every token-spend line and token TOOLGAP; without them it emits the no-action MEMO line and keeps no token lesson.
-- Add `cully harness`, a read-only audit of the agent setup (instructions, guardrails, memory, skills, subagents, hooks, plugins) with one suggestion per gap, inspired by the component model in Google Research's Harness². It reads file names and config keys only, and reports measured oversized-output tokens per session from recent transcripts as a before/after baseline, without claiming causation.
-
-- Make the `cully harness` Subagents and Skills gaps evidence-based: recorded delegations show Subagents as in use instead of missing, and remaining gaps cite your measured oversized-output tokens per session.
-- Document `cully update` and `cully workflow` in the README and advisor command table, describe how the workflow profile is handled in the privacy guide, and document the divider hover and resize cursor in the terminal guide.
+- Add `cully harness`, a read-only setup audit with named gaps and a historical oversized-output baseline from recent local Claude sessions. Detect project/shared skills and supported agent config, and recognize actual subagent delegations.
+- Replace the panel’s leftmost activity counters with Harness readiness, gaps, historical estimates, model and verification state. Keep MCP health/authentication visible in compact layouts, omit unavailable quota/Git fields and label the Claude measurement source.
+- Stream harness transcript measurements for the exact project, exclude nested subagent histories, reject nonpositive limits and prevent stale background results from replacing the current project’s data.
+- Require measured signal figures in advisor token-spend recommendations and token tool-gap evidence; remain quiet when those figures are unavailable.
+- Expand docs and the website for harness auditing, impact/savings reports, advisor evaluation, workflow profiles, CLI updates, divider controls and the mobile Self developer preview. Correct stale measurement, privacy and verification claims.
 
 ## 0.16.0
 

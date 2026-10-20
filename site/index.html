@@ -22,10 +22,10 @@
       <a class="brand" href="/" aria-label="Cully home"><span class="brand-mark" aria-hidden="true"><span></span></span><span>cully<span class="brand-dot">.</span></span></a>
       <button class="menu-toggle" type="button" aria-controls="site-nav" aria-expanded="false" aria-label="Open navigation"><span></span><span></span><span></span></button>
       <nav id="site-nav" class="site-nav" aria-label="Main navigation">
-        <a href="#loop">The loop</a>
-        <a href="#use-cases">Use cases</a>
-        <a href="#teams">Team</a><a href="#terminal">Solo</a>
-        <a href="#how-it-works">How it works</a>
+        <a href="#product">Features</a>
+        <a href="#harness">Harness</a>
+        <a href="#teams">Team</a>
+        <a href="#mobile">Mobile preview</a>
         <a href="https://docs.cully.net/">Docs</a>
         <a href="https://github.com/tavric-labs/cully" target="_blank" rel="noopener noreferrer">GitHub <span aria-hidden="true">↗</span></a>
         <a class="nav-cta" href="#install">Get started <span aria-hidden="true">↓</span></a>
@@ -92,9 +92,9 @@
       </section>
 
       <section id="use-cases" class="section-wrap product-section" aria-labelledby="use-cases-title">
-        <div class="section-intro"><div><div class="kicker">03 / IN THE WILD</div><h2 id="use-cases-title">Every agent session,<br><em>on the record.</em></h2></div><p>Deterministic reconstruction for postmortems, drift reconciliation for review, and replayable playbooks for onboarding. Plainly: Cully remembers what the agent did, and can prove it.</p></div>
+        <div class="section-intro"><div><div class="kicker">03 / IN THE WILD</div><h2 id="use-cases-title">The recorded session,<br><em>ready to review.</em></h2></div><p>Review the recorded steps behind a change, find repeated failures, and give the next person a useful starting point. Coverage follows the events your agent supplies.</p></div>
         <div class="feature-grid">
-          <article class="feature-card feature-cream"><div class="feature-number">01 <span>↗</span></div><div class="feature-visual memory-visual"><div class="memory-visual-card"><span>◉ &nbsp; RECORDER</span><strong>go test ✕ ×3 · loop span marked ⚠</strong><small>8 files touched · 2 checks failed · evidence kept</small></div><div class="memory-visual-shadow"></div></div><h3>A flight recorder for agent sessions.</h3><p>Every session lands in an append-only ledger, then replays step by step: each file, each command, each failed check. When a session derails, the postmortem starts where the loop began.</p><a href="https://docs.cully.net/use-cases">Explore use cases <span aria-hidden="true">→</span></a></article>
+          <article class="feature-card feature-cream"><div class="feature-number">01 <span>↗</span></div><div class="feature-visual memory-visual"><div class="memory-visual-card"><span>◉ &nbsp; RECORDER</span><strong>go test ✕ ×3 · loop span marked ⚠</strong><small>8 files touched · 2 checks failed · evidence kept</small></div><div class="memory-visual-shadow"></div></div><h3>A flight recorder for agent sessions.</h3><p>Supported hooks feed a bounded private journal, then replay the recorded file activity, command programs and checks. When a session derails, the postmortem starts where the loop began.</p><a href="https://docs.cully.net/use-cases">Explore use cases <span aria-hidden="true">→</span></a></article>
           <article class="feature-card feature-green"><div class="feature-number">02 <span>↗</span></div><div class="feature-visual status-visual"><div class="mini-line"><span>SESSION AUDIT</span><b>DRIFT 1</b></div><div class="meter"><span></span></div><div class="mini-line muted"><span>Checks</span><span>2 passed · 1 failed</span></div></div><h3>Review the session, not just the diff.</h3><p>Reconstruct the verification trail behind a change and reconcile the record against Git before merge. Export a self-contained replay as review evidence.</p><a href="https://docs.cully.net/use-cases">Explore use cases <span aria-hidden="true">→</span></a></article>
           <article class="feature-card feature-peach"><div class="feature-number">03 <span>↗</span></div><div class="feature-visual preview-visual"><span>PLAYBOOK</span><div class="preview-line"><i>✓</i> Shipped auth migration</div><div class="preview-line dim"><i>▶</i> Replay how it landed</div><div class="preview-button">Onboard from real sessions →</div></div><h3>Playbooks new engineers can replay.</h3><p>Strong sessions become onboarding material: watch how shipped work was actually made, while workflow hints teach project habits live.</p><a href="https://docs.cully.net/use-cases">Explore use cases <span aria-hidden="true">→</span></a></article>
         </div>
@@ -136,6 +136,28 @@
         </div>
       </section>
 
+      <section id="token-impact" class="section-wrap architecture-section" aria-labelledby="impact-title">
+        <div class="section-intro"><div><div class="kicker">MEASURE THE OVERHEAD</div><h2 id="impact-title">Useful work.<br><em>Visible costs.</em></h2></div><p>Memory and advice have a cost too. Inspect the events Cully observed, the context it injected and how its advice performs on your own history.</p></div>
+        <div class="optimization-panel">
+          <div class="optimization-grid">
+            <article><span>01 / IMPACT</span><h4><code>cully impact</code></h4><p>Memory hits, empty lookups, analyses avoided, loops caught and oversized output flagged. The panel brings this session’s impact beside its usage.</p></article>
+            <article><span>02 / COST</span><h4><code>cully savings</code></h4><p>Estimate Cully results, arguments and schema tokens in Claude history. Compare early exploration with and without a memory hit, with a confidence label.</p></article>
+            <article><span>03 / EVALUATE</span><h4><code>cully advisor-eval</code></h4><p>Replay historical checkpoints and compare token-waste advice with later output. An optional live pass uses your configured model and research tools.</p></article>
+          </div>
+          <p class="optimization-caveat">These are different samples and estimates, not billing totals or causal proof of savings. Historical transcript reports support Claude today. Live evaluation consumes model tokens and can use web research.</p>
+          <a class="inline-link" href="https://docs.cully.net/token-impact">Read the measurement guide <span aria-hidden="true">↗</span></a>
+        </div>
+      </section>
+
+      <section id="mobile" class="section-wrap paths-section" aria-labelledby="mobile-title">
+        <div class="section-intro"><div><div class="kicker">SELF / DEVELOPER PREVIEW</div><h2 id="mobile-title">Return to your work.<br><em>Bring the context.</em></h2></div><p>Cully Self brings dated personal work notes, local tasks and read-only questions to Android and iOS. Available as source builds while device verification continues.</p></div>
+        <div class="paths-grid">
+          <article class="path-card"><span class="path-number">TODAY · TASKS · ADVISOR</span><h3>A small brief, with its evidence.</h3><p>See a sampled last 24 hours or seven days, recall a saved approach, and choose a next step. Dates and coverage stay visible. A last-planned handoff is a suggestion to review, not a live project status.</p><div class="path-links"><a href="https://docs.cully.net/mobile">Explore the preview <span aria-hidden="true">→</span></a></div></article>
+          <article class="path-card path-card-team"><span class="path-number">LOCAL MODELS · PRIVATE RECALL</span><h3>Ask in your own words.</h3><p>Type or explicitly start the microphone. Downloaded models run on-device and use bounded read-only recall over your signed-in Cully memory. Personal task changes stay local; no Team actions or remote coding agents are exposed.</p><div class="path-links"><a href="https://github.com/tavric-labs/cully/tree/main/apps">Build from source <span aria-hidden="true">↗</span></a><a href="https://docs.cully.net/mobile#build-and-verification-limits">Check verification limits <span aria-hidden="true">→</span></a></div></article>
+        </div>
+        <p class="optimization-caveat">Model setup downloads roughly 469–499 MiB after confirmation. History retrieval still needs network access. Store distribution is not configured, and physical iPhone sign-in, voice and chat remain unverified.</p>
+      </section>
+
       <section id="how-it-works" class="workflow-section" aria-labelledby="workflow-title"><div class="section-wrap workflow-inner"><div class="workflow-heading"><div class="kicker">05 / GET GOING</div><h2 id="workflow-title">Three commands to<br><em>a smarter session.</em></h2><p>Install Cully, set up its local services, and run your agent through it. Already installed? Run <code>cully update --check</code> to check for a release, then <code>cully update</code> to install a verified CLI update. Services use your deployment tooling.</p><a class="inline-link" href="https://docs.cully.net/quickstart">Read the quickstart <span aria-hidden="true">↗</span></a></div><div class="workflow-steps"><article><div class="step-number">01</div><div><h3>Install Cully</h3><p>Add Cully and its local advisor with one command.</p></div></article><article><div class="step-number">02</div><div><h3>Set it up</h3><p>Run <code>cully setup --all</code> to start the memory services and connect your agents.</p></div></article><article><div class="step-number">03</div><div><h3>Run your agent through Cully</h3><p>Run <code>cully run claude</code>, <code>codex</code> or <code>cursor</code>. Then try <code>cully status</code>, <code>cully replay</code> and <code>cully handoff</code>.</p></div></article></div></div></section>
 
       <section class="section-wrap architecture-section" aria-labelledby="architecture-title">
@@ -149,7 +171,7 @@
         </div>
         <p class="architecture-note">Run the standard memory stack on your laptop. OAuth identifies each team member; project membership controls shared access. <a href="https://docs.cully.net/hosting">Self-hosting guide →</a></p>
         <div class="memory-foundation">
-          <div><div class="kicker">PRIVACY</div><h3>Your conversations aren't Cully's database.</h3><p>The local session journal keeps the time, the kind of tool, whether it passed, project-relative file paths and the program of a command. It never keeps prompts, file contents, command arguments or tool output, and you can turn off path recording. Project memory holds only the short summary your agent chooses to save. Harness measurements stream recent local Claude transcripts to produce aggregate counts and estimates; source text is never saved or uploaded by that measurement.</p></div>
+          <div><div class="kicker">PRIVACY</div><h3>Your conversations aren't Cully's database.</h3><p>The local session journal keeps the time, the kind of tool, whether it passed, project-relative file paths and the program of a command. It never keeps prompts, file contents, command arguments or tool output, and you can turn off path recording. Project memory holds only the short summary your agent chooses to save. Harness and cost reports read local Claude transcripts for aggregate counts and estimates. Replay evaluation can send signal summaries to your configured advisor when you explicitly request a live pass; these measurements never save or upload raw transcript text.</p></div>
           <a class="inline-link" href="https://docs.cully.net/privacy">Read what Cully records <span aria-hidden="true">↗</span></a>
         </div>
         <div class="memory-foundation">
