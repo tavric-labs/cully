@@ -12,6 +12,18 @@
         ]
       }
     ],
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "command": "cully _internal guard codex",
+            "timeout": 5,
+            "type": "command"
+          }
+        ],
+        "matcher": "Bash"
+      }
+    ],
     "SessionStart": [
       {
         "hooks": [

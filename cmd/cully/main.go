@@ -296,6 +296,11 @@ func runInternal(args []string) error {
 			return fmt.Errorf("internal continuity requires agent and event")
 		}
 		cully.RunContinuityHook(args[1], args[2], os.Stdin, os.Stdout)
+	case "guard":
+		if len(args) != 2 {
+			return fmt.Errorf("internal guard requires an agent")
+		}
+		cully.RunGuardHook(args[1], os.Stdin, os.Stdout)
 	case "codex-signal":
 		cully.RunSignalHook(os.Stdin)
 	case "pane-signal":

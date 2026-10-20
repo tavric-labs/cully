@@ -69,6 +69,10 @@ func hookSubcommands(t *testing.T, config map[string]any) []string {
 	for event, groups := range events {
 		for _, group := range toList(groups) {
 			entry, _ := group.(map[string]any)
+			label := event
+			if matcher, _ := entry["matcher"].(string); matcher != "" {
+				label += "[" + matcher + "]"
+			}
 			commands := []any{entry["command"]}
 			if inner := toList(entry["hooks"]); inner != nil {
 				commands = nil
@@ -78,7 +82,7 @@ func hookSubcommands(t *testing.T, config map[string]any) []string {
 			}
 			for _, c := range commands {
 				if text, _ := c.(string); strings.Contains(text, "_internal ") {
-					out = append(out, event+": "+text[strings.Index(text, "_internal ")+len("_internal "):])
+					out = append(out, label+": "+text[strings.Index(text, "_internal ")+len("_internal "):])
 				}
 			}
 		}

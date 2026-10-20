@@ -13,9 +13,9 @@ Use **one** route per agent. A plugin and `cully setup` both register the same h
 
 | Agent | Hooks | Skill | `/cully` command |
 | --- | --- | --- | --- |
-| Claude Code | Stop, SessionStart, SessionEnd and an asynchronous tool-event hook | Yes | Yes |
+| Claude Code | Stop, SessionStart, SessionEnd, an asynchronous tool-event hook and the [PreToolUse guard](/advisor#the-pretooluse-guard) | Yes | Yes |
 | Cursor | Session, response, stop and tool-event hooks | Yes | Yes |
-| Codex | SessionStart and an asynchronous tool-event hook | Yes | No: use `/prompts:cully` from `cully setup` |
+| Codex | SessionStart, an asynchronous tool-event hook and the PreToolUse guard | Yes | No: use `/prompts:cully` from `cully setup` |
 
 The hooks are the same ones setup installs. A test installs setup into a scratch home and fails if a plugin's hooks differ, and another test fails if a committed plugin file differs from its generator.
 
@@ -45,6 +45,12 @@ Then install **Cully** from the Plugins directory in the Codex desktop app and s
 ## Cursor
 
 The repository has a Cursor plugin and a marketplace manifest at `.cursor-plugin/marketplace.json`, in the format Cursor's plugin reference describes. That reference does not cover installing from a repository, and the plugin has not been installed in a live Cursor here. `cully setup --agent cursor` is the verified route.
+
+## Where the plugins are published
+
+Every release attaches `cully-plugin-claude.zip`, `cully-plugin-cursor.zip` and `cully-plugin-codex.zip` to its GitHub release. The Claude Code and Codex marketplaces are this repository, so a tagged release is what `marketplace add tavric-labs/cully` serves. Anthropic's directory and the Cursor Marketplace list a plugin only after you submit it for review, which no release can do for you.
+
+The Cully MCP server is not part of any plugin or marketplace listing. You run it on your own infrastructure, so connecting memory stays a separate step: `cully mcp add`.
 
 ## Develop the plugins
 

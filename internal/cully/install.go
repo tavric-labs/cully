@@ -168,6 +168,7 @@ func installClaude() error {
 	setEventHook(m, "Stop", quote(exe)+" _internal continuity claude stop", "continuity claude stop")
 	setEventHook(m, "SessionEnd", quote(exe)+" _internal cleanup", "cleanup")
 	setClaudePaneSignalHook(m, exe)
+	setGuardHook(m, exe, "claude", claudeGuardMatcher)
 
 	if err := writeSettings(settingsPath, m); err != nil {
 		return err
@@ -294,6 +295,7 @@ func uninstallClaude() error {
 		removeEventHook(m, "Stop", quote(exe)+" _internal continuity claude stop", "continuity claude stop")
 		removeEventHook(m, "SessionEnd", quote(exe)+" _internal cleanup", "cleanup")
 		removeEventHook(m, "PostToolUse", "", "pane-signal claude")
+		removeEventHook(m, "PreToolUse", "", "guard claude")
 		if err := writeSettings(settingsPath, m); err != nil {
 			return err
 		}
@@ -433,6 +435,23 @@ func setEventHook(m map[string]any, event, cmd, sub string) {
 		"hooks": []any{map[string]any{"type": "command", "command": cmd}},
 	})
 	hooks[event] = list
+	m["hooks"] = hooks
+}
+
+// setGuardHook registers the synchronous PreToolUse guard for tools matching
+// matcher. It only ever adds context, so a short timeout is safe.
+func setGuardHook(m map[string]any, exe, agent, matcher string) {
+	sub := "guard " + agent
+	hooks, _ := m["hooks"].(map[string]any)
+	if hooks == nil {
+		hooks = map[string]any{}
+	}
+	list := filterOutCullyCommand(toList(hooks["PreToolUse"]), "", sub)
+	list = append(list, map[string]any{
+		"matcher": matcher,
+		"hooks":   []any{map[string]any{"type": "command", "command": quote(exe) + " _internal " + sub, "timeout": 5}},
+	})
+	hooks["PreToolUse"] = list
 	m["hooks"] = hooks
 }
 

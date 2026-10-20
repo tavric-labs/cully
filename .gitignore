@@ -42,3 +42,4 @@ build/
 
 # User-managed Cully installation/state belongs in the user home.
 /.cully/
+dist-plugins/

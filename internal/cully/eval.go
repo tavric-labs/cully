@@ -467,6 +467,50 @@ var loopScenarios = []struct {
 	{"edits that were never checked", "EEEEE", ""},
 }
 
+// guardScenarios plant a command's history, F for a failed run and P for a
+// passing one, and say whether the PreToolUse guard should speak before the next.
+var guardScenarios = []struct {
+	name, history string
+	speak         bool
+}{
+	{"fails twice in a row", "FF", true},
+	{"fails again after a pass", "PFF", true},
+	{"one failure is not enough", "F", false},
+	{"a pass resets the count", "FFP", false},
+	{"no history", "", false},
+}
+
+func evalGuard(s *EvalSuite, dir string) {
+	const command = "go test ./... -run TestWidget"
+	for _, sc := range guardScenarios {
+		var events []journalEvent
+		for _, c := range sc.history {
+			events = append(events, journalEvent{Class: journalCheck, Failed: c == 'F', Sig: commandSig(command)})
+		}
+		// A different command's failures must never count against this one.
+		events = append(events, journalEvent{Class: journalCheck, Failed: true, Sig: commandSig("make lint")})
+		advice, _ := guardBashAdvice(events, command)
+		s.check("guard: command that "+sc.name, (advice != "") == sc.speak, "history %q: spoke=%v, want %v", sc.history, advice != "", sc.speak)
+	}
+	big, small := filepath.Join(dir, "big.txt"), filepath.Join(dir, "small.txt")
+	_ = os.WriteFile(big, []byte(strings.Repeat("x", 3*guardBigFileBytes/2)), 0o600)
+	_ = os.WriteFile(small, []byte(strings.Repeat("x", guardBigFileBytes/8)), 0o600)
+	for _, sc := range []struct {
+		name, path    string
+		offset, limit int
+		speak         bool
+	}{
+		{"whole read of a large file", big, 0, 0, true},
+		{"large file read with a limit", big, 0, 200, false},
+		{"large file read from an offset", big, 100, 0, false},
+		{"whole read of a small file", small, 0, 0, false},
+		{"file that does not exist", filepath.Join(dir, "missing"), 0, 0, false},
+	} {
+		advice := guardReadAdvice(sc.path, sc.offset, sc.limit)
+		s.check("guard: "+sc.name, (advice != "") == sc.speak, "spoke=%v, want %v", advice != "", sc.speak)
+	}
+}
+
 // evalAdvisor has three parts. First, planted sessions with known waste: the
 // advisor's signals must count it exactly, speak when it is significant and
 // stay quiet when it is not. Second, the metric code must reproduce
@@ -525,6 +569,10 @@ func evalAdvisor(o evalOptions) EvalSuite {
 			}
 			s.check("loops: "+sc.name, strings.Join(got, ",") == strings.Join(want, ","), "journal %q found %v, want %v", sc.spec, got, want)
 		}
+
+		// The guard acts on the same journal and on file sizes, so it gets the same
+		// treatment: planted answers, with a spurious nudge counted as a failure.
+		evalGuard(&s, scratch)
 
 		// The scorer must reproduce values worked out by hand from the paper.
 		early := scoreSessionContext([]string{"/a", "/b", "/c", "/a"}, map[string]bool{"/a": true})

@@ -45,6 +45,7 @@ func installCodexContinuityHooks() error {
 	handler := toList(group["hooks"])[0].(map[string]any)
 	handler["async"] = true
 	handler["timeout"] = 5
+	setGuardHook(m, exe, "codex", codexGuardMatcher)
 	return writeSettings(path, m)
 }
 
@@ -57,6 +58,7 @@ func uninstallCodexContinuityHooks() error {
 	if err != nil {
 		return err
 	}
+	removeEventHook(m, "PreToolUse", "", "guard codex")
 	removeEventHook(m, "SessionStart", "", "continuity codex start")
 	removeEventHook(m, "Stop", "", "continuity codex stop")
 	removeEventHook(m, "PostToolUse", "", "codex-signal")

@@ -17,6 +17,14 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+      - name: Check the plugins match their generator
+        run: go test ./internal/cully -run 'PluginFiles|PluginHooks' -count=1
+      - name: Package the plugins
+        run: |
+          mkdir -p dist-plugins
+          for agent in claude cursor codex; do
+            (cd "plugins/$agent" && zip -qr "../../dist-plugins/cully-plugin-$agent.zip" .)
+          done
       - uses: goreleaser/goreleaser-action@v6
         with:
           version: '~> v2'

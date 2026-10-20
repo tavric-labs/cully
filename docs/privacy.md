@@ -73,6 +73,8 @@ The optional `dev-workflow-rules` skill is a private file under `~/.cully/skills
 
 These measurements retain aggregate counts and token estimates, not transcript text, prompts, credentials or output. The background panel cache is in memory only. Nothing from these measurements is uploaded or saved to project memory automatically. Codex and Cursor transcripts are not measured. See [the harness guide](/harness) for limitations.
 
+The PreToolUse guard reads the size of a file the agent is about to read, never its contents, and compares a command's one-way signature with the session journal. It stores only empty marker files, so it does not repeat a note. It sends nothing off the machine.
+
 ## Cost reports, evaluation and mobile
 
 `cully savings` reads local Claude transcripts and reports aggregate injection and exploration estimates. `cully impact` reads a private local event ledger and may use a transcript-derived comparison for an estimated memory benefit. `cully eval advisor` replays local Claude history; its explicit `--live` option sends derived signal summaries through the configured agent/model and may use recall or targeted public research. These tools do not save or upload raw transcript text. See [token impact](/token-impact) for the separate cost and sample boundaries.
