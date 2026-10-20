@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Add `cully harness`, a read-only audit of the agent setup (instructions, guardrails, memory, skills, subagents, hooks, plugins) with one suggestion per gap, inspired by the component model in Google Research's Harness². It reads file names and config keys only.
+- Add `cully harness`, a read-only audit of the agent setup (instructions, guardrails, memory, skills, subagents, hooks, plugins) with one suggestion per gap, inspired by the component model in Google Research's Harness². It reads file names and config keys only, and reports measured oversized-output tokens per session from recent transcripts as a before/after baseline, without claiming causation.
 
 ## 0.16.0
 

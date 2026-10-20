@@ -1,12 +1,15 @@
 package cully
 
 import (
+	"bytes"
 	"flag"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
+	"time"
 )
 
 // The harness audit looks at the parts of an agent setup that shape its
@@ -116,11 +119,83 @@ func auditHarness(d harnessDirs) []harnessItem {
 	}
 }
 
+// harnessEvidence is what Cully measured in recent Claude transcripts for the
+// project. It is a baseline to compare against after a setup change, not proof
+// that any component causes less waste.
+type harnessEvidence struct {
+	Sessions                          int
+	BigTokens, BashTokens, ReadTokens int
+	Delegations                       int
+}
+
+func (e harnessEvidence) perSession(n int) int {
+	if e.Sessions == 0 {
+		return 0
+	}
+	return n / e.Sessions
+}
+
+// projectFolderMatch is how Claude names a project's transcript folder.
+func projectFolderMatch(cwd string) string {
+	return strings.NewReplacer("/", "-", ".", "-", "_", "-").Replace(cwd)
+}
+
+func measureHarnessEvidence(root, match string, days, max int) harnessEvidence {
+	since := time.Now().AddDate(0, 0, -days)
+	type found struct {
+		path string
+		mod  time.Time
+	}
+	var paths []found
+	_ = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() || !strings.HasSuffix(path, ".jsonl") || !strings.Contains(filepath.Base(filepath.Dir(path)), match) {
+			return nil
+		}
+		if info, err := d.Info(); err == nil && !info.ModTime().Before(since) {
+			paths = append(paths, found{path, info.ModTime()})
+		}
+		return nil
+	})
+	sort.Slice(paths, func(i, j int) bool { return paths[i].mod.After(paths[j].mod) })
+	if len(paths) > max {
+		paths = paths[:max]
+	}
+	var ev harnessEvidence
+	for _, p := range paths {
+		lines := readTranscriptLines(p.path)
+		if len(lines) < 20 {
+			continue
+		}
+		w := scanWaste(lines)
+		ev.Sessions++
+		ev.BigTokens += w.BigTokens
+		ev.BashTokens += w.BigBashTokens
+		ev.ReadTokens += w.FullReadTokens
+		for _, line := range lines {
+			ev.Delegations += bytes.Count(line, []byte(`"name":"Task"`)) + bytes.Count(line, []byte(`"name":"Agent"`))
+		}
+	}
+	return ev
+}
+
+func (e harnessEvidence) write(w io.Writer, days int) {
+	if e.Sessions == 0 {
+		fmt.Fprintf(w, "\nNo Claude transcripts from the last %d days were found for this project, so nothing was measured.\n", days)
+		return
+	}
+	fmt.Fprintf(w, "\nMEASURED in %d recent sessions (last %d days)\n", e.Sessions, days)
+	fmt.Fprintf(w, "  oversized tool results  %d tokens total, %d per session (Bash %d, whole-file reads %d)\n", e.BigTokens, e.perSession(e.BigTokens), e.BashTokens, e.ReadTokens)
+	fmt.Fprintf(w, "  subagent delegations    %d total\n", e.Delegations)
+	fmt.Fprintln(w, "  This is a baseline, not proof. Change one component, then rerun after a similar amount of work and compare tokens per session.")
+}
+
 // RunHarness implements `cully harness`.
 func RunHarness(w io.Writer, args []string) error {
 	fs := flag.NewFlagSet("harness", flag.ContinueOnError)
 	fs.SetOutput(w)
 	cwd := fs.String("cwd", "", "project directory (default: current directory)")
+	days := fs.Int("days", 30, "look back this many days when measuring")
+	dir := fs.String("dir", "", "Claude projects directory (default ~/.claude/projects)")
 	if err := fs.Parse(args); err != nil {
 		if err == flag.ErrHelp {
 			return nil
@@ -128,10 +203,13 @@ func RunHarness(w io.Writer, args []string) error {
 		return err
 	}
 	if fs.NArg() != 0 {
-		return fmt.Errorf("usage: cully harness [--cwd DIR]")
+		return fmt.Errorf("usage: cully harness [--cwd DIR] [--days N]")
 	}
 	if *cwd == "" {
 		*cwd, _ = os.Getwd()
+	}
+	if *dir == "" {
+		*dir = filepath.Join(ConfigDir(), "projects")
 	}
 	items := auditHarness(harnessDirs{Claude: ConfigDir(), Codex: CodexConfigDir(), Cursor: CursorConfigDir(), Project: *cwd})
 	missing := 0
@@ -144,6 +222,7 @@ func RunHarness(w io.Writer, args []string) error {
 		missing++
 		fmt.Fprintf(w, "  · %-18s missing — %s\n", it.Component, it.Hint)
 	}
+	measureHarnessEvidence(*dir, projectFolderMatch(*cwd), *days, 40).write(w, *days)
 	fmt.Fprintf(w, "\n%d of %d components configured. Read-only: only file names and config keys were checked, never contents.\n", len(items)-missing, len(items))
 	return nil
 }
