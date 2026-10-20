@@ -55,7 +55,7 @@ The first row under the agent is a one-line health bar. Every value is measured.
 
 ## The advisor panel
 
-Below the health bar, the panel shows session instruments and two prioritized advisor comments. Click below the divider in the panel, or press `Ctrl+]` or `F6`, to open the full advisor. Select with the mouse or Up and Down, preview with Enter, and press Tab for every instrument. See the [advisor](/advisor) for what it analyzes and how you apply a suggestion. In Warp, open the advisor with `Ctrl+]` or `F6` first: mouse tracking is deferred so Warp scroll mode is not consumed while you work.
+Below the health bar, the panel shows session instruments and two prioritized advisor comments. Click below the divider in the panel, or press `Ctrl+]` or `F6`, to open the full advisor. Select with the mouse or Up and Down, press Enter to add the suggestion to your prompt, and press Tab for every instrument. See the [advisor](/advisor) for what it analyzes and how you apply a suggestion. In Warp, open the advisor with `Ctrl+]` or `F6` first: mouse tracking is deferred so Warp scroll mode is not consumed while you work.
 
 At 120 columns or wider, three columns show **Harness**, **Project & usage** and **Cully impact**. Narrow screens stack the groups. Harness shows which setup components were found, gaps, recent oversized tool-output estimates, the model and pending checks. The impact column shows observed memory use, analyses avoided, loops caught and estimated net tokens, followed by MCP health and authentication. Open Tab details for tool counters.
 

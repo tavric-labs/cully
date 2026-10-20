@@ -7,15 +7,15 @@ import (
 	"testing"
 )
 
-func TestAdvisorDrawerSelectionMouseAndReview(t *testing.T) {
+func TestAdvisorDrawerSelectionAndMouseTargets(t *testing.T) {
 	var d advisorDrawer
 	d.open([]string{"ADV|Run focused checks.", "ADV|Plan the next task.", "MEMO|More details."})
 	d.move(1)
-	if d.Selected != 1 || d.Review != nil {
+	if d.Selected != 1 {
 		t.Fatal(d)
 	}
 	screen := d.render(80, 24, toolStats{}, sessionView{Project: "project"})
-	if !strings.Contains(screen, "▶ Next · Plan the next task.") || !strings.Contains(screen, "Preview selected action") {
+	if !strings.Contains(screen, "▶ Next · Plan the next task.") || !strings.Contains(screen, "Enter · Add to prompt") || !strings.Contains(screen, "you review it before it sends") {
 		t.Fatal(screen)
 	}
 	found := false
@@ -27,16 +27,14 @@ func TestAdvisorDrawerSelectionMouseAndReview(t *testing.T) {
 	if !found || d.AcceptRow <= 3 {
 		t.Fatal("missing visible mouse targets", d.HitRows)
 	}
-	review := advisorHandoff(d.Items[d.Selected])
-	d.Review = &review
-	d.Scroll = 0
-	screen = d.render(80, 24, toolStats{}, sessionView{})
-	if !strings.Contains(screen, "Add request to coding session") || !strings.Contains(screen, "press Enter to") || !strings.Contains(screen, "send.") {
-		t.Fatal(screen)
+	d.move(1)
+	if screen = d.render(80, 24, toolStats{}, sessionView{}); !strings.Contains(screen, "Informational tip") || strings.Contains(screen, "Add to prompt") {
+		t.Fatal("a tip must not offer to add itself to the prompt", screen)
 	}
+	d.Details = true
 	d.escape()
-	if !d.Open || d.Review != nil {
-		t.Fatal("Esc must return from preview to list")
+	if d.Details || !d.Open {
+		t.Fatal("Esc must return from instruments to the list")
 	}
 	d.escape()
 	if d.Open {
@@ -58,12 +56,5 @@ func TestAdvisorDrawerSelectionVisibleAfterPagingAndResize(t *testing.T) {
 	d.escape()
 	if d.Details || !d.Open {
 		t.Fatal(d)
-	}
-}
-
-func TestAdvisorHandoffCannotInjectTerminalControls(t *testing.T) {
-	got := terminalSafeText(advisorHandoff("ADV|safe\x1b[201~\x1b[31mtext\x00").Handoff)
-	if strings.ContainsAny(got, "\x1b\x00") {
-		t.Fatal(got)
 	}
 }

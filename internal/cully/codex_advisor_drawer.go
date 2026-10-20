@@ -10,35 +10,27 @@ import (
 )
 
 type advisorDrawer struct {
-	Open, Details, Busy bool
-	Items               []string
-	Selected, Scroll    int
-	Review              *advisorReview
-	Message             string
-	HitRows             map[int]int
-	AcceptRow           int
-	Generation          int
+	Open, Details    bool
+	Items            []string
+	Selected, Scroll int
+	Message          string
+	HitRows          map[int]int
+	AcceptRow        int
 }
 
 func (d *advisorDrawer) open(advice []string) {
-	d.Generation++
 	d.Open = true
 	d.Details = false
-	d.Busy = false
 	d.Selected = 0
 	d.Scroll = 0
-	d.Review = nil
 	d.Message = ""
 	d.Items = append([]string(nil), advice...)
 }
 
-func (d *advisorDrawer) close() { d.Open = false; d.Generation++; d.Busy = false }
+func (d *advisorDrawer) close() { d.Open = false }
 
 func (d *advisorDrawer) move(delta int) {
-	if d.Busy {
-		return
-	}
-	if d.Review != nil || d.Details {
+	if d.Details {
 		d.Scroll = max(0, d.Scroll+delta)
 		return
 	}
@@ -47,12 +39,7 @@ func (d *advisorDrawer) move(delta int) {
 }
 
 func (d *advisorDrawer) escape() {
-	if d.Busy {
-		d.Generation++
-		d.Busy = false
-	}
-	if d.Review != nil || d.Details {
-		d.Review = nil
+	if d.Details {
 		d.Details = false
 		d.Scroll = 0
 		d.Message = ""
@@ -72,7 +59,7 @@ func (d *advisorDrawer) render(cols, rows int, stats toolStats, view sessionView
 		}
 	}
 	add(cyan + bold + "✦ Cully Advisor" + rst + dim + "  ·  " + view.Project + rst)
-	add(dim + "↑/↓ select · Enter preview · Tab instruments · Esc close" + rst)
+	add(dim + "↑/↓ select · Enter add to prompt · Tab instruments · Esc close" + rst)
 	add(strings.Repeat("─", width))
 	d.HitRows = make(map[int]int)
 	d.AcceptRow = 0
@@ -83,13 +70,6 @@ func (d *advisorDrawer) render(cols, rows int, stats toolStats, view sessionView
 		info = append(info, cullyToolRows(stats.Cully, max(1, cols-5))...)
 		d.Scroll = min(d.Scroll, max(0, len(info)-budget))
 		lines = append(lines, info[d.Scroll:min(len(info), d.Scroll+budget)]...)
-	} else if d.Review != nil {
-		add(bold + d.Review.Summary + rst)
-		detail := strings.Split(ansi.Wrap(terminalSafeText(d.Review.Detail), width, ""), "\n")
-		d.Scroll = min(d.Scroll, max(0, len(detail)-budget+1))
-		for _, line := range detail[d.Scroll:min(len(detail), d.Scroll+max(1, budget-1))] {
-			lines = append(lines, "  "+line)
-		}
 	} else {
 		// Display complete selected advice, with surrounding items when space permits.
 		first := min(d.Scroll, d.Selected)
@@ -130,20 +110,15 @@ func (d *advisorDrawer) render(cols, rows int, stats toolStats, view sessionView
 	for len(lines) < max(0, rows-3) {
 		lines = append(lines, "")
 	}
-	if d.Busy {
-		lines = append(lines, "  "+yellow+"◌ Preparing exact preview… Esc cancels this review"+rst)
-	} else if d.Review != nil {
-		label := "Apply these changes"
-		if d.Review.Handoff != "" {
-			label = "Add request to coding session"
-		}
-		d.AcceptRow = len(lines) + 1
-		lines = append(lines, "  "+green+bold+"[ Enter · "+label+" ]"+rst+dim+"   Esc back"+rst)
-	} else if d.Details {
+	if d.Details {
 		lines = append(lines, "  "+dim+"Tab returns to suggestions · ↑/↓ scroll instruments"+rst)
 	} else {
+		label := "Add to prompt"
+		if d.Selected < len(d.Items) && strings.HasPrefix(d.Items[d.Selected], "MEMO|") {
+			label = "Informational tip"
+		}
 		d.AcceptRow = len(lines) + 1
-		lines = append(lines, "  "+green+bold+"Apply  [ Enter · Preview selected action ]"+rst)
+		lines = append(lines, "  "+green+bold+"[ Enter · "+label+" ]"+rst+dim+"   you review it before it sends"+rst)
 	}
 	lines = append(lines, "  "+terminalSafeText(d.Message))
 	lines = append(lines, "  "+dim+fmt.Sprintf("%d suggestions · Ctrl+] / F6 returns to coding", len(d.Items))+rst)
