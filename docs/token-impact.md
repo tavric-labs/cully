@@ -12,7 +12,7 @@ Cully’s own lookups and advisor calls consume tokens. These tools help you ins
 | What did Cully observe or avoid? | `cully impact` | Local impact events from hooks and advisor activity |
 | How much did Cully inject, compared with early exploration? | `cully savings` | Local Claude transcripts from sessions that edited code |
 | Where are large tool results coming from? | `cully harness` | Recent Claude sessions; see [harness](/harness) |
-| Would the advisor flag later oversized output? | `cully advisor-eval` | Replayed Claude transcript checkpoints |
+| Would the advisor flag later oversized output? | `cully eval advisor` | Planted sessions, plus replayed Claude transcript checkpoints |
 
 ## Read the impact ledger
 
@@ -45,8 +45,8 @@ Benefit compares mean read/search output before the first edit for sessions with
 ## Evaluate the advisor
 
 ```sh
-cully advisor-eval --project personal --days 30 --max 20
-cully advisor-eval --project my-project --max 10 --json
+cully eval advisor --project personal --days 30 --max 20
+cully eval advisor --project my-project --max 10 --json
 ```
 
 The default is 30 days, up to 40 newest matching transcript files, filtered to folder names containing `personal`. The evaluator replays eligible sessions at 30%, 60% and 90% through the signal pipeline. It compares token-waste advice at each checkpoint with oversized output later in the same transcript, producing useful, low-value, missed and correct-quiet counts plus precision/recall proxies.
@@ -54,10 +54,10 @@ The default is 30 days, up to 40 newest matching transcript files, filtered to f
 These are hindsight proxies on the selected history. They do not establish advice quality on new tasks, correctness or actual savings. Small samples can move the scores sharply. This is a diagnostic tool, not an automated acceptance judge for unrelated UI, detection or documentation changes.
 
 ```sh
-cully advisor-eval --project personal --max 10 --live 2 --agent claude
+cully eval advisor --project personal --max 10 --live 2 --agent claude
 ```
 
-`--live N` additionally invokes the real model-backed advisor for up to N checkpoints through the chosen agent CLI. It consumes model tokens and can perform configured Cully recall and targeted web research. It sends signal summaries through the configured adapter rather than uploading raw transcript text. Use the default replay when you only need a local check.
+`--live N` additionally invokes the real model-backed advisor for up to N checkpoints through the chosen agent CLI. It consumes model tokens and can perform configured Cully recall and targeted web research. It sends signal summaries through the configured adapter rather than uploading raw transcript text. The live pass also checks that every figure of 10 or more in the advice appears in the signals the advisor was given. Use the default replay when you only need a local check. See [evaluate Cully](/evals) for the full method.
 
 ## A practical comparison
 
