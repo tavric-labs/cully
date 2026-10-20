@@ -41,13 +41,14 @@ func add[I any](server *sdk.Server, service memory.Service, identity func(contex
 
 // acknowledgeWrite drops the record text a write would echo back. The agent
 // just sent it, so returning it again only spends the agent's context; the id
-// and timestamps are enough to resume, update or delete the record later.
+// and timestamps are enough to update or delete the record later, and the
+// native agent session ID is kept because it is the link that resumes the work.
 func acknowledgeWrite(out memory.Result) memory.Result {
 	if out.Entry == nil {
 		return out
 	}
 	e := out.Entry
-	out.Entry = &memory.Entry{ID: e.ID, Section: e.Section, ProjectURL: e.ProjectURL, SessionRef: e.SessionRef, EntryType: e.EntryType, OccurredAt: e.OccurredAt, CreatedAt: e.CreatedAt, UpdatedAt: e.UpdatedAt}
+	out.Entry = &memory.Entry{ID: e.ID, Section: e.Section, ProjectURL: e.ProjectURL, SessionRef: e.SessionRef, AgentSessionID: e.AgentSessionID, EntryType: e.EntryType, OccurredAt: e.OccurredAt, CreatedAt: e.CreatedAt, UpdatedAt: e.UpdatedAt}
 	return out
 }
 
