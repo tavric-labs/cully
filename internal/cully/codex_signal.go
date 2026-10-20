@@ -193,6 +193,7 @@ func RunPaneSignalHook(agent string, r io.Reader) {
 			failure = '!'
 		}
 		recordCodexCullyOriginCall(session, tool, health, auth, "foreground", cullySemantic(event.ToolInput))
+		noteCullyLookup(session, tool, event.ToolResponse)
 	}
 	recordCodexSessionTool(session, class, failure)
 	recordJournalTool(agent, session, event, class, failure == '!')

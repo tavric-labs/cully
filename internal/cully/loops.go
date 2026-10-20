@@ -218,6 +218,7 @@ func sessionLoops(cwd, session string) (loopReport, []journalEvent) {
 	report := detectLoops(events)
 	if report.Active() && !loopNoted(events, report) {
 		appendJournal(cwd, session, journalEvent{Class: journalNote, Note: noteLoop})
+		recordImpact(session, impactLoopCaught, "", 0)
 		events = readSessionJournal(cwd, session)
 	}
 	return report, events

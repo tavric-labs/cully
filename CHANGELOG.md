@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Add an impact ledger and `cully impact [--days N] [--json] [--log]`: memory lookups that returned prior work or came back empty, advisor analyses skipped (with the tokens not sent), loops caught and oversized output flagged, against the measured token cost of Cully's own lookups. A memory saving is claimed only when `cully savings` has enough sessions to compare; otherwise the report says it is not claimed.
 - Teach the advisor to find token waste: it now sees how much tool output the session spent on oversized results, whole-file reads, noisy Bash output and Cully's own calls. When the waste is significant it suggests the single most important fix, with the numbers, and may ask the research step to look for a published tool; it stays quiet otherwise.
 - Add `cully savings` to measure whether Cully costs more tokens than it saves: measured tokens injected by Cully calls and schemas, plus an observational, confidence-labelled estimate of exploration avoided when a lookup returned prior work. It reads local Claude Code transcripts and keeps counts only.
 - Return a compact acknowledgement from MCP `cully_log` and `cully_update` instead of echoing the saved record back into the agent's context. Add the token-efficiency plan in `docs/token-efficiency-plan.md`.
