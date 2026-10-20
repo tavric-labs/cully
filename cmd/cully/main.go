@@ -26,6 +26,7 @@ Usage:
   cully uninstall [claude|codex|cursor|all] Remove one or all agent integrations
   cully update [--check] [--version TAG]   Update this machine's CLI and running advisor
   cully workflow [--skip]                Create optional dev-workflow-rules skill
+  cully harness [--cwd DIR]               Audit instructions, guardrails, memory, skills and hooks
   cully status [directory]                Show session and agent status
   cully rescue [--cwd DIR] [--agent claude|codex|cursor] [--no-ai]
                                           Diagnose a stuck session from recorded evidence
@@ -98,6 +99,8 @@ func run(args []string) error {
 		return runUninstall(args[1:])
 	case "update":
 		return cully.RunUpdate(os.Stdout, version, args[1:])
+	case "harness":
+		return cully.RunHarness(os.Stdout, args[1:])
 	case "workflow":
 		return cully.RunWorkflowOnboarding(os.Stdin, os.Stdout, args[1:])
 	case "status":

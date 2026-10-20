@@ -97,6 +97,7 @@ Review the preview. To apply it, run `cully apply 1` and confirm the proposed ch
 | `cully uninstall` | Stops the local stack and removes managed agent integrations; keeps memory data. |
 | `cully uninstall --purge-data` | Also deletes local memory volumes and self-hosted configuration. |
 | `cully mcp add --agent AGENT --url URL` | Adds Cully MCP to an existing agent setup; include `--oauth` when the server uses sign-in. |
+| `cully harness [--cwd DIR]` | Read-only audit of seven agent-setup components: instructions, guardrails, memory, skills, subagents, hooks and plugins. Reports what exists and one suggestion per gap; reads file names and config keys, never contents. |
 | `cully version` | Prints the CLI version. |
 
 Cully's [memory tools](/memory) keep useful context across sessions. The installed Cully hooks ask the connected agent to retrieve and save concise work notes. The local advisor can still show session guidance if the memory server is temporarily unavailable.
