@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Fix the release workflow so each release's notes include the tag-pinned plugin install commands. The goreleaser footer that was meant to add them is ignored when a notes file is supplied, so v0.19.0 shipped without them until its notes were edited by hand; the workflow now composes the notes itself.
+
 ## 0.19.0
 
 - Publish the plugins through each release: the release notes carry tag-pinned install commands for the Claude Code and Codex marketplaces, one tracked issue per release lists the directory submissions that need a person (Anthropic's directory and the Cursor Marketplace), and a CI job validates the Claude plugin with the real Claude Code CLI. Each plugin gains a README, and a test checks the manifests against both directories' checklists. The manifests still omit a version, which Anthropic's strict validation asks for; that decision is left open.

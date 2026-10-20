@@ -25,10 +25,27 @@ jobs:
           for agent in claude cursor codex; do
             (cd "plugins/$agent" && zip -qr "../../dist-plugins/cully-plugin-$agent.zip" .)
           done
+      # goreleaser replaces the whole release body with --release-notes, so its
+      # footer would be ignored. Compose the notes here instead.
+      - name: Compose the release notes
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          {
+            cat ".github/release-notes/$TAG.md"
+            printf '\n## Install the plugins from this release\n\n'
+            printf 'Pin the plugin marketplaces to this tag. The plugins add Cully'"'"'s hooks and skill; use one install route per agent, and connect memory with `cully mcp add` since you run the MCP server yourself.\n\n'
+            printf '```sh\n'
+            printf 'claude plugin marketplace add tavric-labs/cully@%s\n' "$TAG"
+            printf 'claude plugin install cully@cully\n'
+            printf 'codex plugin marketplace add tavric-labs/cully --ref %s\n' "$TAG"
+            printf '```\n\n'
+            printf 'Each plugin is also attached as `cully-plugin-claude.zip`, `cully-plugin-cursor.zip` and `cully-plugin-codex.zip`. See the [plugin guide](https://docs.cully.net/plugins).\n'
+          } > release-notes-composed.md
       - uses: goreleaser/goreleaser-action@v6
         with:
           version: '~> v2'
-          args: release --clean --release-notes .github/release-notes/${{ github.ref_name }}.md
+          args: release --clean --release-notes release-notes-composed.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
   marketplace-submissions:
