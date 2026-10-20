@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Teach the advisor to find token waste: it now sees how much tool output the session spent on oversized results, whole-file reads, noisy Bash output and Cully's own calls. When the waste is significant it suggests the single most important fix, with the numbers, and may ask the research step to look for a published tool; it stays quiet otherwise.
+- Keep the native agent session ID in the compact `cully_log`/`cully_update` acknowledgement so a saved note can still be used to resume its conversation.
 - Add `cully savings` to measure whether Cully costs more tokens than it saves: measured tokens injected by Cully calls and schemas, plus an observational, confidence-labelled estimate of exploration avoided when a lookup returned prior work. It reads local Claude Code transcripts and keeps counts only.
 - Return a compact acknowledgement from MCP `cully_log` and `cully_update` instead of echoing the saved record back into the agent's context. Add the token-efficiency plan in `docs/token-efficiency-plan.md`.
 - Make the Cully panel divider an obvious drag handle: a heavy tinted bar with a grip chip at rest, a brighter bar under the pointer, and a solid band while dragging. The pointer becomes a vertical-resize cursor (OSC 22) over the bar where the terminal supports it; button-less motion is tracked only to highlight the bar and is not forwarded to the agent.
