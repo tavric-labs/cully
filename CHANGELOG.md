@@ -4,7 +4,7 @@
 
 ## 0.18.0
 
-- Add a retrieval eval for Cully memory: a deterministic dataset of relevant notes, same-project distractors and other-project notes, scored for recall, precision, ranking, silence and cross-project leakage. `TestRetrievalEval` runs it against the live MCP stack (text search gated, semantic recall reported) as part of the end-to-end setup check.
+- Add `cully eval`, which scores Cully as one agent against ground truth instead of a model judge: `setup` installs every agent into a scratch home and checks the skills, hooks, harness-audit view, untouched project, repeatability and uninstall; `harness` checks planted setups; `advisor` checks planted waste and loop sessions, replays your transcripts, and with `--live` fails on figures the advisor was never given; `memory` scores text search and semantic recall on recall, precision, F1, ranking, abstention and cross-project leakage. Metrics follow ContextBench, LongMemEval and LivePlan; `docs/evals.md` states the method and its limits. This replaces `cully advisor-eval`, and the end-to-end setup check now runs it.
 
 - Make agent setup and uninstall user-wide across projects: install Codex instructions and Cursor commands in user configuration, detect agents independently of repository files. Remove the tracked generated project skill, ignore local `.cully` state, and update setup documentation and website guidance.
 

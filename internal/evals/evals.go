@@ -1,7 +1,16 @@
 // Package evals scores how well Cully's memory retrieval returns the right
-// prior work. The dataset mixes relevant notes, distractors in the same project
-// and notes from another project, so a run measures recall, precision, ranking
-// and leakage. Scoring is deterministic and needs no model.
+// prior work. Scoring is deterministic and needs no model judge.
+//
+// Metric definitions follow ContextBench (Li et al., 2026, arXiv:2602.05892),
+// which scores a coding agent's retrieved context C^A against a gold context
+// C^G: Recall = |C^A ∩ C^G| / |C^G|, Precision = |C^A ∩ C^G| / |C^A| and F1 as
+// their harmonic mean. Here the unit is a memory note rather than a code
+// region. Cases are grouped by the memory abilities LongMemEval (Wu et al.,
+// ICLR 2025, arXiv:2410.10813) names: information extraction, multi-session
+// reasoning, knowledge updates and abstention. Reciprocal rank is the standard
+// information-retrieval rank measure. The dataset is small and written by the
+// Cully team, so scores track regressions in this repository and are not
+// comparable to published benchmark numbers.
 package evals
 
 import (
@@ -11,12 +20,21 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/mcp-runtime/cully/internal/memory"
 )
 
 //go:embed retrieval.json
 var retrievalJSON []byte
+
+// Abilities group cases the way LongMemEval does.
+const (
+	AbilityExtraction = "extraction"       // one earlier note holds the answer
+	AbilityMultiNote  = "multi-note"       // the answer spans several notes
+	AbilityUpdate     = "knowledge-update" // an older note was superseded; the newer must win
+	AbilityAbstention = "abstention"       // nothing answers it; the right result is silence
+)
 
 // Modes a case can run in.
 const (
@@ -29,6 +47,7 @@ const (
 type Note struct {
 	Key      string `json:"key"`
 	Other    bool   `json:"other,omitempty"`
+	AgeDays  int    `json:"age_days,omitempty"` // how long ago the note was recorded
 	Summary  string `json:"summary"`
 	Approach string `json:"approach,omitempty"`
 	Outcome  string `json:"outcome,omitempty"`
@@ -39,6 +58,7 @@ type Note struct {
 // memory answers it, so the correct result is silence.
 type Case struct {
 	ID       string   `json:"id"`
+	Ability  string   `json:"ability"`
 	Mode     string   `json:"mode"`
 	Query    string   `json:"query"`
 	Relevant []string `json:"relevant"`
@@ -79,6 +99,17 @@ func (ds Dataset) Validate() error {
 		if c.Mode != ModeText && c.Mode != ModeSemantic {
 			return fmt.Errorf("case %s: unknown mode %q", c.ID, c.Mode)
 		}
+		switch c.Ability {
+		case AbilityExtraction, AbilityMultiNote, AbilityUpdate, AbilityAbstention:
+		default:
+			return fmt.Errorf("case %s: unknown ability %q", c.ID, c.Ability)
+		}
+		if (c.Ability == AbilityAbstention) != (len(c.Relevant) == 0) {
+			return fmt.Errorf("case %s: abstention cases, and only those, have no relevant notes", c.ID)
+		}
+		if (c.Ability == AbilityMultiNote) != (len(c.Relevant) > 1) {
+			return fmt.Errorf("case %s: multi-note cases, and only those, have several relevant notes", c.ID)
+		}
 		for _, key := range c.Relevant {
 			n, ok := notes[key]
 			if !ok || n.Other {
@@ -101,11 +132,13 @@ type Store interface {
 type CaseResult struct {
 	ID, Mode  string
 	Returned  []string // note keys in rank order
-	Recall    float64  // fraction of relevant notes returned
-	Precision float64  // fraction of returned notes that are relevant
-	RR        float64  // reciprocal rank of the first relevant note
-	Leaked    int      // returned notes from another project
-	Silent    bool     // the case expects no results
+	Ability   string
+	Recall    float64 // |returned ∩ relevant| / |relevant|
+	Precision float64 // |returned ∩ relevant| / |returned|
+	F1        float64
+	RR        float64 // reciprocal rank of the first relevant note
+	Leaked    int     // returned notes from another project
+	Silent    bool    // the case expects no results
 }
 
 // Report aggregates results per mode.
@@ -116,11 +149,11 @@ type Report struct {
 
 // Summary is the mean score for one mode.
 type Summary struct {
-	Mode                            string
-	Cases                           int
-	Recall, Precision, MRR, Silence float64
-	Leaked                          int
-	HasAnswerable, HasSilent        bool
+	Mode                                string
+	Cases                               int
+	Recall, Precision, F1, MRR, Silence float64
+	Leaked                              int
+	HasAnswerable, HasSilent            bool
 }
 
 // Run seeds the dataset under two fresh projects, scores every case and
@@ -142,7 +175,8 @@ func Run(ctx context.Context, store Store, ds Dataset, projectURL, otherURL, run
 		if n.Other {
 			project = otherURL
 		}
-		in := memory.LogInput{Summary: n.Summary, Assistant: "other", Section: "personal", ProjectURL: &project, Tags: []string{"eval", runTag}}
+		in := memory.LogInput{Summary: n.Summary, Assistant: "other", Section: "personal", ProjectURL: &project, Tags: []string{"eval", runTag},
+			OccurredAt: time.Now().Add(-time.Duration(n.AgeDays) * 24 * time.Hour).UTC().Format(time.RFC3339)}
 		if n.Approach != "" {
 			in.Approach = &n.Approach
 		}
@@ -181,7 +215,7 @@ func Run(ctx context.Context, store Store, ds Dataset, projectURL, otherURL, run
 }
 
 func score(c Case, returned []string, other map[string]bool) CaseResult {
-	r := CaseResult{ID: c.ID, Mode: c.Mode, Returned: returned, Silent: len(c.Relevant) == 0}
+	r := CaseResult{ID: c.ID, Mode: c.Mode, Ability: c.Ability, Returned: returned, Silent: len(c.Relevant) == 0}
 	want := map[string]bool{}
 	for _, key := range c.Relevant {
 		want[key] = true
@@ -209,7 +243,24 @@ func score(c Case, returned []string, other map[string]bool) CaseResult {
 			r.Precision = float64(hits) / float64(len(returned))
 		}
 	}
+	if r.Precision+r.Recall > 0 {
+		r.F1 = 2 * r.Precision * r.Recall / (r.Precision + r.Recall)
+	}
 	return r
+}
+
+// ByAbility returns the mean F1 of each ability, which is how LongMemEval
+// breaks results down. Abstention cases score 1 for silence and 0 otherwise.
+func (r Report) ByAbility() map[string]float64 {
+	sum, n := map[string]float64{}, map[string]int{}
+	for _, c := range r.Results {
+		sum[c.Ability] += c.F1
+		n[c.Ability]++
+	}
+	for ability := range sum {
+		sum[ability] /= float64(n[ability])
+	}
+	return sum
 }
 
 // Summaries returns one Summary per mode, sorted by mode. Answerable cases
@@ -234,13 +285,14 @@ func (r Report) Summaries() []Summary {
 		s.HasAnswerable = true
 		s.Recall += c.Recall
 		s.Precision += c.Precision
+		s.F1 += c.F1
 		s.MRR += c.RR
 	}
 	var out []Summary
 	for mode, s := range by {
 		if answerable := s.Cases - silent[mode]; answerable > 0 {
 			n := float64(answerable)
-			s.Recall, s.Precision, s.MRR = s.Recall/n, s.Precision/n, s.MRR/n
+			s.Recall, s.Precision, s.F1, s.MRR = s.Recall/n, s.Precision/n, s.F1/n, s.MRR/n
 		}
 		if silent[mode] > 0 {
 			s.Silence /= float64(silent[mode])
@@ -256,7 +308,16 @@ func (r Report) Format() string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "retrieval eval (k=%d)\n", r.K)
 	for _, s := range r.Summaries() {
-		fmt.Fprintf(&b, "  %-8s cases=%d recall=%.2f precision=%.2f mrr=%.2f silence=%.2f leaked=%d\n", s.Mode, s.Cases, s.Recall, s.Precision, s.MRR, s.Silence, s.Leaked)
+		fmt.Fprintf(&b, "  %-8s cases=%d recall=%.2f precision=%.2f f1=%.2f mrr=%.2f abstention=%.2f leaked=%d\n", s.Mode, s.Cases, s.Recall, s.Precision, s.F1, s.MRR, s.Silence, s.Leaked)
+	}
+	abilities := r.ByAbility()
+	names := make([]string, 0, len(abilities))
+	for name := range abilities {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		fmt.Fprintf(&b, "  ability %-17s f1=%.2f\n", name, abilities[name])
 	}
 	for _, c := range r.Results {
 		if c.Recall < 1 || c.Leaked > 0 {

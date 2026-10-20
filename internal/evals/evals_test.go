@@ -3,8 +3,10 @@ package evals
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/mcp-runtime/cully/internal/memory"
 )
@@ -25,7 +27,8 @@ func (f *fakeStore) Log(_ context.Context, in memory.LogInput) (string, error) {
 			text += " " + *p
 		}
 	}
-	f.entries = append(f.entries, memory.Entry{ID: id, Summary: text, ProjectURL: in.ProjectURL})
+	when, _ := time.Parse(time.RFC3339, in.OccurredAt)
+	f.entries = append(f.entries, memory.Entry{ID: id, Summary: text, ProjectURL: in.ProjectURL, OccurredAt: when})
 	return id, nil
 }
 
@@ -46,6 +49,8 @@ func (f *fakeStore) Search(_ context.Context, mode string, in memory.SearchInput
 			out = append(out, e)
 		}
 	}
+	// Like the real store, break ties in favour of the newest record.
+	sort.SliceStable(out, func(i, j int) bool { return out[i].OccurredAt.After(out[j].OccurredAt) })
 	return out, nil
 }
 
@@ -75,10 +80,13 @@ func TestDatasetIsValid(t *testing.T) {
 func TestValidateRejectsBadCases(t *testing.T) {
 	notes := []Note{{Key: "a", Summary: "x"}, {Key: "o", Other: true, Summary: "y"}}
 	for name, c := range map[string]Case{
-		"unknown note":  {ID: "1", Mode: ModeText, Query: "q", Relevant: []string{"zz"}},
-		"other project": {ID: "1", Mode: ModeText, Query: "q", Relevant: []string{"o"}},
-		"bad mode":      {ID: "1", Mode: "fuzzy", Query: "q"},
-		"empty query":   {ID: "1", Mode: ModeText, Query: " "},
+		"unknown note":    {ID: "1", Ability: AbilityExtraction, Mode: ModeText, Query: "q", Relevant: []string{"zz"}},
+		"other project":   {ID: "1", Ability: AbilityExtraction, Mode: ModeText, Query: "q", Relevant: []string{"o"}},
+		"bad mode":        {ID: "1", Ability: AbilityAbstention, Mode: "fuzzy", Query: "q"},
+		"empty query":     {ID: "1", Ability: AbilityAbstention, Mode: ModeText, Query: " "},
+		"unknown ability": {ID: "1", Ability: "vibes", Mode: ModeText, Query: "q", Relevant: []string{"a"}},
+		"fake abstention": {ID: "1", Ability: AbilityAbstention, Mode: ModeText, Query: "q", Relevant: []string{"a"}},
+		"fake multi-note": {ID: "1", Ability: AbilityMultiNote, Mode: ModeText, Query: "q", Relevant: []string{"a"}},
 	} {
 		if err := (Dataset{Notes: notes, Cases: []Case{c}}).Validate(); err == nil {
 			t.Errorf("%s accepted", name)
@@ -120,7 +128,7 @@ func TestRunDetectsProjectLeak(t *testing.T) {
 func TestScoreMetrics(t *testing.T) {
 	other := map[string]bool{"o": true}
 	got := score(Case{Relevant: []string{"a", "b"}}, []string{"x", "a", "o"}, other)
-	if got.Recall != 0.5 || got.RR != 0.5 || got.Leaked != 1 || got.Precision < 0.33 || got.Precision > 0.34 {
+	if got.Recall != 0.5 || got.RR != 0.5 || got.Leaked != 1 || got.Precision < 0.33 || got.Precision > 0.34 || got.F1 < 0.39 || got.F1 > 0.41 {
 		t.Fatalf("score = %+v", got)
 	}
 	if s := score(Case{}, nil, other); s.Recall != 1 || !s.Silent {

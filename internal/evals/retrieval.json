@@ -1,28 +1,224 @@
 {
-  "notes": [
-    {"key": "oauth-redirect", "summary": "Fixed OAuth redirect loop after sign-in", "approach": "Traced the callback and found the session cookie was set for the wrong domain", "outcome": "Sign-in completes and returns to the original page", "learning": "Set the cookie domain from the public hostname, not the internal service name"},
-    {"key": "pg-migration-lock", "summary": "Postgres migration blocked by an exclusive table lock", "approach": "Added the constraint as not valid, then validated it in a separate transaction", "outcome": "Migration finishes without blocking writes", "learning": "Validate new constraints after the first transaction commits"},
-    {"key": "flaky-websocket-test", "summary": "Websocket reconnect test failed intermittently in CI", "approach": "Replaced fixed sleeps with a wait on the reconnect event", "outcome": "Test passed fifty consecutive runs", "learning": "Never sleep for a fixed time when an event can be awaited"},
-    {"key": "docker-layer-cache", "summary": "Docker image rebuilds were slow because dependencies reinstalled every time", "approach": "Copied the lockfile and installed dependencies before copying source", "outcome": "Cached layer reused; builds dropped from six minutes to one", "learning": "Order Dockerfile steps from least to most frequently changed"},
-    {"key": "rate-limit-429", "summary": "API returned 429 responses under load from the sync worker", "approach": "Added exponential backoff with jitter and a shared token bucket", "outcome": "No 429 responses during the load test", "learning": "Retry with jitter so workers do not retry in lockstep"},
-    {"key": "timezone-report", "summary": "Daily report showed the wrong day for users in India", "approach": "Stored timestamps in UTC and converted to the viewer timezone at display time", "outcome": "Report dates match local midnight", "learning": "Convert time zones only at the edge"},
-    {"key": "oauth-scope-decoy", "summary": "Documented OAuth scopes for the read-only token", "outcome": "Docs list tools:read and tools:write"},
-    {"key": "pg-index-decoy", "summary": "Added a Postgres index for the entries list query", "outcome": "List query uses the new index"},
-    {"key": "other-oauth", "other": true, "summary": "Fixed OAuth redirect loop in the billing portal", "learning": "Set the cookie domain from the public hostname"},
-    {"key": "other-docker", "other": true, "summary": "Docker image rebuilds were slow because dependencies reinstalled", "learning": "Copy the lockfile before the source"}
-  ],
-  "cases": [
-    {"id": "text-oauth-redirect", "mode": "text", "query": "OAuth redirect loop", "relevant": ["oauth-redirect"]},
-    {"id": "text-migration-lock", "mode": "text", "query": "migration exclusive lock", "relevant": ["pg-migration-lock"]},
-    {"id": "text-websocket", "mode": "text", "query": "websocket reconnect", "relevant": ["flaky-websocket-test"]},
-    {"id": "text-docker-cache", "mode": "text", "query": "docker dependencies reinstalled", "relevant": ["docker-layer-cache"]},
-    {"id": "text-rate-limit", "mode": "text", "query": "429 backoff jitter", "relevant": ["rate-limit-429"]},
-    {"id": "text-timezone", "mode": "text", "query": "timezone report", "relevant": ["timezone-report"]},
-    {"id": "text-project-scope", "mode": "text", "query": "cookie domain", "relevant": ["oauth-redirect"]},
-    {"id": "text-no-answer", "mode": "text", "query": "kubernetes autoscaler", "relevant": []},
-    {"id": "semantic-login-loop", "mode": "semantic", "query": "users keep bouncing back to the login page", "relevant": ["oauth-redirect"]},
-    {"id": "semantic-slow-builds", "mode": "semantic", "query": "container builds take too long", "relevant": ["docker-layer-cache"]},
-    {"id": "semantic-throttling", "mode": "semantic", "query": "too many requests error from the server", "relevant": ["rate-limit-429"]},
-    {"id": "semantic-timestamps", "mode": "semantic", "query": "dates displayed incorrectly for people in a different region", "relevant": ["timezone-report"]}
-  ]
+ "notes": [
+  {
+   "key": "oauth-redirect",
+   "summary": "Fixed OAuth redirect loop after sign-in",
+   "approach": "Traced the callback and found the session cookie was set for the wrong domain",
+   "outcome": "Sign-in completes and returns to the original page",
+   "learning": "Set the cookie domain from the public hostname, not the internal service name"
+  },
+  {
+   "key": "pg-migration-lock",
+   "summary": "Postgres migration blocked by an exclusive table lock",
+   "approach": "Added the constraint as not valid, then validated it in a separate transaction",
+   "outcome": "Migration finishes without blocking writes",
+   "learning": "Validate new constraints after the first transaction commits"
+  },
+  {
+   "key": "flaky-websocket-test",
+   "summary": "Websocket reconnect test failed intermittently in CI",
+   "approach": "Replaced fixed sleeps with a wait on the reconnect event",
+   "outcome": "Test passed fifty consecutive runs",
+   "learning": "Never sleep for a fixed time when an event can be awaited"
+  },
+  {
+   "key": "docker-layer-cache",
+   "summary": "Docker image rebuilds were slow because dependencies reinstalled every time",
+   "approach": "Copied the lockfile and installed dependencies before copying source",
+   "outcome": "Cached layer reused; builds dropped from six minutes to one",
+   "learning": "Order Dockerfile steps from least to most frequently changed"
+  },
+  {
+   "key": "rate-limit-429",
+   "summary": "API returned 429 responses under load from the sync worker",
+   "approach": "Added exponential backoff with jitter and a shared token bucket",
+   "outcome": "No 429 responses during the load test",
+   "learning": "Retry with jitter so workers do not retry in lockstep"
+  },
+  {
+   "key": "timezone-report",
+   "summary": "Daily report showed the wrong day for users in India",
+   "approach": "Stored timestamps in UTC and converted to the viewer timezone at display time",
+   "outcome": "Report dates match local midnight",
+   "learning": "Convert time zones only at the edge"
+  },
+  {
+   "key": "oauth-scope-decoy",
+   "summary": "Documented OAuth scopes for the read-only token",
+   "outcome": "Docs list tools:read and tools:write"
+  },
+  {
+   "key": "pg-index-decoy",
+   "summary": "Added a Postgres index for the entries list query",
+   "outcome": "List query uses the new index"
+  },
+  {
+   "key": "other-oauth",
+   "other": true,
+   "summary": "Fixed OAuth redirect loop in the billing portal",
+   "learning": "Set the cookie domain from the public hostname"
+  },
+  {
+   "key": "other-docker",
+   "other": true,
+   "summary": "Docker image rebuilds were slow because dependencies reinstalled",
+   "learning": "Copy the lockfile before the source"
+  },
+  {
+   "key": "retry-policy-old",
+   "age_days": 60,
+   "summary": "Retry policy for the sync worker: three attempts with a fixed one second delay",
+   "outcome": "Worker retries failed requests on a fixed delay"
+  },
+  {
+   "key": "retry-policy-new",
+   "age_days": 2,
+   "summary": "Retry policy for the sync worker changed to exponential backoff with a longer final delay",
+   "outcome": "Worker backs off after each failed request; fixed delay removed"
+  }
+ ],
+ "cases": [
+  {
+   "id": "text-oauth-redirect",
+   "mode": "text",
+   "query": "OAuth redirect loop",
+   "relevant": [
+    "oauth-redirect"
+   ],
+   "ability": "extraction"
+  },
+  {
+   "id": "text-migration-lock",
+   "mode": "text",
+   "query": "migration exclusive lock",
+   "relevant": [
+    "pg-migration-lock"
+   ],
+   "ability": "extraction"
+  },
+  {
+   "id": "text-websocket",
+   "mode": "text",
+   "query": "websocket reconnect",
+   "relevant": [
+    "flaky-websocket-test"
+   ],
+   "ability": "extraction"
+  },
+  {
+   "id": "text-docker-cache",
+   "mode": "text",
+   "query": "docker dependencies reinstalled",
+   "relevant": [
+    "docker-layer-cache"
+   ],
+   "ability": "extraction"
+  },
+  {
+   "id": "text-rate-limit",
+   "mode": "text",
+   "query": "429 backoff jitter",
+   "relevant": [
+    "rate-limit-429"
+   ],
+   "ability": "extraction"
+  },
+  {
+   "id": "text-timezone",
+   "mode": "text",
+   "query": "timezone report",
+   "relevant": [
+    "timezone-report"
+   ],
+   "ability": "extraction"
+  },
+  {
+   "id": "text-project-scope",
+   "mode": "text",
+   "query": "cookie domain",
+   "relevant": [
+    "oauth-redirect"
+   ],
+   "ability": "extraction"
+  },
+  {
+   "id": "text-no-answer",
+   "mode": "text",
+   "query": "kubernetes autoscaler",
+   "relevant": [],
+   "ability": "abstention"
+  },
+  {
+   "id": "semantic-login-loop",
+   "mode": "semantic",
+   "query": "users keep bouncing back to the login page",
+   "relevant": [
+    "oauth-redirect"
+   ],
+   "ability": "extraction"
+  },
+  {
+   "id": "semantic-slow-builds",
+   "mode": "semantic",
+   "query": "container builds take too long",
+   "relevant": [
+    "docker-layer-cache"
+   ],
+   "ability": "extraction"
+  },
+  {
+   "id": "semantic-throttling",
+   "mode": "semantic",
+   "query": "too many requests error from the server",
+   "relevant": [
+    "rate-limit-429"
+   ],
+   "ability": "extraction"
+  },
+  {
+   "id": "semantic-timestamps",
+   "mode": "semantic",
+   "query": "dates displayed incorrectly for people in a different region",
+   "relevant": [
+    "timezone-report"
+   ],
+   "ability": "extraction"
+  },
+  {
+   "id": "text-multi-oauth",
+   "ability": "multi-note",
+   "mode": "text",
+   "query": "OAuth",
+   "relevant": [
+    "oauth-redirect",
+    "oauth-scope-decoy"
+   ]
+  },
+  {
+   "id": "text-update-retry",
+   "ability": "knowledge-update",
+   "mode": "text",
+   "query": "retry policy sync worker",
+   "relevant": [
+    "retry-policy-new"
+   ]
+  },
+  {
+   "id": "semantic-multi-signin",
+   "ability": "multi-note",
+   "mode": "semantic",
+   "query": "everything about authentication and sign-in",
+   "relevant": [
+    "oauth-redirect",
+    "oauth-scope-decoy"
+   ]
+  },
+  {
+   "id": "semantic-abstain",
+   "ability": "abstention",
+   "mode": "semantic",
+   "query": "how do we deploy to kubernetes",
+   "relevant": []
+  }
+ ]
 }

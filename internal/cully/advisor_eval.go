@@ -5,13 +5,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"flag"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -55,6 +56,43 @@ type AdvisorEval struct {
 	Points                                   []evalCheckpoint
 	Live                                     []liveResult
 	LiveOK, LiveWithEvidence, LiveResearched int
+	LiveCited, LiveUngrounded                int
+	Context                                  ContextSummary
+}
+
+// ContextSummary averages SessionContext over replayed sessions: redundancy
+// over sessions with at least two reads, the gold-based metrics over sessions
+// that edited a file.
+type ContextSummary struct {
+	Sessions, WithEdits       int
+	Redundancy                float64
+	Recall, Precision, AUCCov float64
+}
+
+func summarizeContext(all []SessionContext) ContextSummary {
+	var c ContextSummary
+	redundant := 0
+	for _, s := range all {
+		if s.Steps > 1 {
+			redundant++
+			c.Redundancy += s.Redundant
+		}
+		if s.Steps > 0 && s.Edited > 0 {
+			c.WithEdits++
+			c.Recall += s.Recall
+			c.Precision += s.Precision
+			c.AUCCov += s.AUCCov
+		}
+	}
+	c.Sessions = len(all)
+	if redundant > 0 {
+		c.Redundancy /= float64(redundant)
+	}
+	if c.WithEdits > 0 {
+		n := float64(c.WithEdits)
+		c.Recall, c.Precision, c.AUCCov = c.Recall/n, c.Precision/n, c.AUCCov/n
+	}
+	return c
 }
 
 func scanWaste(lines [][]byte) *TokenWaste {
@@ -188,11 +226,63 @@ type liveResult struct {
 	Researched       bool
 	URL              bool
 	HasEvidence      bool
+	Quiet            bool     // the checkpoint carried no token-waste signal
+	Cited            int      // figures of 10 or more in the advice
+	Ungrounded       []string // cited figures that appear nowhere in the signals
 	Err              string
 }
 
 var evidenceRe = regexp.MustCompile(`(?i)(full_file_reads|big_bash|big_results|top_output_tool|cully_result_tokens|\b\d[\d,.]*\s?(k|tok|tokens)\b)`)
 var urlRe = regexp.MustCompile(`https?://\S+`)
+
+// figureRe finds numbers such as 36000, 36,000 and 12k. A trailing percent sign
+// is excluded by the caller, since shares are derived rather than measured.
+var figureRe = regexp.MustCompile(`(\d[\d,]*(?:\.\d+)?)(\s?[kK]\b)?(%?)`)
+
+func figures(text string, skipPercent bool) []float64 {
+	var out []float64
+	for _, m := range figureRe.FindAllStringSubmatch(urlRe.ReplaceAllString(text, ""), -1) {
+		if skipPercent && m[3] != "" {
+			continue
+		}
+		v, err := strconv.ParseFloat(strings.ReplaceAll(m[1], ",", ""), 64)
+		if err != nil {
+			continue
+		}
+		if m[2] != "" {
+			v *= 1000
+		}
+		out = append(out, v)
+	}
+	return out
+}
+
+// groundFigures checks that every figure of 10 or more in the advice matches a
+// number the advisor was actually given, within 10% so that "about 12k" can
+// stand for 12,340. A figure with no counterpart in the signals was invented.
+// Percentages are skipped because they are derived, not measured.
+func groundFigures(advice []string, signals string) (cited int, ungrounded []string) {
+	known := figures(signals, false)
+	for _, line := range advice {
+		for _, v := range figures(line, true) {
+			if v < 10 {
+				continue
+			}
+			cited++
+			ok := false
+			for _, k := range known {
+				if math.Abs(v-k) <= math.Max(1, 0.1*k) {
+					ok = true
+					break
+				}
+			}
+			if !ok {
+				ungrounded = append(ungrounded, strconv.FormatFloat(v, 'f', -1, 64))
+			}
+		}
+	}
+	return cited, ungrounded
+}
 
 // liveAdvice runs the real advisor on one checkpoint's signals: phase 1 for
 // advice and memory, then phase 2 web research when it names a tool gap. It
@@ -236,7 +326,7 @@ func (ev AdvisorEval) Write(w io.Writer) {
 	fmt.Fprintf(w, "    precision %.0f%%  recall %.0f%%  (proxies: they say the advice was timely, not that it was followed)\n", ev.Precision*100, ev.Recall*100)
 	if len(ev.Live) > 0 {
 		fmt.Fprintf(w, "\n  Live advisor on %d checkpoints (real model, memory recall, web research on a tool gap)\n", len(ev.Live))
-		fmt.Fprintf(w, "    answered %d · cited numbers %d · ran research %d\n", ev.LiveOK, ev.LiveWithEvidence, ev.LiveResearched)
+		fmt.Fprintf(w, "    answered %d · cited numbers %d · ran research %d · figures cited %d, not in the signals %d\n", ev.LiveOK, ev.LiveWithEvidence, ev.LiveResearched, ev.LiveCited, ev.LiveUngrounded)
 		for _, r := range ev.Live {
 			fmt.Fprintf(w, "    %s [%s]", short(r.Session), r.Verdict)
 			if r.Err != "" {
@@ -266,42 +356,25 @@ func truncateRunes(s string, n int) string {
 	return string(r[:n-1]) + "…"
 }
 
-// RunAdvisorEval implements `cully advisor-eval`.
-func RunAdvisorEval(w io.Writer, args []string) error {
-	fs := flag.NewFlagSet("advisor-eval", flag.ContinueOnError)
-	days := fs.Int("days", 30, "look back this many days")
-	project := fs.String("project", "personal", "only transcript folders containing this text")
-	max := fs.Int("max", 40, "most sessions to replay")
-	live := fs.Int("live", 0, "also run the real advisor on this many checkpoints (uses model tokens and web search)")
-	agent := fs.String("agent", "claude", "advisor agent for the live pass")
-	asJSON := fs.Bool("json", false, "print JSON")
-	root := fs.String("dir", "", "Claude projects directory (default ~/.claude/projects)")
-	if err := fs.Parse(args); err != nil {
-		return err
-	}
-	if *root == "" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return err
-		}
-		*root = filepath.Join(home, ".claude", "projects")
-	}
+// replayTranscripts replays the most recent Claude transcripts whose project
+// folder contains project, newest first.
+func replayTranscripts(root, project string, days, max int) (points []evalCheckpoint, sessions []SessionContext, err error) {
 	scratch, err := os.MkdirTemp("", "cully-eval-")
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
 	defer os.RemoveAll(scratch)
-	since := time.Now().AddDate(0, 0, -*days)
+	since := time.Now().AddDate(0, 0, -days)
 	type found struct {
 		path string
 		mod  time.Time
 	}
 	var paths []found
-	_ = filepath.WalkDir(*root, func(path string, d os.DirEntry, err error) error {
+	_ = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
 		if err != nil || d.IsDir() || !strings.HasSuffix(path, ".jsonl") {
 			return nil
 		}
-		if !strings.Contains(filepath.Base(filepath.Dir(path)), *project) {
+		if !strings.Contains(filepath.Base(filepath.Dir(path)), project) {
 			return nil
 		}
 		if info, err := d.Info(); err == nil && !info.ModTime().Before(since) {
@@ -310,45 +383,59 @@ func RunAdvisorEval(w io.Writer, args []string) error {
 		return nil
 	})
 	sort.Slice(paths, func(i, j int) bool { return paths[i].mod.After(paths[j].mod) })
-	if len(paths) > *max {
-		paths = paths[:*max]
+	if len(paths) > max {
+		paths = paths[:max]
 	}
-	var points []evalCheckpoint
-	sessions := 0
 	cwd, _ := os.Getwd()
 	for _, p := range paths {
 		got := evalSession(p.path, cwd, scratch)
 		if len(got) > 0 {
-			sessions++
 			points = append(points, got...)
+			sessions = append(sessions, measureSessionContext(readTranscriptLines(p.path)))
 		}
 	}
-	ev := summarizeEval(points, sessions)
-	if *live > 0 {
-		// Prefer checkpoints that carry the most signal: advised ones first.
-		sort.SliceStable(points, func(i, j int) bool { return points[i].Advised && !points[j].Advised })
-		for i := 0; i < len(points) && i < *live; i++ {
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-			r := liveAdvice(ctx, *agent, cwd, points[i].Signals)
-			cancel()
-			r.Session, r.Verdict = points[i].Session, string(points[i].Verdict)
-			ev.Live = append(ev.Live, r)
-			if r.Err == "" {
-				ev.LiveOK++
-			}
-			if r.HasEvidence {
-				ev.LiveWithEvidence++
-			}
-			if r.Researched {
-				ev.LiveResearched++
-			}
+	return points, sessions, nil
+}
+
+// runLive asks the real advisor about up to n checkpoints, alternating between
+// ones with a waste signal and quiet ones so both speaking and silence are
+// tested, then checks that every figure it cites was in its signals.
+func (ev *AdvisorEval) runLive(agent string, points []evalCheckpoint, n int) {
+	var advised, quiet []evalCheckpoint
+	for _, p := range points {
+		if p.Advised {
+			advised = append(advised, p)
+		} else {
+			quiet = append(quiet, p)
 		}
 	}
-	if *asJSON {
-		enc := json.NewEncoder(w)
-		enc.SetIndent("", "  ")
-		return enc.Encode(ev)
+	var picked []evalCheckpoint
+	for len(picked) < n && (len(advised) > 0 || len(quiet) > 0) {
+		if len(advised) > 0 {
+			picked, advised = append(picked, advised[0]), advised[1:]
+		}
+		if len(picked) < n && len(quiet) > 0 {
+			picked, quiet = append(picked, quiet[0]), quiet[1:]
+		}
 	}
-	ev.Write(w)
-	return nil
+	cwd, _ := os.Getwd()
+	for _, p := range picked {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		r := liveAdvice(ctx, agent, cwd, p.Signals)
+		cancel()
+		r.Session, r.Verdict, r.Quiet = p.Session, string(p.Verdict), !p.Advised
+		r.Cited, r.Ungrounded = groundFigures(r.Lines, p.Signals)
+		ev.Live = append(ev.Live, r)
+		if r.Err == "" {
+			ev.LiveOK++
+		}
+		if r.HasEvidence {
+			ev.LiveWithEvidence++
+		}
+		if r.Researched {
+			ev.LiveResearched++
+		}
+		ev.LiveCited += r.Cited
+		ev.LiveUngrounded += len(r.Ungrounded)
+	}
 }

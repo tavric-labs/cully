@@ -43,19 +43,15 @@ CULLY_E2E_TEAM_DATABASE_URL=postgresql://test:test@localhost:5432/cully_test \
 
 The test builds the current CLI, MCP and data binaries with the race detector, applies migrations in an isolated schema, starts loopback services and a temporary JWKS provider, and removes its schema and processes on completion. Solo's complete installation flow runs with `bash tests/e2e/setup.sh` on an isolated CI runner; `TestSolo` targets the local stack through `CULLY_E2E_MCP_URL`. Ordinary Go test runs skip each mode unless its environment variable is set. The published-CLI workflow option applies to Solo; Team always exercises the current checkout.
 
-### Retrieval evals
+### Evals
 
-`internal/evals` scores whether memory returns the right prior work. Its dataset (`internal/evals/retrieval.json`) mixes relevant notes, distractors in the same project and notes from another project. Each case reports recall, precision, reciprocal rank, silence (nothing returned when nothing matches) and leakage across projects. No model judges the results.
-
-`go test ./internal/evals` checks the scoring against an in-process fake. `TestRetrievalEval` seeds the dataset into fresh projects on a live stack, scores `cully_search` (gated) and `cully_recall` (reported), and deletes what it created:
+`cully eval` scores setup, the harness audit, the advisor and memory retrieval against planted ground truth; [evaluate Cully](/evals) explains the method and its limits. The scoring and dataset live in `internal/evals` and `internal/cully/eval.go`. `go test ./internal/evals ./internal/cully` runs them with fakes and fixtures, and checks that each suite fails when given wrong ground truth. `TestRetrievalEval` runs the memory suite against a live stack:
 
 ```sh
 CULLY_E2E_MCP_URL=http://127.0.0.1:3393/mcp go test ./tests/e2e -run '^TestRetrievalEval$' -count=1 -v
 # Also fail when semantic recall drops below 0.5:
 CULLY_EVAL_SEMANTIC_MIN=0.5 CULLY_E2E_MCP_URL=... go test ./tests/e2e -run '^TestRetrievalEval$' -count=1 -v
 ```
-
-Add a case to the dataset whenever retrieval misses something that mattered. Judging the advisor's suggestions needs a model-graded scorer and is not covered here.
 
 After a release's archives and service images are published, verify the real distribution path from the matching checkout:
 
