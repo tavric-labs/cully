@@ -1,0 +1,28 @@
+{
+  "author": {
+    "name": "Tavric Labs",
+    "url": "https://github.com/tavric-labs"
+  },
+  "description": "Session health, an advisor, loop detection and durable memory for coding agents. Needs the cully CLI on PATH.",
+  "extensions": {
+    "com.openai": {
+      "hooks": "./hooks/hooks.json"
+    }
+  },
+  "homepage": "https://docs.cully.net/plugins",
+  "interface": {
+    "category": "Developer Tools",
+    "displayName": "Cully",
+    "shortDescription": "Session health, advisor and memory"
+  },
+  "keywords": [
+    "memory",
+    "advisor",
+    "session-health",
+    "handoff"
+  ],
+  "license": "Apache-2.0",
+  "name": "cully",
+  "repository": "https://github.com/tavric-labs/cully",
+  "skills": "./skills/"
+}

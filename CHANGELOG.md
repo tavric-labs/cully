@@ -4,6 +4,8 @@
 
 ## 0.18.0
 
+- Ship a Cully plugin for Claude Code, Cursor and Codex with marketplace manifests for each, carrying the same hooks and skill as `cully setup` (plus the `/cully` command for Claude Code and Cursor). Files are generated from the setup definitions; tests fail if a plugin's hooks or skill drift from setup, and Claude Code's own `plugin validate` checks the Claude plugin and marketplace. The Claude plugin is validated; Cursor and Codex follow their documented formats and are not yet installed in a live agent.
+
 - Add `cully suggestions --request N`, which prints the guarded setup request for a numbered advisor suggestion, so agents in T3 Code or any client without the Cully terminal can offer the same one-step setup. The Cully skill tells agents to use it when asked to carry a suggestion out.
 
 - Add `cully eval`, which scores Cully as one agent against ground truth instead of a model judge: `setup` installs every agent into a scratch home and checks the skills, hooks, harness-audit view, untouched project, repeatability and uninstall; `harness` checks planted setups; `advisor` checks planted waste and loop sessions, replays your transcripts, and with `--live` fails on figures the advisor was never given; `memory` scores text search and semantic recall on recall, precision, F1, ranking, abstention and cross-project leakage. Metrics follow ContextBench, LongMemEval and LivePlan; `docs/evals.md` states the method and its limits. This replaces `cully advisor-eval`, and the end-to-end setup check now runs it.
