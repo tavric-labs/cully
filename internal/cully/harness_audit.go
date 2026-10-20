@@ -52,6 +52,15 @@ func dirHasEntries(path string) bool {
 	return err == nil && len(entries) > 0
 }
 
+// under joins parts onto root, or returns "" (which nothing reads) when root
+// is unset, so an empty directory never resolves relative to the working one.
+func under(root string, parts ...string) string {
+	if root == "" {
+		return ""
+	}
+	return filepath.Join(append([]string{root}, parts...)...)
+}
+
 func auditHarness(d harnessDirs) []harnessItem {
 	claudeSettings := filepath.Join(d.Claude, "settings.json")
 	codexConfig := filepath.Join(d.Codex, "config.toml")
@@ -75,8 +84,29 @@ func auditHarness(d harnessDirs) []harnessItem {
 	if strings.Contains(codex, "cully") {
 		memory = append(memory, codexConfig)
 	}
+	for _, p := range []string{
+		under(d.Project, ".mcp.json"),
+		under(filepath.Dir(d.Claude), ".claude.json"), under(d.Claude, ".claude.json"),
+		under(d.Cursor, "mcp.json"), under(d.Project, ".cursor", "mcp.json"),
+	} {
+		if strings.Contains(readCapped(p), "cully") {
+			memory = append(memory, p)
+		}
+	}
 	if strings.Contains(settings, `"hooks"`) {
 		hooks = append(hooks, claudeSettings)
+	}
+	for _, p := range []string{
+		under(d.Project, ".claude", "settings.json"), under(d.Project, ".claude", "settings.local.json"),
+		under(d.Cursor, "hooks.json"), under(d.Project, ".cursor", "hooks.json"),
+		under(d.Codex, "hooks.json"),
+	} {
+		if strings.Contains(readCapped(p), `"hooks"`) {
+			hooks = append(hooks, p)
+		}
+	}
+	if strings.Contains(codex, "[hooks") {
+		hooks = append(hooks, codexConfig)
 	}
 	if strings.Contains(settings, `"enabledPlugins"`) {
 		plugins = append(plugins, claudeSettings)
@@ -107,7 +137,11 @@ func auditHarness(d harnessDirs) []harnessItem {
 	instructions := firstExisting(
 		filepath.Join(d.Claude, "CLAUDE.md"), filepath.Join(d.Codex, "AGENTS.md"),
 		filepath.Join(d.Project, "CLAUDE.md"), filepath.Join(d.Project, "AGENTS.md"),
+		under(d.Project, ".cursorrules"),
 	)
+	if p := under(d.Project, ".cursor", "rules"); dirHasEntries(p) {
+		instructions = append(instructions, p)
+	}
 	return []harnessItem{
 		{"Instructions", instructions, "Add a short CLAUDE.md or AGENTS.md with build, test and review rules for this project."},
 		{"Guardrails", guard, "Set permission rules or an approval policy so risky commands need confirmation."},
