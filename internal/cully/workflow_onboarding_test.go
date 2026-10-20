@@ -135,3 +135,15 @@ func TestWorkflowRefusesLikelyCredentialsBeforeSaving(t *testing.T) {
 		t.Fatal("saved credential")
 	}
 }
+
+func TestWorkflowRejectsOversizedAnswerWithoutSaving(t *testing.T) {
+	isolateWorkflow(t)
+	var out bytes.Buffer
+	err := RunWorkflowOnboarding(strings.NewReader("y\n"+strings.Repeat("a", 13<<10)+"\n"), &out, nil)
+	if err == nil || !strings.Contains(err.Error(), "too long") {
+		t.Fatalf("err = %v, want too long", err)
+	}
+	if _, err := os.Stat(workflowSkillPath()); !os.IsNotExist(err) {
+		t.Fatal("saved oversized answer")
+	}
+}

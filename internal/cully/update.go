@@ -145,7 +145,7 @@ func (u cliUpdater) install(ctx context.Context, destination, tag, asset string)
 	var expected string
 	for _, line := range strings.Split(string(sums), "\n") {
 		fields := strings.Fields(line)
-		if len(fields) == 2 && fields[1] == asset {
+		if len(fields) == 2 && strings.TrimPrefix(fields[1], "*") == asset {
 			expected = fields[0]
 			break
 		}

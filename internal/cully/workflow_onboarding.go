@@ -81,6 +81,9 @@ func RunWorkflowOnboarding(input io.Reader, w io.Writer, args []string) error {
 		fmt.Fprint(w, prompt)
 		if !scanner.Scan() {
 			if err := scanner.Err(); err != nil {
+				if errors.Is(err, bufio.ErrTooLong) {
+					return "", fmt.Errorf("answer is too long; nothing saved; keep each answer under 12 KiB")
+				}
 				return "", err
 			}
 			return "", io.EOF
