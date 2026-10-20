@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Add `deploy/migrate-registry-namespace.sh` to move an installed VM's website, docs and personal-data controllers to the `ghcr.io/tavric-labs` image namespace: dry-run report, snapshot, local image retag and controller install, with sandbox tests.
 ## 0.15.0
 
 - Add optional T3 Code support as a multi-agent surface, with a setup hint and documentation in `docs/t3code.md`.
