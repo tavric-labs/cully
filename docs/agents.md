@@ -28,6 +28,8 @@ cully run my-agent   # any other agent on your PATH
 
 The Cursor editor itself is not a terminal program, so the Cully terminal wraps the `cursor-agent` CLI. The editor keeps Cully's hooks, command and MCP tools.
 
+Prefer the agent's plugin marketplace? See [install as a plugin](/plugins). Use one route per agent.
+
 ## What setup installs
 
 All integrations live in the selected agent’s user configuration and work across local projects. Setup does not create project files. See [user-level paths](/installation#one-setup-across-projects).

@@ -1,0 +1,14 @@
+{
+  "name": "cully",
+  "owner": {
+    "name": "Tavric Labs",
+    "url": "https://github.com/tavric-labs"
+  },
+  "plugins": [
+    {
+      "description": "Session health, an advisor, loop detection and durable memory for coding agents. Needs the cully CLI on PATH.",
+      "name": "cully",
+      "source": "plugins/cursor"
+    }
+  ]
+}

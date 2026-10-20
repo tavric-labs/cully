@@ -56,6 +56,7 @@ export default withMermaid(defineConfig({
           { text: 'Advisor', link: '/advisor' },
           { text: 'Project memory', link: '/memory' },
           { text: 'Connect an agent', link: '/agents' },
+          { text: 'Install as a plugin', link: '/plugins' },
           { text: 'Use Cully in T3 Code', link: '/t3code' }
         ]
       },
@@ -65,6 +66,7 @@ export default withMermaid(defineConfig({
           { text: 'Keep sessions focused', link: '/session-optimization' },
           { text: 'Audit your harness', link: '/harness' },
           { text: 'Measure token impact', link: '/token-impact' },
+          { text: 'Evaluate Cully', link: '/evals' },
           { text: 'Mobile Self preview', link: '/mobile' },
           { text: 'Privacy', link: '/privacy' },
           { text: 'Work across people and agents', link: '/team-workflows' }

@@ -129,7 +129,7 @@
           <div class="optimization-grid">
             <article><span>01</span><h4>Same wrapper everywhere</h4><p><code>cully run claude</code>, <code>codex</code>, <code>cursor</code> or any executable on your PATH gets the same health bar and advisor panel.</p></article>
             <article><span>02</span><h4>Setup, usage and impact together</h4><p>The Harness column shows readiness and gaps. Project &amp; usage keeps context close, while Cully impact shows observed memory use, analyses avoided and estimated net tokens.</p></article>
-            <article><span>03</span><h4>An advisor you can click</h4><p>Click the panel or press Ctrl+] to open every suggestion. Nothing is applied until you approve a preview.</p></article>
+            <article><span>03</span><h4>An advisor you can click</h4><p>Click the panel or press Ctrl+] to open every suggestion. Press Enter to put a setup request in your prompt; nothing runs until you send it.</p></article>
           </div>
           <p class="optimization-caveat">Supported on macOS and Linux. Cursor support wraps the <code>cursor-agent</code> CLI. Cully's tool events come from each agent's hooks, so an agent without hooks gets the health bar and Git state but not loop detection or replay.</p>
           <a class="inline-link" href="https://docs.cully.net/terminal">How the terminal works <span aria-hidden="true">↗</span></a>
@@ -142,7 +142,7 @@
           <div class="optimization-grid">
             <article><span>01 / IMPACT</span><h4><code>cully impact</code></h4><p>Memory hits, empty lookups, analyses avoided, loops caught and oversized output flagged. The panel brings this session’s impact beside its usage.</p></article>
             <article><span>02 / COST</span><h4><code>cully savings</code></h4><p>Estimate Cully results, arguments and schema tokens in Claude history. Compare early exploration with and without a memory hit, with a confidence label.</p></article>
-            <article><span>03 / EVALUATE</span><h4><code>cully advisor-eval</code></h4><p>Replay historical checkpoints and compare token-waste advice with later output. An optional live pass uses your configured model and research tools.</p></article>
+            <article><span>03 / EVALUATE</span><h4><code>cully eval</code></h4><p>Score setup, harness, advisor and memory against planted ground truth and published metrics. An optional live pass checks the advisor cites no figure it was not given.</p></article>
           </div>
           <p class="optimization-caveat">These are different samples and estimates, not billing totals or causal proof of savings. Historical transcript reports support Claude today. Live evaluation consumes model tokens and can use web research.</p>
           <a class="inline-link" href="https://docs.cully.net/token-impact">Read the measurement guide <span aria-hidden="true">↗</span></a>

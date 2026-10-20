@@ -39,9 +39,11 @@ Works across agents. Learns across sessions.
 | [Session intelligence](/session-intelligence) | A private journal of what the agent did, turned into loops, health, replay and handoff |
 | [Harness](/harness) | Read-only setup detection and historical output estimates |
 | [Token impact](/token-impact) | Observed events, estimated overhead and diagnostic comparisons |
+| [Evaluate Cully](/evals) | Score setup, harness, advisor and memory against planted ground truth |
 | [Advisor](/advisor) | A second pair of eyes that warns and suggests while you work |
 | [Project memory](/memory) | Decisions and results that outlive the session |
 | [Agent integration](/agents) | How Claude Code, Codex, Cursor and others connect |
+| [Install as a plugin](/plugins) | Add Cully's hooks and skill from an agent's plugin marketplace |
 | [Team workspace](/team-workflows) | Project access, human-owned tasks, portable checkpoints, review evidence and published lessons |
 
 ## Run Cully

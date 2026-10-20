@@ -3,6 +3,7 @@ package cully
 import (
 	"bufio"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -67,8 +68,38 @@ func RunList(w io.Writer) {
 		fmt.Fprintf(w, "    %s %s\n", c.Level.Display(), c.Text)
 	}
 	if len(fixes) > 0 {
-		fmt.Fprintln(w, "\nWire up a fix: cully apply <n>")
+		fmt.Fprintln(w, "\nWire up a fix: cully apply <n>  ·  ask your agent to do it: cully suggestions --request <n>")
 	}
+}
+
+// RunSuggestions implements `cully suggestions [--request N]`. Without a flag it
+// lists the session's suggestions. With --request it prints the guarded request
+// for numbered fix N, so an agent running outside the Cully terminal, such as in
+// T3 Code, can offer to set it up. It changes nothing.
+func RunSuggestions(w io.Writer, args []string) error {
+	fs := flag.NewFlagSet("suggestions", flag.ContinueOnError)
+	request := fs.Int("request", 0, "print the setup request for numbered fix N")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() > 0 {
+		return fmt.Errorf("usage: cully suggestions [--request N]")
+	}
+	if *request == 0 {
+		RunList(w)
+		return nil
+	}
+	cwd, _ := os.Getwd()
+	session := resolveSession(cwd)
+	if _, err := applyableReportIndex(session, *request); err != nil {
+		return err
+	}
+	suggestion := applyableReportLines(session)[*request-1]
+	if _, ok := taskNameFromSuggestion(stripSeverityPrefix(suggestion)); ok {
+		return fmt.Errorf("fix #%d sets the session task; run: cully apply %d", *request, *request)
+	}
+	fmt.Fprintln(w, advisorSetupRequest(suggestion, readSessionSignals(session)))
+	return nil
 }
 
 // shortSession renders a session id compactly for display.
