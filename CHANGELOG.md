@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Fix the published-CLI end-to-end check to use the required `cully setup --all` mode, including its preparation check.
+
 ## 0.17.0
 
 - Add `cully harness`, a read-only setup audit with named gaps and a historical oversized-output baseline from recent local Claude sessions. Detect project/shared skills and supported agent config, and recognize actual subagent delegations.
