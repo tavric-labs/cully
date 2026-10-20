@@ -4,6 +4,8 @@
 
 - Add `cully harness`, a read-only audit of the agent setup (instructions, guardrails, memory, skills, subagents, hooks, plugins) with one suggestion per gap, inspired by the component model in Google Research's Harness². It reads file names and config keys only, and reports measured oversized-output tokens per session from recent transcripts as a before/after baseline, without claiming causation.
 
+- Make the `cully harness` Subagents and Skills gaps evidence-based: recorded delegations show Subagents as in use instead of missing, and remaining gaps cite your measured oversized-output tokens per session.
+
 ## 0.16.0
 
 - Add `cully update` with release checks, version selection, checksum verification and atomic CLI replacement; keep existing agent links, restart a running local advisor and direct service upgrades to deployment docs.
