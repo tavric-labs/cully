@@ -121,6 +121,20 @@ func stripMarkers(text string) string {
 	return strings.TrimLeft(strings.Join(out, "\n"), "\n")
 }
 
+// pluginReadme is the README each directory review asks for. It states what the
+// plugin does not do first, since a listing that hides that sends users away.
+func pluginReadme(agent, install string) string {
+	return "# Cully for " + agent + "\n\n" +
+		pluginDescription + "\n\n" +
+		"This plugin adds Cully's hooks and skill to " + agent + ". It is one of two install routes: `cully setup` installs the same hooks, so use **one** of them or each hook runs twice.\n\n" +
+		"## Before you install\n\n" +
+		"- Install the `cully` CLI first. The hooks run `cully` from your `PATH`: https://docs.cully.net/installation\n" +
+		"- The plugin does not connect memory. You run the Cully MCP server on your own infrastructure, so connect it yourself with `cully mcp add --agent " + strings.ToLower(agent) + " --url URL`.\n" +
+		"- Hooks send nothing off your machine. See https://docs.cully.net/privacy\n\n" +
+		"## Install\n\n```\n" + install + "\n```\n\n" +
+		"Full guide: " + pluginHomepage + "\n\nSource and issues: " + pluginRepository + "\n"
+}
+
 // PluginFiles returns every plugin and marketplace file keyed by its path
 // relative to the repository root. The plugin manifests omit a version so each
 // agent tracks the repository instead of pinning a stale one.
@@ -145,6 +159,7 @@ func PluginFiles() map[string]string {
 		"plugins/claude/hooks/hooks.json":           jsonFile(groupedHooks(pluginClaudeHooks())),
 		"plugins/claude/skills/cully/SKILL.md":      skill,
 		"plugins/claude/commands/cully.md":          claudeCommand,
+		"plugins/claude/README.md":                  pluginReadme("Claude Code", "/plugin marketplace add tavric-labs/cully\n/plugin install cully@cully"),
 		".claude-plugin/marketplace.json": jsonFile(map[string]any{
 			"name": "cully", "owner": owner, "description": "Cully plugins for coding agents.",
 			"plugins": []any{map[string]any{"name": "cully", "source": "./plugins/claude", "description": pluginDescription, "category": "productivity"}},
@@ -154,6 +169,7 @@ func PluginFiles() map[string]string {
 		"plugins/cursor/hooks/hooks.json":           jsonFile(flatHooks(pluginCursorHooks())),
 		"plugins/cursor/skills/cully/SKILL.md":      skill,
 		"plugins/cursor/commands/cully.md":          stripMarkers(cursorCullyCommand),
+		"plugins/cursor/README.md":                  pluginReadme("Cursor", "Install from the Cursor Marketplace once listed, or see "+pluginHomepage),
 		".cursor-plugin/marketplace.json": jsonFile(map[string]any{
 			"name": "cully", "owner": owner,
 			"plugins": []any{map[string]any{"name": "cully", "source": "plugins/cursor", "description": pluginDescription}},
@@ -165,6 +181,7 @@ func PluginFiles() map[string]string {
 			"interface":  map[string]any{"displayName": "Cully", "shortDescription": "Session health, advisor and memory", "category": "Developer Tools"},
 		})),
 		"plugins/codex/hooks/hooks.json":      jsonFile(groupedHooks(pluginCodexHooks())),
+		"plugins/codex/README.md":             pluginReadme("Codex", "codex plugin marketplace add tavric-labs/cully\n# then install Cully from the Plugins directory and review its hooks in /hooks"),
 		"plugins/codex/skills/cully/SKILL.md": skill,
 		".agents/plugins/marketplace.json": jsonFile(map[string]any{
 			"name": "cully", "interface": map[string]any{"displayName": "Cully"},

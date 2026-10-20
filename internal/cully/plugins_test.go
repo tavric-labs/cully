@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"testing"
@@ -142,6 +143,56 @@ func TestClaudeValidatesThePluginAndMarketplace(t *testing.T) {
 		out, err := exec.Command(claude, "plugin", "validate", dir).CombinedOutput()
 		if err != nil || !strings.Contains(string(out), "Validation passed") {
 			t.Errorf("claude plugin validate %s: %v\n%s", dir, err, out)
+		}
+	}
+}
+
+var kebabName = regexp.MustCompile(`^[a-z0-9][a-z0-9.-]*$`)
+
+// Anthropic's directory and the Cursor Marketplace both review plugins against
+// a checklist. Check what a machine can: a kebab-case name, a description, a
+// README, and manifest paths that stay inside the plugin.
+func TestPluginsMeetTheDirectoryChecklists(t *testing.T) {
+	root := repoRoot(t)
+	for agent, manifest := range map[string]string{
+		"claude": ".claude-plugin/plugin.json",
+		"cursor": ".cursor-plugin/plugin.json",
+		"codex":  ".codex-plugin/plugin.json",
+	} {
+		dir := filepath.Join(root, "plugins", agent)
+		m := readJSON(t, filepath.Join(dir, manifest))
+		if name, _ := m["name"].(string); !kebabName.MatchString(name) {
+			t.Errorf("%s: name %q is not lowercase kebab-case", agent, name)
+		}
+		if d, _ := m["description"].(string); len(d) < 40 {
+			t.Errorf("%s: description is too short to explain the plugin", agent)
+		}
+		if readme, err := os.ReadFile(filepath.Join(dir, "README.md")); err != nil || !strings.Contains(string(readme), "cully mcp add") || !strings.Contains(string(readme), "not connect memory") {
+			t.Errorf("%s: README.md must exist and say what the plugin does not do (%v)", agent, err)
+		}
+		blob, _ := json.Marshal(m)
+		if strings.Contains(string(blob), `"..`) || strings.Contains(string(blob), `":"/`) {
+			t.Errorf("%s: manifest paths must be relative and stay inside the plugin", agent)
+		}
+		if _, pinned := m["version"]; pinned {
+			t.Errorf("%s: a pinned version would stop users receiving updates", agent)
+		}
+	}
+	// Marketplace entries must resolve to real plugin folders.
+	for file, check := range map[string]func(map[string]any) string{
+		".claude-plugin/marketplace.json": func(e map[string]any) string { s, _ := e["source"].(string); return s },
+		".cursor-plugin/marketplace.json": func(e map[string]any) string { s, _ := e["source"].(string); return s },
+		".agents/plugins/marketplace.json": func(e map[string]any) string {
+			src, _ := e["source"].(map[string]any)
+			s, _ := src["path"].(string)
+			return s
+		},
+	} {
+		for _, entry := range toList(readJSON(t, filepath.Join(root, file))["plugins"]) {
+			source := check(entry.(map[string]any))
+			if info, err := os.Stat(filepath.Join(root, source)); err != nil || !info.IsDir() {
+				t.Errorf("%s points at %q, which is not a folder", file, source)
+			}
 		}
 	}
 }
