@@ -197,6 +197,11 @@ func SummarizeImpact(events []impactEvent, days int, perHit int64) Impact {
 	return im
 }
 
+// empty is true when no event has been recorded in the period.
+func (im Impact) empty() bool {
+	return im.MemoryHits+im.MemoryEmpty+im.AnalysesSkipped+im.LoopsCaught+im.WasteSessions == 0
+}
+
 // Lines renders the compact view used in the panel: the wins first, never the
 // last tool call.
 func (im Impact) Lines() []string {
@@ -257,7 +262,10 @@ func (im Impact) Write(w io.Writer, showLog bool) {
 	fmt.Fprintf(w, "    Saved (estimated)      %8s   memory %s + analyses %s\n", compactCount(im.TotalSaved), compactCount(im.MemoryTokensSaved), compactCount(im.AnalysisTokensAvoided))
 	fmt.Fprintf(w, "    Cost (measured)        %8s   %d hits %s + %d empty %s\n", compactCount(im.TotalCost), im.MemoryHits, compactCount(im.HitTokens), im.MemoryEmpty, compactCount(im.EmptyTokens))
 	verdict := "Cully is saving tokens"
-	if im.Net < 0 {
+	switch {
+	case im.empty():
+		verdict = "nothing recorded yet; this fills in as lookups and the advisor run"
+	case im.Net < 0:
 		verdict = "Cully is costing more than it saves so far"
 	}
 	fmt.Fprintf(w, "    Net                    %8s   %s\n\n", signedCount(im.Net), verdict)
