@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Document `cully update` and `cully workflow` in the README and advisor command table, describe how the workflow profile is handled in the privacy guide, and document the divider hover and resize cursor in the terminal guide.
+
 ## 0.16.0
 
 - Add `cully update` with release checks, version selection, checksum verification and atomic CLI replacement; keep existing agent links, restart a running local advisor and direct service upgrades to deployment docs.
