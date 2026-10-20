@@ -163,3 +163,11 @@ func TestImpactSinceCachesUntilTheLedgerChanges(t *testing.T) {
 		t.Fatalf("second event not seen: %+v", im)
 	}
 }
+
+func TestImpactReportDoesNotClaimSavingsWhenNothingWasRecorded(t *testing.T) {
+	var out strings.Builder
+	SummarizeImpact(nil, 7, 0).Write(&out, false)
+	if strings.Contains(out.String(), "is saving tokens") || !strings.Contains(out.String(), "nothing recorded yet") {
+		t.Fatalf("an empty ledger must not read as a win:\n%s", out.String())
+	}
+}

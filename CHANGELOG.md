@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+## 0.15.0
+
+- Add optional T3 Code support as a multi-agent surface, with a setup hint and documentation in `docs/t3code.md`.
 - Add `cully advisor-eval` to test the advisor on past sessions: it replays each transcript at 30, 60 and 90 percent through the live signal pipeline and judges token-waste advice in hindsight (useful, low-value, missed, correct-quiet, with precision and recall proxies). `--live N` also runs the real two-phase advisor, memory recall and web research on a tool gap, on N checkpoints and scores whether it cites numbers and finds a tool. It reads only personal-project transcripts by default and keeps no transcript text.
 - Replace the panel's raw Cully MCP call counters and "last observed" timestamp with a Cully impact column: memory used, analyses avoided, loops caught and net tokens for this terminal session, plus one compact MCP health and authentication line.
 - Add an impact ledger and `cully impact [--days N] [--json] [--log]`: memory lookups that returned prior work or came back empty, advisor analyses skipped (with the tokens not sent), loops caught and oversized output flagged, against the measured token cost of Cully's own lookups. A memory saving is claimed only when `cully savings` has enough sessions to compare; otherwise the report says it is not claimed.
