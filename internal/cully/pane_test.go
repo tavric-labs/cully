@@ -332,14 +332,14 @@ dd bs=1 count=2 of="$CULLY_TEST_INPUT_FILE" 2>/dev/null
 	}
 }
 
-func TestCodexPaneAcceptHandoffPreservesDraftAndChildSize(t *testing.T) {
+func TestCodexPaneEnterAddsRequestToPromptAndPreservesDraft(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("CULLY_ANALYZE_DISABLE", "1")
 	t.Setenv("CLAUDE_CONFIG_DIR", dir)
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	received := filepath.Join(dir, "received")
 	line := statsAdvice(toolStats{Tools: 1, Edits: 1, EditsSinceCheck: 1})[0]
-	expected := "draft\x1b[200~\n" + advisorHandoff(line).Handoff + "\x1b[201~"
+	expected := "draft\x1b[200~\n" + advisorRequest(line, "") + "\x1b[201~"
 	t.Setenv("CULLY_TEST_RECEIVED", received)
 	t.Setenv("CULLY_TEST_BYTES", fmt.Sprint(len(expected)))
 	script := `#!/bin/sh
@@ -384,9 +384,9 @@ if [ "$(stty size)" != "$initial_size" ]; then exit 2; fi
 	case <-time.After(5 * time.Second):
 		t.Fatal("child did not start")
 	}
-	// The first Enter previews; the second accepts the clearly labeled input
-	// handoff. It does not submit it or erase the user's existing draft.
-	master.Write([]byte("draft\x1d\r\r"))
+	// One Enter adds the request to the input. It neither submits it nor
+	// erases the user's existing draft.
+	master.Write([]byte("draft\x1d\r"))
 	select {
 	case err := <-done:
 		if err != nil {
