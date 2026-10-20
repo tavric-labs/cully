@@ -8,7 +8,7 @@
   "plugins": [
     {
       "category": "productivity",
-      "description": "Session health, an advisor, loop detection and durable memory for coding agents. Needs the cully CLI on PATH.",
+      "description": "Solo: a coding-agent harness runtime. Team: a project management harness runtime for people and AI agents. Needs the cully CLI on PATH.",
       "name": "cully",
       "source": "./plugins/claude"
     }

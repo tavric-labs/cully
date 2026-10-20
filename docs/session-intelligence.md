@@ -25,12 +25,14 @@ One journal file per session, in your Cully directory, readable only by you. Eac
 | --- | --- |
 | Time and agent | `10:34`, Claude Code |
 | Kind | edit, check, search, other tool, Cully memory call, note, start, end |
-| Result | passed or failed |
+| Result | passed, failed or unknown when the agent supplies no outcome |
 | File path and operation | `internal/auth/resource.go`, edited (project-relative; read, write, edit, create, delete or move) |
 | Command | `go test` (program and recognized subcommand only) |
 | Command hash | a one-way hash, so the same failing command is recognized without keeping it |
 
 It never holds prompts, file contents, command arguments or tool output. It is bounded in size, pruned after 30 days, and path and command recording can be turned off. See [privacy](/privacy) for the full guarantee.
+
+When older events are discarded, the journal keeps a history-gap marker. Unreadable files, malformed records and scan limits are reported as unavailable or partial history. Status, timeline, replay, handoff and rescue label those limits; counts then describe only observed events. A missing session start is also reported. Receiving some tool events does not prove that every hook arrived.
 
 ## Loop detection
 
@@ -43,7 +45,7 @@ Cully reports when an agent appears to repeat itself. It states what repeated an
 
 When a loop is detected the terminal shows `⚠ Loop 3x` in the health bar, adds a caution to the advisor, and writes one note to the journal for the timeline. The wording stays factual: "Cully noticed something: the same command failed 3 times after edits. Inspect the first failure before editing again."
 
-Cursor's shell hook reports no exit code, so a failed Cursor command is not marked failed and these rules fire less often for Cursor.
+Cursor's shell hook reports no exit code. Those check outcomes remain unknown: they do not count as passing tests, clear pending verification or resolve a detected loop. Explicit failure events still count as failures. The panel and status report this signal limitation.
 
 ## A workflow hint from your own history
 
@@ -72,9 +74,10 @@ Only measured values appear. Context shows when the agent reports a window size.
 | --- | --- |
 | HIGH | A loop is still active, the last check failed, or context is 90% used or more |
 | MEDIUM | Edits have not been checked, context is 75% used or more, or 15 or more files are uncommitted |
+| UNKNOWN | Journal history or tool signals are incomplete, with no higher-priority observed warning |
 | LOW | Nothing is flagged |
 
-There is no Task or Progress row. Cully does not record prompts, so it does not know the task, and it has no honest measure of progress.
+The Task row appears only for an explicitly accepted task. Cully does not infer task intent or progress from missing events. Before any tool event arrives, verification is unknown rather than clean.
 
 ## `cully timeline`
 

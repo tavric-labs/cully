@@ -5,10 +5,10 @@ description: The Cully terminal, session journal, advisor and project memory aro
 
 # How Cully works
 
-Cully sits around the coding agents you already use. It does not replace them. It watches the work, understands the session, remembers what matters and helps you steer.
+Cully Solo is the coding-agent harness runtime. It runs the coding agents you already use in one terminal, observes their tool activity, tracks session health, remembers what matters and helps you recover or continue. Each agent keeps its own reasoning and tools.
 
-> **Your agent's copilot. Your team's workspace.**
-> Solo helps you steer your agent work environment. Team connects people and agents through durable project work.
+> **The harness runtime for coding agents and software projects.**
+> Solo is the coding-agent harness runtime. Team is the project management harness runtime for people and AI agents.
 
 Choose [Solo mode](/solo) for session health, advice, replay and private memory, or [Team mode](/team-workflows) for shared tasks, ownership, handoffs, review evidence and published lessons. Both use the same installed CLI and services. Project access is explicit; local journals and solo notes never become shared automatically. The session diagram below describes the Solo foundation; [architecture](/architecture#public-memory-boundary) explains Team's separate authorized records.
 

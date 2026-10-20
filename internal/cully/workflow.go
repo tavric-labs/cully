@@ -24,7 +24,7 @@ func editsCheckedAfter(events []journalEvent) (hasEdits, checked bool) {
 		case journalEdit:
 			hasEdits, checked = true, false
 		case journalCheck:
-			if hasEdits {
+			if hasEdits && !ev.Unknown {
 				checked = true
 			}
 		}

@@ -1295,14 +1295,17 @@ func TestRunAnalyzeFiresEarlyInShortSession(t *testing.T) {
 		RunAnalyze(bytes.NewReader(b))
 	}
 	jobs, _ := filepath.Glob(filepath.Join(jobDir(), "*.job"))
-	if len(jobs) != 3 {
-		t.Fatalf("want 3 queued jobs from the first 3 turns of a short session, got %d", len(jobs))
+	if len(jobs) != 1 {
+		t.Fatalf("want one early job with rapid repeat analyses deferred by the request budget, got %d", len(jobs))
+	}
+	if readSnapshot("short-session").AdvisorDeferred == "" {
+		t.Fatal("rapid repeat analyses must report why they were deferred")
 	}
 
 	// Turn 4: past the early-fire window, default cadence k=10, 4%%10 != 0 -> throttled.
 	RunAnalyze(bytes.NewReader(b))
 	jobs, _ = filepath.Glob(filepath.Join(jobDir(), "*.job"))
-	if len(jobs) != 3 {
+	if len(jobs) != 1 {
 		t.Fatalf("turn 4 should be throttled, got %d jobs", len(jobs))
 	}
 }

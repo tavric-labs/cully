@@ -3,7 +3,7 @@ import { withMermaid } from 'vitepress-plugin-mermaid'
 
 export default withMermaid(defineConfig({
   title: 'Cully',
-  description: 'Guides for Cully: project tasks, handoffs, review and shared learning across people and coding agents.',
+  description: 'Cully Solo is the coding-agent harness runtime. Team is the project management harness runtime for people and AI agents building software together.',
   lang: 'en-US',
   appearance: false,
   cleanUrls: true,
@@ -54,6 +54,7 @@ export default withMermaid(defineConfig({
           { text: 'The Cully terminal', link: '/terminal' },
           { text: 'Session intelligence', link: '/session-intelligence' },
           { text: 'Advisor', link: '/advisor' },
+          { text: 'Task and token guardrails', link: '/guardrails' },
           { text: 'Project memory', link: '/memory' },
           { text: 'Connect an agent', link: '/agents' },
           { text: 'Install as a plugin', link: '/plugins' },
@@ -67,6 +68,7 @@ export default withMermaid(defineConfig({
           { text: 'Audit your harness', link: '/harness' },
           { text: 'Measure token impact', link: '/token-impact' },
           { text: 'Evaluate Cully', link: '/evals' },
+          { text: 'Harness review and next steps', link: '/harness-review' },
           { text: 'Mobile Self preview', link: '/mobile' },
           { text: 'Privacy', link: '/privacy' },
           { text: 'Work across people and agents', link: '/team-workflows' }

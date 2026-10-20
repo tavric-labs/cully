@@ -1,13 +1,13 @@
 ---
 title: Cully documentation
-description: Solo is a copilot for your agent work environment. Team connects people and agents with project tasks, handoffs, review evidence and shared learning.
+description: Cully Solo is the coding-agent harness runtime, with session intelligence and private memory. Team is a project management harness runtime that connects people and AI agents with project tasks, handoffs, review evidence and shared learning.
 ---
 
 # Cully docs
 
-**Your agent's copilot. Your team's workspace.**
+**The harness runtime for coding agents and software projects.**
 
-Cully has two modes. [Solo](/solo) is a copilot for your coding agent and work environment, with local session health, advice and private memory. [Team](/team-workflows) connects people and agents through project tasks, portable checkpoints, review evidence and explicitly shared lessons. They use the same CLI and services; project access is explicit and solo records stay private.
+Cully runs existing coding agents in one terminal runtime, with session intelligence, advisor guidance, recovery and memory. Each agent keeps its own reasoning and tools. [Solo](/solo) provides local session health, advice and private memory. [Team](/team-workflows) is a project management harness runtime for people and AI agents, connecting project tasks, portable checkpoints, review evidence and explicitly shared lessons. They use the same CLI and services; project access is explicit and solo records stay private.
 
 ```text
 Prepare  →  Work  →  Hand off  →  Review  →  Reuse

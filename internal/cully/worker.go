@@ -52,6 +52,15 @@ If you cannot find a credible match, reply with an empty line.`
 // recalls Cully memory; an evidenced TOOLGAP triggers focused web research.
 // Local rules remain available when the configured agent cannot run.
 func RunWorker(sigPath, session, cwd string) {
+	runWorkerContext(context.Background(), sigPath, session, cwd)
+}
+
+func runWorkerContext(parent context.Context, sigPath, session, cwd string) {
+	workerContext, cancel := context.WithTimeout(parent, 3*time.Minute)
+	defer cancel()
+	if parent.Err() != nil {
+		return
+	}
 	sig, err := os.ReadFile(sigPath)
 	if err != nil {
 		logf(session, "worker: read signals %s: %v", sigPath, err)
@@ -72,7 +81,6 @@ func RunWorker(sigPath, session, cwd string) {
 		prompt += "\n\nALREADY SUGGESTED THIS SESSION (do not repeat these levers — propose different ones, or the memo if nothing new applies):\n- " +
 			strings.Join(tail, "\n- ")
 	}
-	workerContext := context.Background()
 	spec, _ := lookupAgentSpec(agent)
 	if spec.AdvisorMCPScope {
 		workerContext = withCodexMCPScope(workerContext, session, "advisor")
@@ -129,6 +137,9 @@ func RunWorker(sigPath, session, cwd string) {
 
 	if len(classified) == 0 {
 		logf(session, "worker: no suggestion lines produced")
+		return
+	}
+	if parent.Err() != nil {
 		return
 	}
 	// An ended pane must not be recreated by a late worker result.

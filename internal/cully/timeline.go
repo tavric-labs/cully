@@ -29,7 +29,7 @@ type timelineGroup struct {
 }
 
 func groupKey(e journalEvent) string {
-	return e.Class + "|" + fmt.Sprint(e.Failed) + "|" + e.Tool + "|" + e.Note
+	return e.Class + "|" + fmt.Sprint(e.Failed) + "|" + fmt.Sprint(e.Unknown) + "|" + e.Tool + "|" + e.Note
 }
 
 // groupJournal merges consecutive same-class events. Search and other-tool
@@ -72,6 +72,9 @@ func describeGroup(g timelineGroup) string {
 		}
 		return fmt.Sprintf("Edited ×%d", g.Count)
 	case journalCheck:
+		if e.Unknown {
+			return "Check outcome unavailable" + timesSuffix(g.Count)
+		}
 		if e.Failed {
 			s := "Check failed" + timesSuffix(g.Count)
 			if g.Count > 1 && g.SameSig {
@@ -95,6 +98,8 @@ func describeGroup(g timelineGroup) string {
 			return "Cully noticed a loop: the same check failed repeatedly"
 		case noteVerifyGap:
 			return "Cully noticed edits that were not verified"
+		case noteHistoryTrimmed, noteHistoryUnreadable, noteHistoryInvalid:
+			return "Journal " + journalCoverage([]journalEvent{e})
 		}
 		return "Cully made an observation"
 	}
@@ -129,6 +134,10 @@ func computeStats(events []journalEvent) journalStats {
 				s.Edits++
 			}
 		case journalCheck:
+			if e.Unknown {
+				s.LastCheckState = "unknown"
+				continue
+			}
 			if e.Failed {
 				s.ChecksFailed++
 				s.LastCheckState = "failed"
@@ -187,6 +196,9 @@ func renderTimeline(events []journalEvent, color bool) string {
 		b.WriteString(stamp + "  " + describeGroup(g) + "\n")
 	}
 	b.WriteString("\n" + summaryLine(computeStats(events)) + "\n")
+	if coverage := journalCoverage(events); coverage != "" {
+		b.WriteString("Journal " + coverage + "; summary covers observed events only.\n")
+	}
 	return b.String()
 }
 
@@ -202,6 +214,8 @@ func outcomeWords(s journalStats) string {
 		words = append(words, "last check passed")
 	case "failed":
 		words = append(words, "last check failed")
+	case "unknown":
+		words = append(words, "last check outcome unavailable")
 	default:
 		words = append(words, "no checks")
 	}

@@ -502,7 +502,8 @@ func RunPane(agentName string, args []string, input, output *os.File) error {
 				dispatchAdvisor(advisorSignals(stats, view), session, view.Project)
 				lastAnalysis, lastAnalysisTools = time.Now(), stats.Tools
 			}
-			view.Loops, _ = sessionLoops(currentDir(), session)
+			loops, journal := sessionLoops(currentDir(), session)
+			view.Loops, view.JournalCoverage = loops, journalCoverage(journal)
 			advice = combinedAdvice(session, stats, view)
 			joined := strings.Join(advice, "\n")
 			if joined != lastAdvice {

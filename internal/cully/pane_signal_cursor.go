@@ -65,6 +65,7 @@ func cursorToolEvent(data []byte) (toolEvent, bool) {
 	switch p.HookEvent {
 	case "afterShellExecution":
 		event.ToolName = "Bash"
+		event.OutcomeUnknown = true
 		event.ToolInput, _ = json.Marshal(map[string]string{"command": p.Command})
 	case "afterFileEdit":
 		event.ToolName = "Edit"

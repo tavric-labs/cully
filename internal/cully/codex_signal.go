@@ -16,16 +16,19 @@ import (
 // Codex hook events are reduced to single-letter counters. Commands, prompts,
 // tool output, and transcript paths are never written to disk.
 type toolEvent struct {
-	Cwd          string          `json:"cwd"`
-	SessionID    string          `json:"session_id"`
-	ToolName     string          `json:"tool_name"`
-	ToolInput    json.RawMessage `json:"tool_input"`
-	ToolResponse json.RawMessage `json:"tool_response"`
+	Cwd            string          `json:"cwd"`
+	SessionID      string          `json:"session_id"`
+	ToolName       string          `json:"tool_name"`
+	ToolInput      json.RawMessage `json:"tool_input"`
+	ToolResponse   json.RawMessage `json:"tool_response"`
+	OutcomeUnknown bool            `json:"-"`
 }
 
 type toolStats struct {
 	Tools, Errors, Searches, Edits, Checks, EditsSinceCheck int
 	Agents, Web, Commits                                    int
+	UnknownChecks                                           int
+	Partial                                                 bool `json:",omitempty"` // legacy event window was truncated or damaged
 	Cully                                                   cullyStats
 	Impact                                                  Impact `json:"-"` // loaded by the pane, never persisted
 }
@@ -185,6 +188,9 @@ func RunPaneSignalHook(agent string, r io.Reader) {
 	}
 	class := toolClass(event)
 	failure := byte('.')
+	if event.OutcomeUnknown {
+		failure = '?'
+	}
 	if toolFailed(event.ToolResponse) {
 		failure = '!'
 	}
@@ -274,6 +280,7 @@ func readToolStats(session string) toolStats {
 	// The pane uses a bounded recent window even during a long session.
 	reader := bufio.NewReader(f)
 	if info.Size() > 8192 {
+		stats.Partial = true
 		_, _ = f.Seek(info.Size()-8192, io.SeekStart)
 		reader.Reset(f)
 		_, _ = reader.ReadBytes('\n') // discard a potentially partial first record
@@ -281,7 +288,8 @@ func readToolStats(session string) toolStats {
 	scan := bufio.NewScanner(reader)
 	for scan.Scan() {
 		line := scan.Bytes()
-		if len(line) != 2 {
+		if len(line) != 2 || !strings.ContainsRune("ESTOAWG", rune(line[0])) || !strings.ContainsRune(".!?", rune(line[1])) {
+			stats.Partial = true
 			continue
 		}
 		stats.Tools++
@@ -299,13 +307,19 @@ func readToolStats(session string) toolStats {
 			stats.EditsSinceCheck++
 		case 'T':
 			stats.Checks++
-			if line[1] != '!' {
+			if line[1] == '?' {
+				stats.UnknownChecks++
+			}
+			if line[1] == '.' {
 				stats.EditsSinceCheck = 0
 			}
 		}
 		if line[1] == '!' {
 			stats.Errors++
 		}
+	}
+	if scan.Err() != nil {
+		stats.Partial = true
 	}
 	return stats
 }
@@ -345,7 +359,7 @@ func toolCommand(event toolEvent) string {
 // CULLY_JOURNAL_PATHS=0, structured file operations and a command label.
 // The hash input is the command text; the command itself is not stored.
 func recordJournalTool(agent, session string, event toolEvent, class byte, failed bool) {
-	entry := journalEvent{Time: time.Now().UTC(), Agent: agent, Class: string(class), Failed: failed}
+	entry := journalEvent{Time: time.Now().UTC(), Agent: agent, Class: string(class), Failed: failed, Unknown: event.OutcomeUnknown}
 	var extra []fileOp
 	if cullyTool(event.ToolName) != "" {
 		entry.Class, entry.Tool = journalMemory, cullyTool(event.ToolName)

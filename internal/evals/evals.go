@@ -130,15 +130,16 @@ type Store interface {
 
 // CaseResult is the score for one case.
 type CaseResult struct {
-	ID, Mode  string
-	Returned  []string // note keys in rank order
-	Ability   string
-	Recall    float64 // |returned ∩ relevant| / |relevant|
-	Precision float64 // |returned ∩ relevant| / |returned|
-	F1        float64
-	RR        float64 // reciprocal rank of the first relevant note
-	Leaked    int     // returned notes from another project
-	Silent    bool    // the case expects no results
+	ID, Mode   string
+	Returned   []string // note keys in rank order
+	Ability    string
+	Recall     float64 // |returned ∩ relevant| / |relevant|
+	Precision  float64 // |returned ∩ relevant| / |returned|
+	F1         float64
+	RR         float64 // reciprocal rank of the first relevant note
+	Leaked     int     // returned notes from another project
+	Duplicates int     // repeated results are a retrieval error, not extra hits
+	Silent     bool    // the case expects no results
 }
 
 // Report aggregates results per mode.
@@ -153,6 +154,7 @@ type Summary struct {
 	Cases                               int
 	Recall, Precision, F1, MRR, Silence float64
 	Leaked                              int
+	Duplicates                          int
 	HasAnswerable, HasSilent            bool
 }
 
@@ -205,9 +207,14 @@ func Run(ctx context.Context, store Store, ds Dataset, projectURL, otherURL, run
 		}
 		var keys []string
 		for _, e := range entries {
-			if key, ok := ids[e.ID]; ok { // ignore records this run did not seed
-				keys = append(keys, key)
+			key, ok := ids[e.ID]
+			if !ok {
+				key = "unseeded:" + e.ID
 			}
+			if e.ProjectURL != nil && *e.ProjectURL != projectURL {
+				other[key] = true
+			}
+			keys = append(keys, key)
 		}
 		report.Results = append(report.Results, score(c, keys, other))
 	}
@@ -221,7 +228,13 @@ func score(c Case, returned []string, other map[string]bool) CaseResult {
 		want[key] = true
 	}
 	hits := 0
+	seen := map[string]bool{}
 	for i, key := range returned {
+		if seen[key] {
+			r.Duplicates++
+			continue
+		}
+		seen[key] = true
 		if other[key] {
 			r.Leaked++
 		}
@@ -276,6 +289,7 @@ func (r Report) Summaries() []Summary {
 		}
 		s.Cases++
 		s.Leaked += c.Leaked
+		s.Duplicates += c.Duplicates
 		if c.Silent {
 			s.HasSilent = true
 			s.Silence += c.Recall
@@ -308,7 +322,7 @@ func (r Report) Format() string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "retrieval eval (k=%d)\n", r.K)
 	for _, s := range r.Summaries() {
-		fmt.Fprintf(&b, "  %-8s cases=%d recall=%.2f precision=%.2f f1=%.2f mrr=%.2f abstention=%.2f leaked=%d\n", s.Mode, s.Cases, s.Recall, s.Precision, s.F1, s.MRR, s.Silence, s.Leaked)
+		fmt.Fprintf(&b, "  %-8s cases=%d recall=%.2f precision=%.2f f1=%.2f mrr=%.2f abstention=%.2f leaked=%d duplicates=%d\n", s.Mode, s.Cases, s.Recall, s.Precision, s.F1, s.MRR, s.Silence, s.Leaked, s.Duplicates)
 	}
 	abilities := r.ByAbility()
 	names := make([]string, 0, len(abilities))
@@ -352,6 +366,9 @@ func (r Report) Check(mode string, t Thresholds) error {
 		}
 		if s.Leaked > t.MaxLeaked {
 			failed = append(failed, fmt.Sprintf("leaked %d > %d", s.Leaked, t.MaxLeaked))
+		}
+		if s.Duplicates > 0 {
+			failed = append(failed, fmt.Sprintf("duplicate results: %d", s.Duplicates))
 		}
 		if len(failed) > 0 {
 			return fmt.Errorf("%s retrieval below threshold: %s", mode, strings.Join(failed, "; "))

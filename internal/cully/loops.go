@@ -96,7 +96,7 @@ func detectRepeatFailures(events []journalEvent) ([]loopFinding, bool) {
 	var order []string
 	for i, ev := range events {
 		switch {
-		case ev.Class == journalCheck && !ev.Failed:
+		case ev.Class == journalCheck && !ev.Failed && !ev.Unknown:
 			if ev.Sig != "" {
 				delete(recent, ev.Sig)
 				delete(found, ev.Sig)
@@ -146,7 +146,7 @@ func detectEditCycles(events []journalEvent) (loopFinding, bool) {
 		switch {
 		case ev.Class == journalEdit:
 			edited = true
-		case ev.Class == journalCheck && !ev.Failed:
+		case ev.Class == journalCheck && !ev.Failed && !ev.Unknown:
 			finding, edited = loopFinding{}, false
 		case ev.Class == journalCheck && ev.Failed && edited:
 			edited = false

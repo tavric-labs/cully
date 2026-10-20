@@ -56,6 +56,7 @@ func TestSessionHealthVerification(t *testing.T) {
 		"failed":                 {edit, pass, edit, fail},
 	}
 	for want, events := range cases {
+		events = append([]journalEvent{{Class: journalStart}}, events...)
 		if got := measureHealth(events).Verification; got != want {
 			t.Fatalf("%v: got %q want %q", events, got, want)
 		}

@@ -145,6 +145,8 @@ func buildSteps(events []journalEvent) []replayStep {
 				noted++
 			} else if e.Note == noteVerifyGap {
 				base.Detail = "Cully noticed edits that were not verified"
+			} else if e.Note == noteHistoryTrimmed || e.Note == noteHistoryUnreadable || e.Note == noteHistoryInvalid {
+				base.Detail = "Journal " + journalCoverage([]journalEvent{e})
 			} else {
 				base.Detail = "Cully made an observation"
 			}
@@ -163,6 +165,9 @@ func buildSteps(events []journalEvent) []replayStep {
 				s.Detail = "a check"
 			}
 			s.Outcome = "passed"
+			if e.Unknown {
+				s.Outcome = "unknown"
+			}
 			if e.Failed {
 				s.Outcome = "failed"
 			}
@@ -502,6 +507,13 @@ type replayDoc struct {
 // replayPartial says plainly what the journal cannot tell us.
 func replayPartial(events []journalEvent) []string {
 	var notes []string
+	if coverage := journalCoverage(events); coverage != "" {
+		notes = append(notes, "Journal "+coverage+"; replay and counts cover observed events only.")
+	}
+	h := measureHealth(events)
+	if strings.HasPrefix(h.Signals, "partial:") {
+		notes = append(notes, "Signals "+h.Signals+".")
+	}
 	tools, withPath, edits, editsWithPath := 0, 0, 0, 0
 	hasStart := false
 	for _, e := range events {

@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 )
@@ -142,14 +143,15 @@ func RunDaemon() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go acquisitionLoop(ctx)
-	go advisorLoop(ctx)
+	advisorDone := make(chan struct{})
+	go func() { defer close(advisorDone); advisorLoop(ctx) }()
 
 	sigc := make(chan os.Signal, 1)
 	signal.Notify(sigc, syscall.SIGINT, syscall.SIGTERM)
 	<-sigc
 	daemonLog("daemon: shutdown")
 	cancel()
-	time.Sleep(200 * time.Millisecond)
+	<-advisorDone
 }
 
 func daemonLog(format string, args ...any) {
@@ -207,53 +209,102 @@ func liveSessionSnapshots() []string {
 	return out
 }
 
-// advisorLoop is the ECAM alerting LRU — processes queued advisor jobs one at a time.
+// Sessions have independent advisor slots. One session is always serialized;
+// its pending refreshes coalesce so an old backlog cannot monopolize the pool.
+const advisorConcurrency = 4
+
 func advisorLoop(ctx context.Context) {
-	tick := time.NewTicker(400 * time.Millisecond)
+	runAdvisorQueue(ctx, 400*time.Millisecond, runWorkerContext)
+}
+
+func runAdvisorQueue(ctx context.Context, interval time.Duration, run func(context.Context, string, string, string)) {
+	tick := time.NewTicker(interval)
 	defer tick.Stop()
+	active := map[string]bool{}
+	finished := make(chan string, advisorConcurrency)
+	var workers sync.WaitGroup
+	defer workers.Wait()
 	for {
+		for ctx.Err() == nil && len(active) < advisorConcurrency {
+			job, path, ok := nextAdvisorJob(active)
+			if !ok {
+				break
+			}
+			active[job.Session] = true
+			workers.Add(1)
+			go func() {
+				defer workers.Done()
+				daemonLog("daemon: advisor job session=%s", job.Session)
+				run(ctx, job.SignalsPath, job.Session, job.Cwd)
+				// Interrupted jobs stay queued for the next daemon start.
+				if ctx.Err() == nil {
+					_ = os.Remove(path)
+				}
+				finished <- job.Session
+			}()
+		}
 		select {
 		case <-ctx.Done():
 			return
+		case session := <-finished:
+			delete(active, session)
 		case <-tick.C:
-			job, path, ok := nextJob()
-			if !ok {
-				continue
-			}
-			daemonLog("daemon: advisor job session=%s", job.Session)
-			RunWorker(job.SignalsPath, job.Session, job.Cwd)
-			_ = os.Remove(path)
 		}
 	}
 }
 
-func nextJob() (advisorJob, string, bool) {
+func nextAdvisorJob(active map[string]bool) (advisorJob, string, bool) {
 	entries, err := os.ReadDir(jobDir())
 	if err != nil {
 		return advisorJob{}, "", false
 	}
-	var jobs []string
+	type pendingJob struct {
+		job      advisorJob
+		path     string
+		modified time.Time
+	}
+	var jobs []pendingJob
 	for _, e := range entries {
-		if !e.IsDir() && strings.HasSuffix(e.Name(), ".job") {
-			jobs = append(jobs, e.Name())
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".job") {
+			continue
 		}
+		path := filepath.Join(jobDir(), e.Name())
+		b, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+		var j advisorJob
+		if json.Unmarshal(b, &j) != nil || j.Session == "" || j.SignalsPath == "" {
+			_ = os.Remove(path)
+			continue
+		}
+		if active[j.Session] {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil {
+			continue
+		}
+		jobs = append(jobs, pendingJob{j, path, info.ModTime()})
 	}
 	if len(jobs) == 0 {
 		return advisorJob{}, "", false
 	}
-	sort.Strings(jobs)
-	path := filepath.Join(jobDir(), jobs[0])
-	b, err := os.ReadFile(path)
-	if err != nil {
-		_ = os.Remove(path)
-		return advisorJob{}, "", false
+	sort.Slice(jobs, func(i, j int) bool {
+		if jobs[i].modified.Equal(jobs[j].modified) {
+			return jobs[i].path < jobs[j].path
+		}
+		return jobs[i].modified.Before(jobs[j].modified)
+	})
+	// Select the oldest waiting session, but run only its newest refresh.
+	chosen := jobs[0]
+	for _, candidate := range jobs[1:] {
+		if candidate.job.Session == chosen.job.Session {
+			_ = os.Remove(chosen.path)
+			chosen = candidate
+		}
 	}
-	var j advisorJob
-	if json.Unmarshal(b, &j) != nil || j.Session == "" || j.SignalsPath == "" {
-		_ = os.Remove(path)
-		return advisorJob{}, "", false
-	}
-	return j, path, true
+	return chosen.job, chosen.path, true
 }
 
 func enqueueAdvisorJob(signalsPath, session, cwd string) error {
@@ -266,7 +317,26 @@ func enqueueAdvisorJob(signalsPath, session, cwd string) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, b, 0o644)
+	return writeAdvisorFile(path, b)
+}
+
+// Queue records and signal snapshots must appear whole, even when a refresh
+// arrives while a worker is reading. Files contain only reduced metadata.
+func writeAdvisorFile(path string, data []byte) error {
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".advisor-*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmp.Name())
+	_, writeErr := tmp.Write(data)
+	closeErr := tmp.Close()
+	if writeErr != nil {
+		return writeErr
+	}
+	if closeErr != nil {
+		return closeErr
+	}
+	return os.Rename(tmp.Name(), path)
 }
 
 // dispatchAdvisor sends work to the daemon queue, or spawns a one-shot worker.
@@ -274,6 +344,7 @@ func dispatchAdvisor(signals, session, cwd string) {
 	if os.Getenv("CULLY_ANALYZE_DISABLE") == "1" {
 		return
 	}
+	signals = advisorTaskContext(signals, readTask(session))
 	if !strings.Contains(signals, "terminal_program=") {
 		signals += "\n" + detectTerminalProfile().signals()
 	}
@@ -285,8 +356,19 @@ func dispatchAdvisor(signals, session, cwd string) {
 		return
 	}
 	sigPath := sessionSignalsFile(session)
-	if err := os.WriteFile(sigPath, []byte(signals), 0o644); err != nil {
+	if err := writeAdvisorFile(sigPath, []byte(signals)); err != nil {
 		logf(session, "dispatchAdvisor: write signals: %v", err)
+		return
+	}
+	deferred := admitAdvisorRequest(session, signals, time.Now())
+	snap := readSnapshot(session)
+	snap.AdvisorDeferred = deferred
+	if snap.Cwd == "" {
+		snap.Cwd = cwd
+	}
+	writeSnapshot(session, snap)
+	if deferred != "" {
+		recordImpact(session, impactAnalysisSkipped, "", int64(approxTokens(len(sharedAdvisorInstructions)+len(signals))))
 		return
 	}
 	if isDaemonRunning() {

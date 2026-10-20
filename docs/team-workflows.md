@@ -7,7 +7,7 @@ description: Project tasks, portable checkpoints, review evidence and explicit l
 
 **Keep your team's agent work moving, whoever picks it up next.**
 
-Team mode connects project tasks, a board/inbox, portable checkpoints, reported review evidence and explicitly shared lessons. Start agents manually; task state outlives the session. [Solo mode](/solo) remains your local agent copilot, with private journals and owner-scoped memory.
+Cully Team is a project management harness runtime for people and AI agents building software together. It connects project tasks, ownership, a board/inbox, portable checkpoints, reported review evidence and explicitly shared lessons. Start agents manually; task state outlives the session. [Solo mode](/solo) remains your local coding-agent harness runtime, with private journals and owner-scoped memory.
 
 ## What works today
 

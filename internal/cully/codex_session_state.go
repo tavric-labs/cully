@@ -127,7 +127,10 @@ func recordCodexSessionTool(session string, class, failure byte) {
 			state.Stats.EditsSinceCheck++
 		case 'T':
 			state.Stats.Checks++
-			if failure != '!' {
+			if failure == '?' {
+				state.Stats.UnknownChecks++
+			}
+			if failure == '.' {
 				state.Stats.EditsSinceCheck = 0
 			}
 		}

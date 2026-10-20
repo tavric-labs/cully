@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 0.20.0
+
+- Add evidence-based “are we still on track?” checkpoints for failure loops, prolonged exploration and unchecked edits, with deduplicated pre-tool nudges and task boundaries. Warn before redundant full reads of unchanged files. Limit automatic advisor requests to six per rolling hour per Cully session, with a two-minute cooldown and unchanged-evidence suppression; explain deferrals while keeping local warnings available. Extend the canonical skill with scope, verification and user-budget guardrails.
+
+- Report incomplete journal history and missing agent signals across session reports and the terminal. Keep Cursor shell outcomes unknown instead of treating them as successful checks. Run bounded advisor jobs across sessions with per-session ordering, coalesced refreshes and cancellation; route advice through the active agent.
+- Test evaluators against deliberately broken installers, audits, monitors and retrieval stores. Reject duplicate retrieval results, include unseeded results in scoring, and fail explicit live evaluations that cannot run.
+- Position Solo as the coding-agent harness runtime and Team as the project management harness runtime across the website, CLI, docs and bundled agent skills. Guide agents through task planning, approval, implementation, advisor consultation and verification; pass only accepted task titles to the advisor. Document the harness review and proposed enforcement workflow.
+
 - Fix the release workflow so each release's notes include the tag-pinned plugin install commands. The goreleaser footer that was meant to add them is ignored when a notes file is supplied, so v0.19.0 shipped without them until its notes were edited by hand; the workflow now composes the notes itself.
 
 ## 0.19.0

@@ -32,6 +32,7 @@ type sessionView struct {
 	Terminal                                                      terminalProfile
 	Loops                                                         loopReport
 	Agent                                                         string
+	JournalCoverage                                               string
 }
 
 var codexContextLeft = regexp.MustCompile(`^Context ([0-9]{1,3})% left$`)
@@ -81,6 +82,38 @@ func parseFooterRows(rows []string, base int) (InstrumentUpdate, FooterMatch) {
 type panelContent struct {
 	status, advice, controls []string
 	heading                  string
+}
+
+func panelCoverage(stats toolStats, view sessionView) string {
+	if view.JournalCoverage != "" {
+		return view.JournalCoverage
+	}
+	if stats.Partial {
+		return "partial history"
+	}
+	if stats.Tools == 0 {
+		return "no tool events received"
+	}
+	if view.Agent == "cursor" {
+		return "shell exit status unavailable"
+	}
+	if _, known := lookupAgentSpec(fallback(view.Agent, "codex")); !known {
+		return "agent tool coverage unknown"
+	}
+	return ""
+}
+
+func panelVerification(stats toolStats, view sessionView) string {
+	if stats.Tools == 0 || stats.Partial || view.JournalCoverage != "" {
+		return yellow + "unknown: incomplete signals" + rst
+	}
+	if stats.UnknownChecks > 0 || view.Agent == "cursor" {
+		return yellow + "check outcomes unavailable" + rst
+	}
+	if _, known := lookupAgentSpec(fallback(view.Agent, "codex")); !known {
+		return yellow + "unknown: agent tool coverage" + rst
+	}
+	return green + "no pending edits" + rst
 }
 
 func sessionStatusRows(cols int, advice []string, stats toolStats, view sessionView) []string {
@@ -193,11 +226,14 @@ func sessionStatusContent(cols int, advice []string, stats toolStats, view sessi
 		}
 		metric(&right, counter.label, value)
 	}
-	verification := green + "no pending edits" + rst
+	verification := panelVerification(stats, view)
 	if stats.EditsSinceCheck > 0 {
 		verification = yellow + fmt.Sprintf("%d edits awaiting a successful check", stats.EditsSinceCheck) + rst
 	}
 	metric(&right, "Verification", verification)
+	if coverage := panelCoverage(stats, view); coverage != "" {
+		metric(&right, "Signals", yellow+coverage+rst)
+	}
 	if view.Loops.Active() {
 		metric(&right, "Loops", yellow+view.Loops.Summary()+rst)
 	}
@@ -581,13 +617,16 @@ func compactInstrumentRows(cols int, stats toolStats, view sessionView) ([]strin
 	if stats.Errors > 0 {
 		errors = yellow + bold + errors + rst
 	}
-	verification := green + "no pending edits" + rst
+	verification := panelVerification(stats, view)
 	if stats.EditsSinceCheck > 0 {
 		verification = yellow + fmt.Sprintf("%d edits need check", stats.EditsSinceCheck) + rst
 	}
 	activity := []string{bold + "Harness" + rst, "", "Model " + model}
 	activity = append(activity, harnessPanelRows(harnessPanel(view.Project))...)
 	activity = append(activity, "Verification "+verification)
+	if coverage := panelCoverage(stats, view); coverage != "" {
+		activity = append(activity, "Signals "+yellow+coverage+rst)
+	}
 	if stats.Errors > 0 {
 		activity = append(activity, "Errors "+errors)
 	}

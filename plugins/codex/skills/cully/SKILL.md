@@ -10,7 +10,7 @@ metadata:
 
 Mobile hosts use the [Self-mode profile](references/mobile-self.md) from this same skill. They expose their own allowed capabilities; the terminal commands below require a desktop host. The profile is an app integration hint, not a permission grant. Read the [mobile workflow guide](references/mobile-workflows.md) only when planning personal tasks or a brief.
 
-Cully is the intelligent workspace around coding agents. It observes a session, keeps a private journal of what the agent did, detects problems such as loops, and keeps durable project memory through MCP. Use the installed `cully` CLI for session guidance and the configured Cully MCP tools for durable records. The connected agent makes memory calls with its own MCP identity; the local advisor does not hold OAuth credentials. Local guidance works without a server. Do not assume a particular URL or login flow.
+Cully Solo is the coding-agent harness runtime; Cully Team is the project management harness runtime for people and AI agents. Solo runs existing coding agents in a shared terminal runtime, observes the session, keeps a private journal of what the agent did, detects problems such as loops, and keeps durable project memory through MCP. Each agent keeps its own reasoning and tools. Use the installed `cully` CLI for session guidance and the configured Cully MCP tools for durable records. The connected agent makes memory calls with its own MCP identity; the local advisor does not hold OAuth credentials. Local guidance works without a server. Do not assume a particular URL or login flow.
 
 ## Know where you are running
 
@@ -21,6 +21,33 @@ For authorized team work, read `whoami`, `projects`, `board`, `inbox`, `task_get
 Cully's session features need the agent to run inside the Cully terminal, started by the user with `cully run claude`, `cully run codex`, `cully run cursor` or `cully run AGENT`. There the user sees a health bar and an advisor panel, and Cully records the session journal. Outside it, memory and the CLI commands below still work, but there is no journal for the current session.
 
 Never start `cully run` or `cully handoff AGENT` yourself. Both open an interactive terminal and will hang a tool call.
+
+## Agree on the coding task
+
+When a user gives a new substantive coding task inside the Cully terminal, first present a short, concrete plan: the intended result, the changes or areas you expect to touch, and the checks that will show the work is done. Use the host's planning or approval UI when available; otherwise ask in the conversation whether to approve or revise that plan. Read-only discovery can make the plan concrete before implementation.
+
+Respect authorization already given. If the user supplied or approved that plan, or explicitly asked you to execute the agreed work, continue without asking again. After approval, carry routine steps within scope through verification. A material scope change needs an updated plan and the user's decision; publication and additional tool permissions still follow the host's own rules. A plan is not approval to merge, deploy or share private information.
+
+Keep the outcome and next step in the existing Cully task/memory workflow; never create project `.cully` folders or rewrite instruction files to hold a plan. Team work uses its existing project access, task versions, claims and independent review. This skill guides the agent; it does not make the terminal wrapper an enforcement boundary for arbitrary tool calls.
+
+## Carry the task through the harness
+
+The foreground coding agent interprets the user's prompt and selects the relevant project workflow, skills and tools. After the plan is approved or execution is already authorized, set a short task title with `cully task NAME` inside the terminal and link it through `cully_session` as described below. The advisor receives this accepted title as task context; raw prompts stay out of the journal.
+
+Implement the agreed work, consulting `cully status` and `cully suggestions` at meaningful checkpoints: before a substantial implementation, after repeated failures, when the approach changes, and before declaring completion. Treat advice as evidence to assess, not permission to change scope or apply configuration. Check whether it fits the accepted task and the active agent's capabilities. If the advisor is unavailable or signals are incomplete, say so and use the project's explicit checks; do not wait indefinitely or treat silence as success.
+
+Fix and recheck within the authorized scope until the acceptance checks are satisfied or a concrete blocker needs the user. Save one concise outcome and next step through Cully memory, clear the local title with `cully task --clear` and the completed task link with `cully_session` (`clear_task`), and report the actual verification and any remaining limits. A check predating later edits is not evidence that the final state passes.
+
+## Stay on track and within budget
+
+- At a stalled approach or a material change of direction, give a short checkpoint: the agreed outcome, observed progress, blocker, and one proposed next step. Ask “Are we still on track, or should I change direction?” Wait before continuing that stalled approach unless the user already authorized it. Do not ask again for the same evidence after they answered, or interrupt ordinary progress with routine approval prompts.
+- Keep work inside the agreed scope. Ask before expanding into unrelated refactors, adding dependencies or integrations, or launching extra agents when those actions were not already authorized. An advisor recommendation alone does not authorize them.
+- Use a bounded read/search first. Reuse unchanged file context; reread only the necessary range when the earlier result was incomplete. Filter or limit noisy command output. Do not repeatedly search the same question or repeat a known failing command without a changed approach.
+- State the checks that prove completion and run the relevant ones. Repeat checks after meaningful changes or new failures; a successful run does not justify endless broader testing or optional cleanup.
+- Respect any user-supplied time, token, spend or iteration limit. If it is close, summarize what is complete and ask whether to stop, narrow the work or extend the budget. Do not invent token totals when the host cannot measure them. Save a concise handoff before context pressure makes continuation unreliable.
+- Prefer the local Cully guards and cached guidance before asking a model to reanalyze unchanged evidence. Automatic advisor work has a request budget; a deferred advisor is not a reason to retry it in a loop. Local warnings and project verification remain available.
+
+The local checkpoint rules flag observed repeated-failure loops, 20 read/search calls without an edit or check, or 12 edits without a successful check. They do not prove scope drift. Treat the observation as a reason to consult the user, and use their answer. Pre-tool nudges are advisory and host-dependent; the wrapper does not enforce a universal spending cap or tool permission gate.
 
 ## Drive Cully yourself
 

@@ -71,6 +71,8 @@ type rescueEvidence struct {
 	EditsBetween bool // edits happened between those repeated failures
 	Loops        int
 	Verification string
+	Coverage     string
+	Signals      string
 	Branch       string
 	DiffStat     string
 	Files        []string
@@ -86,6 +88,7 @@ func buildRescueEvidence(events []journalEvent, branch, diffStat string, files [
 	h := measureHealth(events)
 	ev.Agent, ev.Edits, ev.ChecksPassed, ev.ChecksFailed = h.Agent, h.Edits, h.ChecksPassed, h.ChecksFailed
 	ev.Loops, ev.Verification = h.Loops, h.Verification
+	ev.Coverage, ev.Signals = h.Coverage, h.Signals
 	end := now
 	if !h.End.IsZero() {
 		end = h.End
@@ -128,6 +131,12 @@ func (ev rescueEvidence) bullets() []string {
 		agent = "unknown agent"
 	}
 	out = append(out, fmt.Sprintf("Newest session: %s, %s long", agent, healthDuration(ev.Duration)))
+	if ev.Coverage != "" {
+		out = append(out, "Journal "+ev.Coverage+"; counts cover observed events only")
+	}
+	if strings.HasPrefix(ev.Signals, "partial:") || strings.HasPrefix(ev.Signals, "unavailable:") {
+		out = append(out, "Signals "+ev.Signals)
+	}
 	out = append(out, fmt.Sprintf("%d edits; %d checks passed, %d failed", ev.Edits, ev.ChecksPassed, ev.ChecksFailed))
 	out = append(out, "Verification: "+ev.Verification)
 	if ev.WorstRepeat >= 2 {

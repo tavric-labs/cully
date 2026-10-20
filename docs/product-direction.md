@@ -1,21 +1,21 @@
 ---
 title: Product vision
-description: Solo mode is a copilot for your coding agent and work environment. Team mode connects people and agents through tasks, handoffs, review and learning.
+description: Cully is the coding-agent harness runtime. Solo provides session intelligence and private memory. Team mode connects people and agents through tasks, handoffs, review and learning.
 ---
 
 # Product vision
 
-**Your agent's copilot. Your team's workspace.**
+**The harness runtime for coding agents and software projects.**
 
 Cully has two product modes around the coding agents people already use. They share the same CLI, terminal and services; these are workflows, not new `--solo` or `--team` setup flags.
 
 ## Solo mode
 
-A copilot for your coding agent and work environment. Understand session health, notice loops and unchecked edits, recover private context, replay what happened and continue in another agent. The journal stays local; saved memory stays owner-scoped. Immediate advisor warnings work offline. Start with [Solo mode](/solo).
+The local runtime around your coding agent. Understand session health, notice loops and unchecked edits, recover private context, replay what happened and continue in another agent. The journal stays local; saved memory stays owner-scoped. Immediate advisor warnings work offline. Start with [Solo mode](/solo).
 
 ## Team mode
 
-Keep your team's agent work moving, whoever picks it up next. A task outlives any session, person or agent: its outcome, accountable person, attempts, decisions, checkpoint, review evidence and useful lessons remain connected. Members claim work and hand it off; a noncontributing maintainer accepts delivery and adopts explicitly published guidance. Private solo notes and journals remain separate.
+A project management harness runtime for people and AI agents building software together. Keep your team's agent work moving, whoever picks it up next. A task outlives any session, person or agent: its outcome, accountable person, attempts, decisions, checkpoint, review evidence and useful lessons remain connected. Members claim work and hand it off; a noncontributing maintainer accepts delivery and adopts explicitly published guidance. Private solo notes and journals remain separate.
 
 The first [team workflow](/team-workflows) uses CLI/MCP and manual agent launch. It implements issuer-scoped OAuth identity, explicit project roles, atomic versioned claims, dependencies, board/inbox, checkpoints, reported review evidence and project lessons/playbooks. Managed execution and automatic learning remain planned.
 
@@ -51,6 +51,10 @@ Terminal and hooks ──► Session journal ──► Session intelligence ─�
 ## Next
 
 Work that builds on the journal and needs moderate additions.
+
+### Approved task plans
+
+The installed Cully skill guides agents to show the intended outcome, work items and verification checks, then seek approval when the user has not already authorized the work. A structured gate bound to a task, project and plan revision remains proposed. Keep routine work within the approved scope moving without repeated questions. Team should build on its existing task criteria, versioned claims and review. Native host capabilities determine whether a gate can be enforced or only suggested. See the [harness review](/harness-review) for sources and implementation boundaries.
 
 ### Guardrails
 

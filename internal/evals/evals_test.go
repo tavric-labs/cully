@@ -17,6 +17,7 @@ type fakeStore struct {
 	entries       []memory.Entry
 	deleted       []string
 	ignoreProject bool
+	broken        string
 }
 
 func (f *fakeStore) Log(_ context.Context, in memory.LogInput) (string, error) {
@@ -36,6 +37,12 @@ func (f *fakeStore) Search(_ context.Context, mode string, in memory.SearchInput
 	if mode == ModeSemantic {
 		return nil, nil
 	}
+	if f.broken == "empty" {
+		return nil, nil
+	}
+	if f.broken == "unseeded" {
+		return []memory.Entry{{ID: "unexpected", ProjectURL: in.ProjectURL}}, nil
+	}
 	var out []memory.Entry
 	for _, e := range f.entries {
 		if !f.ignoreProject && *e.ProjectURL != *in.ProjectURL {
@@ -51,6 +58,14 @@ func (f *fakeStore) Search(_ context.Context, mode string, in memory.SearchInput
 	}
 	// Like the real store, break ties in favour of the newest record.
 	sort.SliceStable(out, func(i, j int) bool { return out[i].OccurredAt.After(out[j].OccurredAt) })
+	if f.broken == "duplicate" && len(out) > 0 {
+		out = append(out, out[0])
+	}
+	if f.broken == "reverse" {
+		for i, j := 0, len(out)-1; i < j; i, j = i+1, j-1 {
+			out[i], out[j] = out[j], out[i]
+		}
+	}
 	return out, nil
 }
 
@@ -136,5 +151,30 @@ func TestScoreMetrics(t *testing.T) {
 	}
 	if s := score(Case{}, []string{"a"}, other); s.Recall != 0 {
 		t.Fatalf("noise on a silent case scored %+v", s)
+	}
+}
+
+func TestRetrievalEvaluatorRejectsBrokenStores(t *testing.T) {
+	ds, _ := Load()
+	for _, tc := range []struct{ broken, want string }{
+		{"empty", "recall"}, {"duplicate", "duplicate results"}, {"unseeded", "silence"}, {"reverse", "mrr"},
+	} {
+		t.Run(tc.broken, func(t *testing.T) {
+			report, err := Run(context.Background(), &fakeStore{broken: tc.broken}, ds, "https://github.com/e/app", "https://github.com/e/other", "broken", 5)
+			if err != nil {
+				t.Fatal(err)
+			}
+			err = report.Check(ModeText, Thresholds{Recall: 1, MRR: 1, Silence: 1})
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("broken store passed %s: %v\n%s", tc.broken, err, report.Format())
+			}
+		})
+	}
+}
+
+func TestDuplicateResultsCannotInflateRecall(t *testing.T) {
+	r := score(Case{Relevant: []string{"a", "b"}}, []string{"a", "a", "a"}, nil)
+	if r.Recall != 0.5 || r.Precision != 1.0/3 || r.Duplicates != 2 {
+		t.Fatalf("inflated score: %+v", r)
 	}
 }
