@@ -308,3 +308,18 @@ func TestLiveAdvisorResearch(t *testing.T) {
 		t.Fatalf("live research not confirmed (%s)", state)
 	}
 }
+
+func TestAdvisorInstructionsPinTokenEvidenceRule(t *testing.T) {
+	flat := strings.Join(strings.Fields(sharedAdvisorInstructions), " ")
+	for _, tc := range []struct{ name, want string }{
+		{"figures in the same line", "every token-spend line (WARN, CAUT or ADV) must put the figures from the signals in that same line"},
+		{"signal sources", "big_results(N tok), full_file_reads, big_bash or top_output_tool"},
+		{"memo fallback", "emit the MEMO line and write no token lesson or TOOLGAP"},
+		{"toolgap evidence", "A TOOLGAP for token waste must carry those figures in its evidence field"},
+		{"research trigger", "only a TOOLGAP with non-empty evidence starts the web research step"},
+	} {
+		if !strings.Contains(flat, tc.want) {
+			t.Errorf("%s: advisor instructions lost %q", tc.name, tc.want)
+		}
+	}
+}

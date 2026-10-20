@@ -55,6 +55,11 @@ Suggest the 1-3 most useful immediate improvements, grounded in current signals 
   filter or deferred tool loading), add one TOOLGAP line so the research step can look for it.
   Suggest at most one token optimization per run, never a list, and never repeat one the
   signals show was already addressed.
+  Evidence rule: every token-spend line (WARN, CAUT or ADV) must put the figures from the
+  signals in that same line, taken from big_results(N tok), full_file_reads, big_bash or
+  top_output_tool. If you cannot cite them, emit the MEMO line and write no token lesson
+  or TOOLGAP. A TOOLGAP for token waste must carry those figures in its evidence field,
+  because only a TOOLGAP with non-empty evidence starts the web research step.
 - match commands and models to ACTIVE AGENT. Never suggest Claude-only controls to Codex or Cursor.
 Missing signals are unknown, not evidence of a healthy session. Never fabricate task intent.
 Use WARN|, CAUT|, ADV|, or MEMO| followed by an icon and one clear actionable sentence.

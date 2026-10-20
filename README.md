@@ -32,7 +32,7 @@ cully run claude      # or codex, cursor, or any agent on your PATH
 | --- | --- |
 | **One terminal for every agent** | Claude Code, Codex, Cursor CLI and any executable run in the same wrapper with a live health bar and advisor panel. |
 | **Loop detection** | "Cully noticed something: the same command failed 3 times after edits." |
-| **Advisor** | A second pair of eyes: context pressure, missing verification, broad searching, workflow gaps. Click it to open. |
+| **Advisor** | A second pair of eyes: context pressure, missing verification, broad searching, workflow gaps. Click it to open. Advice and lessons are only kept when they cite measured numbers. |
 | **Replay and timeline** | See what the agent did and how: which files it read, edited, created and deleted, which checks failed, where it looped. |
 | **Handoff** | A structured summary so a different agent can continue without rebuilding context. |
 | **Rescue** | Evidence and recovery steps when a session is stuck. |
