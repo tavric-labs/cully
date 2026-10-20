@@ -43,6 +43,16 @@ CULLY_E2E_TEAM_DATABASE_URL=postgresql://test:test@localhost:5432/cully_test \
 
 The test builds the current CLI, MCP and data binaries with the race detector, applies migrations in an isolated schema, starts loopback services and a temporary JWKS provider, and removes its schema and processes on completion. Solo's complete installation flow runs with `bash tests/e2e/setup.sh` on an isolated CI runner; `TestSolo` targets the local stack through `CULLY_E2E_MCP_URL`. Ordinary Go test runs skip each mode unless its environment variable is set. The published-CLI workflow option applies to Solo; Team always exercises the current checkout.
 
+### Evals
+
+`cully eval` scores setup, the harness audit, the advisor and memory retrieval against planted ground truth; [evaluate Cully](/evals) explains the method and its limits. The scoring and dataset live in `internal/evals` and `internal/cully/eval.go`. `go test ./internal/evals ./internal/cully` runs them with fakes and fixtures, and checks that each suite fails when given wrong ground truth. `TestRetrievalEval` runs the memory suite against a live stack:
+
+```sh
+CULLY_E2E_MCP_URL=http://127.0.0.1:3393/mcp go test ./tests/e2e -run '^TestRetrievalEval$' -count=1 -v
+# Also fail when semantic recall drops below 0.5:
+CULLY_EVAL_SEMANTIC_MIN=0.5 CULLY_E2E_MCP_URL=... go test ./tests/e2e -run '^TestRetrievalEval$' -count=1 -v
+```
+
 After a release's archives and service images are published, verify the real distribution path from the matching checkout:
 
 ```sh

@@ -75,7 +75,7 @@ These measurements retain aggregate counts and token estimates, not transcript t
 
 ## Cost reports, evaluation and mobile
 
-`cully savings` reads local Claude transcripts and reports aggregate injection and exploration estimates. `cully impact` reads a private local event ledger and may use a transcript-derived comparison for an estimated memory benefit. `cully advisor-eval` replays local Claude history; its explicit `--live` option sends derived signal summaries through the configured agent/model and may use recall or targeted public research. These tools do not save or upload raw transcript text. See [token impact](/token-impact) for the separate cost and sample boundaries.
+`cully savings` reads local Claude transcripts and reports aggregate injection and exploration estimates. `cully impact` reads a private local event ledger and may use a transcript-derived comparison for an estimated memory benefit. `cully eval advisor` replays local Claude history; its explicit `--live` option sends derived signal summaries through the configured agent/model and may use recall or targeted public research. These tools do not save or upload raw transcript text. See [token impact](/token-impact) for the separate cost and sample boundaries.
 
 The [mobile Self preview](/mobile) retrieves bounded private personal notes through your signed-in MCP connection. Local tasks stay on the phone, downloaded models run locally, microphone capture is explicit and inference stops on backgrounding. It does not expose memory writes or Team actions. Device-specific credential handling and unverified preview behavior are documented in the mobile guide.
 

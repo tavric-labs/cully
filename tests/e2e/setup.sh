@@ -84,7 +84,14 @@ test ! -f "$stack_dir/AGENTS.md"
 "$cli" suggestions
 
 cd "$repo_root"
-go test ./tests/e2e -run '^TestSolo$' -race -count=1 -v
+if [[ "${CULLY_E2E_PUBLISHED_CLI:-false}" == true ]]; then
+  # Releases before `cully eval` still get the retrieval eval through Go.
+  go test ./tests/e2e -run '^(TestSolo|TestRetrievalEval)$' -race -count=1 -v
+else
+  go test ./tests/e2e -run '^TestSolo$' -race -count=1 -v
+  # All four eval suites through the CLI under test, memory against this stack.
+  "$cli" eval --mcp-url "$CULLY_E2E_MCP_URL"
+fi
 
 cd "$HOME"
 "$cli" setup --all --prepare
