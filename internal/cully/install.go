@@ -22,6 +22,23 @@ func Install(targets ...string) error {
 // InstallWithMCP installs local guidance and optionally registers one MCP URL
 // for each selected agent. The operator deploys the server separately.
 func InstallWithMCP(endpoint string, oauth bool, targets ...string) error {
+	if err := installAgents(endpoint, oauth, targets...); err != nil {
+		return err
+	}
+	fmt.Println("Starting or checking the advisor daemon")
+	if err := StartDaemonDetached(); err != nil {
+		return fmt.Errorf("advisor startup failed: %w; rerun cully setup with the same options to retry", err)
+	}
+	fmt.Println("Advisor ready; inspect with cully status")
+	if endpoint == "" {
+		fmt.Println("Connect shared memory with: cully mcp add --url URL")
+	}
+	return nil
+}
+
+// installAgents writes each agent's user-level integration without starting
+// any process, so it can run against a scratch home.
+func installAgents(endpoint string, oauth bool, targets ...string) error {
 	if endpoint != "" {
 		if err := validateMCPURL(endpoint); err != nil {
 			return err
@@ -59,14 +76,6 @@ func InstallWithMCP(endpoint string, oauth bool, targets ...string) error {
 				return err
 			}
 		}
-	}
-	fmt.Println("Starting or checking the advisor daemon")
-	if err := StartDaemonDetached(); err != nil {
-		return fmt.Errorf("advisor startup failed: %w; rerun cully setup with the same options to retry", err)
-	}
-	fmt.Println("Advisor ready; inspect with cully status")
-	if endpoint == "" {
-		fmt.Println("Connect shared memory with: cully mcp add --url URL")
 	}
 	return nil
 }
