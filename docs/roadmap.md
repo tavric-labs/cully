@@ -1,6 +1,6 @@
 # Roadmap
 
-Cully has two modes: [Solo](/solo), a copilot for your coding agent and work environment, and [Team](/team-workflows), a shared workspace for project tasks, handoffs, review and lessons. See [architecture](architecture.md) and [current capabilities](capabilities.md) for the implementation.
+Cully has two modes: [Solo](/solo), the local harness runtime for your coding agents, and [Team](/team-workflows), a shared workspace for project tasks, handoffs, review and lessons. See [architecture](architecture.md) and [current capabilities](capabilities.md) for the implementation.
 
 [Product direction](product-direction.md) describes feature proposals in detail, with what each reuses and what is missing. This page lists engineering work.
 

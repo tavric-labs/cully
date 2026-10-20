@@ -171,11 +171,17 @@ func RunStatus(w io.Writer, cwd string) {
 		ContextUsed: sessionContextUsed(healthSession.Session),
 		Now:         time.Now(),
 	}))
+	if n := guardCheckpoint(guardTaskEvents(healthSession.Session, events)); n.text != "" {
+		fmt.Fprintln(w, n.text)
+	}
 	writeIntegrations(w, cwd)
 	RunDaemonStatus(w)
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "Cully session status")
 	fmt.Fprintln(w)
+	if snap.AdvisorDeferred != "" {
+		fmt.Fprintln(w, "  ○ automatic advisor deferred — "+snap.AdvisorDeferred+"; local warnings remain active")
+	}
 	if !snap.GraphifyGraph && snap.Searches >= 5 {
 		fmt.Fprintln(w, "  ○ graphify graph not built — consider /graphify .")
 	}
@@ -201,7 +207,7 @@ func RunStatus(w io.Writer, cwd string) {
 		fmt.Fprintln(w, "  ○ heavy grep despite graph — try graphify query")
 	}
 	fmt.Fprintln(w)
-	fmt.Fprintln(w, "  Instruments nominal if nothing is listed above.")
+	fmt.Fprintln(w, "  Missing signals are unknown; observed warnings are listed above.")
 }
 
 // historyFile is the cross-session black-box log (one JSON line per ended

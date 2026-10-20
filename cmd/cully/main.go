@@ -15,7 +15,7 @@ import (
 
 var version = "dev"
 
-const help = `Cully — your agent's copilot, your team's workspace.
+const help = `Cully — the harness runtime for coding agents and software projects.
 
 Usage:
   cully setup --all [--agent claude|codex|cursor|all] [--oauth] [--prepare]

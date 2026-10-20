@@ -94,7 +94,7 @@ func TestCursorPaneSignalEvents(t *testing.T) {
 		RunPaneSignalHook("cursor", strings.NewReader(payload))
 	}
 	data, _ := os.ReadFile(signalFile("cursor-pane"))
-	if got, want := string(data), "T.\nS.\nS.\nE.\nO.\nO.\nT!\n"; got != want {
+	if got, want := string(data), "T?\nS?\nS?\nE.\nO.\nO.\nT!\n"; got != want {
 		t.Fatalf("signals = %q, want %q", got, want)
 	}
 	stats := readToolStats("cursor-pane")

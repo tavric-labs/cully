@@ -36,6 +36,24 @@ func readTask(session string) string {
 	return strings.TrimSpace(string(b))
 }
 
+// The advisor receives only the explicitly accepted task title, never a raw
+// prompt. Quoting and bounding it keep it from creating forged signal fields.
+func advisorTaskContext(signals, task string) string {
+	task = strings.Join(strings.Fields(task), " ")
+	runes := []rune(task)
+	if len(runes) > taskNameMax {
+		task = string(runes[:taskNameMax])
+	}
+	if task == "" {
+		return signals
+	}
+	signals = strings.ReplaceAll(signals, "task_intent=unknown", "task_intent=accepted_task_summary")
+	if !strings.Contains(signals, "task_intent=accepted_task_summary") {
+		signals += "\ntask_intent=accepted_task_summary\n"
+	}
+	return signals + fmt.Sprintf("\naccepted_task_summary=%q\n", task)
+}
+
 func writeTask(session, name string) error {
 	name = strings.Join(strings.Fields(name), " ")
 	if runes := []rune(name); len(runes) > taskNameMax {

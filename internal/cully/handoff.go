@@ -51,7 +51,10 @@ func handoffFactsOf(events []journalEvent) handoffFacts {
 				f.EditsSinceCheck++
 			}
 		case journalCheck:
-			f.EditsSinceCheck = 0
+			if e.Unknown {
+				f.LastCheck = "unknown"
+				continue
+			}
 			if e.Failed {
 				f.ChecksFailed++
 				f.LastCheck = "failed"
@@ -59,6 +62,7 @@ func handoffFactsOf(events []journalEvent) handoffFacts {
 					fails[e.Sig]++
 				}
 			} else {
+				f.EditsSinceCheck = 0
 				f.ChecksPassed++
 				f.LastCheck = "passed"
 			}
@@ -91,6 +95,17 @@ func buildHandoff(in handoffInput) string {
 		task = append(task, "Run cully_context for this project with a short query, then cully_get for any record whose details matter.")
 	}
 	section("Task", task...)
+	h := measureHealth(in.Events)
+	var coverage []string
+	if h.Coverage != "" {
+		coverage = append(coverage, "- Journal "+h.Coverage+"; counts cover only observed events.")
+	}
+	if len(in.Events) == 0 || strings.HasPrefix(h.Signals, "partial:") || strings.HasPrefix(h.Signals, "unavailable:") {
+		coverage = append(coverage, "- Signals "+h.Signals+". Verify the current state before continuing.")
+	}
+	if len(coverage) > 0 {
+		section("Evidence limits", coverage...)
+	}
 
 	if facts.Edits > 0 || facts.ChecksPassed > 0 {
 		section("Completed work",
@@ -121,7 +136,9 @@ func buildHandoff(in handoffInput) string {
 		section("Current state", state...)
 	}
 
-	if facts.ChecksPassed+facts.ChecksFailed > 0 {
+	if h.Coverage != "" || h.ChecksUnknown > 0 {
+		section("Verification", "- "+h.Verification+"; run the project's checks before relying on this handoff")
+	} else if facts.ChecksPassed+facts.ChecksFailed > 0 {
 		switch {
 		case facts.EditsSinceCheck > 0:
 			section("Verification", "- Last check "+facts.LastCheck+"; edits were made after it, so current state is unverified")

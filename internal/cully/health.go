@@ -8,24 +8,28 @@ import (
 
 // sessionHealth holds only values measured from the journal.
 type sessionHealth struct {
-	Agent        string
-	Start        time.Time
-	End          time.Time // zero while the session is running
-	Tools        int
-	Edits        int
-	ChecksPassed int
-	ChecksFailed int
-	Loops        int  // notes and live detections, for the count
-	Looping      bool // a loop is active now
-	Recalls      int  // Cully memory lookups
-	Saves        int  // Cully memory writes
-	Verification string
+	Agent         string
+	Start         time.Time
+	End           time.Time // zero while the session is running
+	Tools         int
+	Edits         int
+	ChecksPassed  int
+	ChecksFailed  int
+	ChecksUnknown int
+	Loops         int  // notes and live detections, for the count
+	Looping       bool // a loop is active now
+	Recalls       int  // Cully memory lookups
+	Saves         int  // Cully memory writes
+	Verification  string
+	Coverage      string
+	Signals       string
 }
 
 func measureHealth(events []journalEvent) sessionHealth {
 	var h sessionHealth
 	lastEdit, lastCheck := -1, -1
 	lastCheckFailed := false
+	lastCheckUnknown := false
 	for i, e := range events {
 		if h.Start.IsZero() || (e.Class == journalStart && h.Start.After(e.Time)) {
 			h.Start = e.Time
@@ -40,13 +44,16 @@ func measureHealth(events []journalEvent) sessionHealth {
 			lastEdit = i
 		case journalCheck:
 			h.Tools++
-			if e.Failed {
+			if e.Unknown {
+				h.ChecksUnknown++
+			} else if e.Failed {
 				h.ChecksFailed++
 			} else {
 				h.ChecksPassed++
 			}
 			lastCheck, lastCheckFailed = i, e.Failed
-		case journalSearch, journalOther:
+			lastCheckUnknown = e.Unknown
+		case journalSearch, journalOther, "A", "W", "G":
 			h.Tools++
 		case journalMemory:
 			if memoryWrite(e.Tool) {
@@ -59,17 +66,24 @@ func measureHealth(events []journalEvent) sessionHealth {
 		}
 	}
 	switch {
+	case lastCheck >= 0 && lastCheck >= lastEdit && lastCheckFailed:
+		h.Verification = "failed"
+	case lastCheck >= 0 && lastCheck >= lastEdit && lastCheckUnknown:
+		h.Verification = "unknown: check outcome unavailable"
 	case lastEdit < 0:
 		h.Verification = "no edits"
 	case lastCheck < lastEdit:
 		h.Verification = "none since last edit"
-	case lastCheckFailed:
-		h.Verification = "failed"
 	default:
 		h.Verification = "passed since last edit"
 	}
 	h.Loops = loopCount(events)
 	h.Looping = detectLoops(events).Active()
+	h.Coverage = journalCoverage(events)
+	h.Signals = signalCoverage(h.Agent, h.Tools+h.Recalls+h.Saves)
+	if (h.Coverage != "" || h.Tools+h.Recalls+h.Saves == 0) && h.Verification != "failed" {
+		h.Verification = "unknown: incomplete session evidence"
+	}
 	return h
 }
 
@@ -123,6 +137,8 @@ func healthRisk(h sessionHealth, in healthInputs) (level, reason string) {
 		return "MEDIUM", "context filling up"
 	case in.GitFiles >= 15:
 		return "MEDIUM", "many uncommitted files"
+	case h.Coverage != "" || strings.HasPrefix(h.Signals, "unavailable:") || strings.HasPrefix(h.Signals, "partial:"):
+		return "UNKNOWN", "session evidence is incomplete"
 	}
 	return "LOW", "nothing flagged"
 }
@@ -153,6 +169,13 @@ func renderSessionHealth(events []journalEvent, in healthInputs) string {
 		row("Context", healthGauge(in.ContextUsed))
 	}
 	row("Tests", fmt.Sprintf("%d ✓  %d ✕", h.ChecksPassed, h.ChecksFailed))
+	if h.ChecksUnknown > 0 {
+		row("Check outcomes", fmt.Sprintf("%d unknown", h.ChecksUnknown))
+	}
+	if h.Coverage != "" {
+		row("Journal", h.Coverage)
+	}
+	row("Signals", h.Signals)
 	row("Verification", h.Verification)
 	loops := fmt.Sprintf("%d", h.Loops)
 	if h.Looping {

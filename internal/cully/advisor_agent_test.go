@@ -125,7 +125,7 @@ func TestCursorStopQueuesCoarseAgentSignals(t *testing.T) {
 	input := fmt.Sprintf(`{"cwd":%q,"conversation_id":"opaque-input","status":"completed","loop_count":0}`, root)
 	var output strings.Builder
 	RunContinuityHook("cursor", "stop", strings.NewReader(input), &output)
-	job, _, ok := nextJob()
+	job, _, ok := nextAdvisorJob(nil)
 	if !ok {
 		t.Fatal("Cursor did not dispatch")
 	}

@@ -3,7 +3,7 @@
     "name": "Tavric Labs",
     "url": "https://github.com/tavric-labs"
   },
-  "description": "Session health, an advisor, loop detection and durable memory for coding agents. Needs the cully CLI on PATH.",
+  "description": "Solo: a coding-agent harness runtime. Team: a project management harness runtime for people and AI agents. Needs the cully CLI on PATH.",
   "homepage": "https://docs.cully.net/plugins",
   "keywords": [
     "memory",

@@ -1,6 +1,6 @@
 # Architecture
 
-Cully has one Go module with three agent/data entry points and a separate website server. Domain validation is shared across the memory transports; PostgreSQL and HTTP adapters implement the same repository interface.
+Cully is a coding-agent harness runtime, implemented in one Go module with three agent/data entry points and a separate website server. It owns the terminal session, observation and advisor pipeline around existing agents; the agents retain their own model loops and tool execution. Domain validation is shared across the memory transports; PostgreSQL and HTTP adapters implement the same repository interface.
 
 ```mermaid
 flowchart LR
@@ -20,7 +20,7 @@ flowchart LR
 
 See [how Cully works](/how-cully-works) for the product-level picture.
 
-## Local session companion
+## Local harness runtime
 
 `cully setup --all` owns the complete local startup: Docker memory services, user-level agent integrations shared across projects, and the advisor daemon. `--mcp-url` uses an existing memory server; `--prepare` only prepares editable configuration. Startup failures return a nonzero exit status. Setup and uninstall never write into the invoking project. Session project identity and owner-scoped memory remain separate from installation scope.
 
@@ -37,6 +37,10 @@ See [how Cully works](/how-cully-works) for the product-level picture.
 The model-backed advisor has a shared prompt and report pipeline with agent-specific CLI adapters. Signals carry an `agent` field through the job; absent legacy values default to Claude. Claude runs in print mode, Codex runs an ephemeral read-only `exec` process, and Cursor runs in print/ask mode. Unsupported agents fail explicitly rather than silently using another host. The worker runs in the originating project, strips foreground session bindings, and prevents recursive continuity/analysis hooks.
 
 The shared prompt requests bounded owner/project-scoped Cully recall through the selected CLI's configured MCP connection, with semantic recall through Cully when text lookup misses. A concrete capability or current-documentation gap can trigger a separate targeted web-research step. The worker reports recall as checked, unavailable, skipped or unconfirmed; these source markers describe the worker's reported tool use, rather than independent proof of live service access. Claude/Codex restrict Cully to read-only tools. Cursor relies on ask mode and the shared no-edit/no-memory-write instructions. Durable writes remain the foreground agent's responsibility.
+
+The daemon runs up to four advisor jobs across sessions, with one active job per session. Pending refreshes for a session coalesce to the newest request, and the oldest waiting session gets the next free slot. Queue files are published atomically. Each worker has a three-minute total deadline in addition to per-process limits. Shutdown cancels active agent process groups, waits for workers, and leaves interrupted jobs queued for a later daemon start.
+
+Automatic dispatch admission uses a locked per-session timestamp/hash record: six requests per rolling hour, at least two minutes apart, suppressing unchanged signals. Deferred work is visible in status and the panel and recorded in the impact ledger. This is an automatic-request budget, not token accounting or an execution gate. The [guardrails guide](/guardrails) documents local human checkpoints and skill-level scope/budget guidance.
 
 Claude retains its richer analysis-hook signals. Codex dispatches bounded context/tool metadata from the wrapper and merges worker findings with its immediate local warnings. Cursor dispatches coarse continuity-stop metadata without opening transcripts. Unknown instruments are not borrowed from another agent. The CLI/model and configured recall/research tools must be available for the worker to use them; local rule warnings do not require successful model analysis.
 

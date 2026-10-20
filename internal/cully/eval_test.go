@@ -44,6 +44,73 @@ func TestEvalHarnessFailsWhenTruthDisagrees(t *testing.T) {
 	}
 }
 
+// Each broken implementation is paired with the same known-good fixture. The
+// evaluator itself must flip, rather than just returning a plausible score.
+func TestEvalSetupDetectsBrokenInstaller(t *testing.T) {
+	suite := evalSetupWithInstaller(func(endpoint string, oauth bool, targets ...string) error {
+		if err := installAgents(endpoint, oauth, targets...); err != nil {
+			return err
+		}
+		return os.Remove(filepath.Join(CodexConfigDir(), "skills", "cully", "SKILL.md"))
+	})
+	if !strings.Contains(strings.Join(failures(suite), "\n"), "codex skill is the canonical one") {
+		t.Fatalf("broken installation passed: %+v", suite)
+	}
+}
+
+func TestEvalHarnessDetectsEmptyAndAlwaysPresentAudits(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		audit func(harnessDirs) []harnessItem
+	}{
+		{"no audit results", func(harnessDirs) []harnessItem { return nil }},
+		{"everything installed", func(d harnessDirs) []harnessItem {
+			items := auditHarness(d)
+			for i := range items {
+				items[i].Found = []string{"invented"}
+			}
+			return items
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if s := evalHarnessWithAudit(harnessScenarios(), tc.audit); s.Failed() == 0 {
+				t.Fatalf("broken audit passed: %+v", s)
+			}
+		})
+	}
+}
+
+func TestEvalAdvisorDetectsSilentAndNoisyMonitors(t *testing.T) {
+	o := evalOptions{dir: t.TempDir() + "/none"}
+	for _, tc := range []struct {
+		name  string
+		scan  func([][]byte) *TokenWaste
+		loops func([]journalEvent) loopReport
+		want  string
+	}{
+		{"waste always zero", func([][]byte) *TokenWaste { return newTokenWaste() }, detectLoops, "counts the planted oversized output exactly"},
+		{"waste always high", func([][]byte) *TokenWaste { return &TokenWaste{BigResults: 12, FullReads: 12, BigTokens: 36000} }, detectLoops, "counts no oversized output in an ordinary session"},
+		{"loops always quiet", scanWaste, func([]journalEvent) loopReport { return loopReport{} }, "loops: the same command fails three times"},
+		{"loops always active", scanWaste, func([]journalEvent) loopReport { return loopReport{Loops: []loopFinding{{Kind: loopRepeatFailure}}} }, "loops: a passing check resets the count"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := evalAdvisorWithDetectors(o, tc.scan, tc.loops)
+			if !strings.Contains(strings.Join(failures(s), "\n"), tc.want) {
+				t.Fatalf("missed broken monitor: %v", failures(s))
+			}
+		})
+	}
+}
+
+func TestEvalExplicitLiveRequestFailsWithoutCheckpoints(t *testing.T) {
+	for _, dir := range []string{t.TempDir() + "/missing", t.TempDir()} {
+		s := evalAdvisor(evalOptions{dir: dir, live: 1, days: 30, max: 5})
+		if !strings.Contains(strings.Join(failures(s), "\n"), "live advisor ran") {
+			t.Fatalf("unexecuted live evaluation passed: %+v", s)
+		}
+	}
+}
+
 func TestEvalIsolatesTheUsersHome(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

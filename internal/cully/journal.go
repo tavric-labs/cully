@@ -54,8 +54,11 @@ const (
 
 // Fixed vocabulary for journalNote events. Free text is never recorded.
 const (
-	noteLoop      = "loop"
-	noteVerifyGap = "verify-gap"
+	noteLoop              = "loop"
+	noteVerifyGap         = "verify-gap"
+	noteHistoryTrimmed    = "history-trimmed"
+	noteHistoryUnreadable = "history-unreadable"
+	noteHistoryInvalid    = "history-invalid"
 )
 
 const (
@@ -65,13 +68,14 @@ const (
 )
 
 type journalEvent struct {
-	Time   time.Time `json:"t"`
-	Agent  string    `json:"a,omitempty"`
-	Class  string    `json:"c"`
-	Failed bool      `json:"f,omitempty"`
-	Tool   string    `json:"tool,omitempty"`
-	Sig    string    `json:"sig,omitempty"`
-	Note   string    `json:"n,omitempty"`
+	Time    time.Time `json:"t"`
+	Agent   string    `json:"a,omitempty"`
+	Class   string    `json:"c"`
+	Failed  bool      `json:"f,omitempty"`
+	Unknown bool      `json:"u,omitempty"` // the agent supplied no outcome
+	Tool    string    `json:"tool,omitempty"`
+	Sig     string    `json:"sig,omitempty"`
+	Note    string    `json:"n,omitempty"`
 	// Replay fields; see the privacy guarantee above.
 	Path string `json:"p,omitempty"`
 	To   string `json:"to,omitempty"`
@@ -160,25 +164,47 @@ func keepHalfJournal(data []byte) []byte {
 	if len(kept) == 0 {
 		return nil
 	}
-	return []byte(strings.Join(kept, "\n") + "\n")
+	// Keep a fixed, content-free marker through every subsequent rotation.
+	var first journalEvent
+	_ = json.Unmarshal([]byte(kept[0]), &first)
+	marker, _ := json.Marshal(journalEvent{Time: first.Time, Agent: first.Agent, Class: journalNote, Note: noteHistoryTrimmed})
+	return append(append(marker, '\n'), []byte(strings.Join(kept, "\n")+"\n")...)
 }
 
 func readJournal(path string) []journalEvent {
 	f, err := os.Open(path)
 	if err != nil {
-		return nil
+		return []journalEvent{{Class: journalNote, Note: noteHistoryUnreadable}}
 	}
 	defer f.Close()
 	var events []journalEvent
+	invalid := false
 	scan := bufio.NewScanner(f)
 	scan.Buffer(make([]byte, 0, 64*1024), 1<<20)
 	for scan.Scan() {
 		var event journalEvent
-		if json.Unmarshal(scan.Bytes(), &event) == nil && event.Class != "" {
+		if json.Unmarshal(scan.Bytes(), &event) == nil && validJournalClass(event.Class) {
 			events = append(events, event)
+		} else {
+			invalid = true
 		}
 	}
+	if invalid || scan.Err() != nil || len(events) == 0 {
+		var stamp time.Time
+		if len(events) > 0 {
+			stamp = events[len(events)-1].Time
+		}
+		events = append(events, journalEvent{Time: stamp, Class: journalNote, Note: noteHistoryInvalid})
+	}
 	return events
+}
+
+func validJournalClass(class string) bool {
+	switch class {
+	case journalEdit, journalCheck, journalSearch, journalOther, journalMemory, journalNote, journalStart, journalEnd, journalFileOp, "A", "W", "G":
+		return true
+	}
+	return false
 }
 
 type journalFile struct {

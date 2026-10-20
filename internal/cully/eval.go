@@ -252,6 +252,10 @@ func dirEmpty(path string) bool {
 // reports them, nothing leaks into the project, rerunning changes nothing, and
 // uninstall removes only what Cully owns.
 func evalSetup() EvalSuite {
+	return evalSetupWithInstaller(installAgents)
+}
+
+func evalSetupWithInstaller(install func(string, bool, ...string) error) EvalSuite {
 	s := EvalSuite{Name: "setup"}
 	isolated(func(root string) {
 		project := filepath.Join(root, "project")
@@ -269,7 +273,7 @@ func evalSetup() EvalSuite {
 		_ = os.WriteFile(filepath.Join(claude, "settings.json"), []byte(userSettings), 0o600)
 		_ = os.WriteFile(filepath.Join(codex, "AGENTS.md"), []byte(userAgents), 0o600)
 
-		if err := installAgents("", false, "claude", "codex", "cursor"); err != nil {
+		if err := install("", false, "claude", "codex", "cursor"); err != nil {
 			s.check("install for every agent", false, "%v", err)
 			return
 		}
@@ -294,7 +298,7 @@ func evalSetup() EvalSuite {
 		s.check("setup left the project untouched", dirEmpty(project), "")
 
 		before, _ := os.ReadFile(filepath.Join(claude, "settings.json"))
-		if err := installAgents("", false, "claude", "codex", "cursor"); err != nil {
+		if err := install("", false, "claude", "codex", "cursor"); err != nil {
 			s.check("setup is repeatable", false, "%v", err)
 		} else {
 			after, _ := os.ReadFile(filepath.Join(claude, "settings.json"))
@@ -367,6 +371,10 @@ func harnessScenarios() []harnessScenario {
 func evalHarness() EvalSuite { return evalHarnessScenarios(harnessScenarios()) }
 
 func evalHarnessScenarios(scenarios []harnessScenario) EvalSuite {
+	return evalHarnessWithAudit(scenarios, auditHarness)
+}
+
+func evalHarnessWithAudit(scenarios []harnessScenario, audit func(harnessDirs) []harnessItem) EvalSuite {
 	s := EvalSuite{Name: "harness"}
 	tp, fp, fn := 0, 0, 0
 	for _, sc := range scenarios {
@@ -381,7 +389,12 @@ func evalHarnessScenarios(scenarios []harnessScenario) EvalSuite {
 		}
 		sc.build(dirs)
 		var wrong []string
-		for _, item := range auditHarness(dirs) {
+		seen := map[string]bool{}
+		for _, item := range audit(dirs) {
+			if seen[item.Component] {
+				wrong = append(wrong, "duplicate component: "+item.Component)
+			}
+			seen[item.Component] = true
 			got, want := item.Present(), sc.want[item.Component]
 			switch {
 			case got && want:
@@ -392,6 +405,11 @@ func evalHarnessScenarios(scenarios []harnessScenario) EvalSuite {
 			case want:
 				fn++
 				wrong = append(wrong, "missed: "+item.Component)
+			}
+		}
+		for component := range sc.want {
+			if !seen[component] {
+				wrong = append(wrong, "missing audit result: "+component)
 			}
 		}
 		_ = os.RemoveAll(root)
@@ -481,6 +499,23 @@ var guardScenarios = []struct {
 }
 
 func evalGuard(s *EvalSuite, dir string) {
+	for _, tc := range []struct {
+		name  string
+		class string
+		count int
+		want  string
+	}{
+		{"ordinary exploration", journalSearch, 19, ""},
+		{"prolonged exploration", journalSearch, 20, "exploration"},
+		{"unchecked edits", journalEdit, 12, "unchecked"},
+	} {
+		var events []journalEvent
+		for i := 0; i < tc.count; i++ {
+			events = append(events, journalEvent{Class: tc.class})
+		}
+		got := guardCheckpoint(events)
+		s.check("guard checkpoint: "+tc.name, got.reason == tc.want, "found %q, want %q", got.reason, tc.want)
+	}
 	const command = "go test ./... -run TestWidget"
 	for _, sc := range guardScenarios {
 		var events []journalEvent
@@ -518,6 +553,10 @@ func evalGuard(s *EvalSuite, dir string) {
 // are replayed and measured, and --live asks the real advisor about some of
 // them and checks that it cites no figure it was not given.
 func evalAdvisor(o evalOptions) EvalSuite {
+	return evalAdvisorWithDetectors(o, scanWaste, detectLoops)
+}
+
+func evalAdvisorWithDetectors(o evalOptions, wasteScan func([][]byte) *TokenWaste, loops func([]journalEvent) loopReport) EvalSuite {
 	s := EvalSuite{Name: "advisor"}
 	var points []evalCheckpoint
 	var sessions []SessionContext
@@ -530,10 +569,10 @@ func evalAdvisor(o evalOptions) EvalSuite {
 			s.check("write planted sessions", false, "")
 			return
 		}
-		waste := scanWaste(wastefulLines)
+		waste := wasteScan(wastefulLines)
 		s.check("counts the planted oversized output exactly", waste.BigResults == 12 && waste.FullReads == 12 && waste.BigTokens == 36000,
 			"found %d big results, %d full reads, %d tokens; planted 12, 12 and 36000", waste.BigResults, waste.FullReads, waste.BigTokens)
-		calm := scanWaste(healthyLines)
+		calm := wasteScan(healthyLines)
 		s.check("counts no oversized output in an ordinary session", calm.BigResults == 0, "found %d", calm.BigResults)
 
 		cwd := filepath.Join(root, "project")
@@ -558,7 +597,7 @@ func evalAdvisor(o evalOptions) EvalSuite {
 		// before any model is consulted. Check it against planted sessions, and
 		// count a spurious alarm as a regression, as that paper does.
 		for _, sc := range loopScenarios {
-			report := detectLoops(plantedJournal(sc.spec))
+			report := loops(plantedJournal(sc.spec))
 			var got []string
 			for _, l := range report.Loops {
 				got = append(got, l.Kind)
@@ -590,6 +629,9 @@ func evalAdvisor(o evalOptions) EvalSuite {
 	// Real transcripts are read outside the isolated home: the user's own files.
 	if _, err := os.Stat(o.dir); err != nil {
 		s.note("replay skipped: no Claude transcripts at %s", o.dir)
+		if o.live > 0 {
+			s.check("live advisor ran", false, "requested --live but transcript source is unavailable")
+		}
 		return s
 	}
 	isolated(func(string) {
@@ -601,6 +643,9 @@ func evalAdvisor(o evalOptions) EvalSuite {
 	})
 	if len(points) == 0 {
 		s.note("replay skipped: no transcripts of %d+ lines for project %q in the last %d days", 40, o.project, o.days)
+		if o.live > 0 {
+			s.check("live advisor ran", false, "requested --live but no eligible checkpoints were available")
+		}
 		return s
 	}
 	ev := summarizeEval(points, len(sessions))

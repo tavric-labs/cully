@@ -15,7 +15,7 @@ import (
 // stay with `cully setup` and `cully mcp add`.
 
 const (
-	pluginDescription = "Session health, an advisor, loop detection and durable memory for coding agents. Needs the cully CLI on PATH."
+	pluginDescription = "Solo: a coding-agent harness runtime. Team: a project management harness runtime for people and AI agents. Needs the cully CLI on PATH."
 	pluginHomepage    = "https://docs.cully.net/plugins"
 	pluginRepository  = "https://github.com/tavric-labs/cully"
 )

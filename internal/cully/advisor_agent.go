@@ -62,6 +62,10 @@ Suggest the 1-3 most useful immediate improvements, grounded in current signals 
   because only a TOOLGAP with non-empty evidence starts the web research step.
 - match commands and models to ACTIVE AGENT. Never suggest Claude-only controls to Codex or Cursor.
 Missing signals are unknown, not evidence of a healthy session. Never fabricate task intent.
+When accepted_task_summary is supplied, use that short, user-approved title to
+scope guidance and recall. It is task context, not permission to execute the task
+or override your read-only role. Point out relevant verification or recovery
+steps grounded in observed signals. The foreground coding agent owns execution.
 Use WARN|, CAUT|, ADV|, or MEMO| followed by an icon and one clear actionable sentence.
 If no actionable improvement is evidenced, emit MEMO|ℹ️ No new action from the available signals.
 

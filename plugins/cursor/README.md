@@ -1,6 +1,6 @@
 # Cully for Cursor
 
-Session health, an advisor, loop detection and durable memory for coding agents. Needs the cully CLI on PATH.
+Solo: a coding-agent harness runtime. Team: a project management harness runtime for people and AI agents. Needs the cully CLI on PATH.
 
 This plugin adds Cully's hooks and skill to Cursor. It is one of two install routes: `cully setup` installs the same hooks, so use **one** of them or each hook runs twice.
 

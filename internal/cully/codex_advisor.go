@@ -27,7 +27,7 @@ func statsAdviceWithStatus(stats toolStats, view sessionView) []string {
 		return advice
 	}
 	if len(advice) == 0 && !view.ContextKnown && stats.Tools > 0 && len(workflow) == 1 && strings.HasPrefix(workflow[0], "MEMO|") {
-		return []string{"MEMO|No tool-workflow warning in observed signals. Context pressure is unavailable until the Codex footer arrives."}
+		return []string{"MEMO|No tool-workflow warning in observed signals. Context pressure is unavailable: " + missingUsageText(view, true) + "."}
 	}
 	return append(advice, workflow...)
 }
@@ -37,13 +37,17 @@ func advisorSignals(stats toolStats, view sessionView) string {
 	if view.ContextKnown {
 		ctx = fmt.Sprintf("context_used_pct=%d", 100-view.ContextLeft)
 	}
-	return fmt.Sprintf("agent=codex\n%s\ntools=%d searches=%d edits=%d checks=%d tool_errors=%d edits_since_check=%d\ncully_mcp_calls=%d cully_log_calls=%d cully_context_calls=%d cully_recall_calls=%d cully_search_calls=%d cully_get_calls=%d cully_mcp_health=%s cully_mcp_auth=%s\nsignal_scope=aggregate_counters_and_footer; task_intent=unknown\n", ctx, stats.Tools, stats.Searches, stats.Edits, stats.Checks, stats.Errors, stats.EditsSinceCheck, stats.Cully.Calls, stats.Cully.Log, stats.Cully.Context, stats.Cully.Recall, stats.Cully.Search, stats.Cully.Get, fallback(stats.Cully.Health, "unknown"), fallback(stats.Cully.Auth, "unknown")) + view.Terminal.signals()
+	agent := fallback(view.Agent, "codex")
+	return fmt.Sprintf("agent=%s\n%s\ntools=%d searches=%d edits=%d checks=%d tool_errors=%d edits_since_check=%d\ncully_mcp_calls=%d cully_log_calls=%d cully_context_calls=%d cully_recall_calls=%d cully_search_calls=%d cully_get_calls=%d cully_mcp_health=%s cully_mcp_auth=%s\nsignal_scope=aggregate_counters_and_native_usage; task_intent=unknown\nsignal_coverage=%s\nunknown_check_outcomes=%d\nsignal_history_partial=%t\njournal_coverage=%s\n", agent, ctx, stats.Tools, stats.Searches, stats.Edits, stats.Checks, stats.Errors, stats.EditsSinceCheck, stats.Cully.Calls, stats.Cully.Log, stats.Cully.Context, stats.Cully.Recall, stats.Cully.Search, stats.Cully.Get, fallback(stats.Cully.Health, "unknown"), fallback(stats.Cully.Auth, "unknown"), signalCoverage(agent, stats.Tools), stats.UnknownChecks, stats.Partial, fallback(view.JournalCoverage, "no known history gap; completeness unconfirmed")) + view.Terminal.signals()
 }
 
 func combinedAdvice(session string, stats toolStats, view sessionView) []string {
 	local := statsAdviceWithStatus(stats, view)
 	cwd := currentDir()
 	loops, events := sessionLoops(cwd, session)
+	if n := guardCheckpoint(guardTaskEvents(session, events)); n.text != "" {
+		local = append(local, "CAUT|"+n.text)
+	}
 	loopLines, hints := loops.Advice(), workflowHints(cwd, events)
 	if len(loopLines)+len(hints) > 0 {
 		// A nominal memo is redundant with an actual observation.
@@ -74,6 +78,9 @@ func combinedAdvice(session string, stats toolStats, view sessionView) []string 
 		}
 	}
 	snap := readSnapshot(session)
+	if snap.AdvisorDeferred != "" {
+		local = append(local, "MEMO|Automatic advisor deferred: "+snap.AdvisorDeferred+"; local warnings remain active.")
+	}
 	if snap.AdvisorAt == "" {
 		return append(local, "MEMO|🔎 Deeper analysis is awaiting session activity.")
 	}

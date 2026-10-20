@@ -4,11 +4,11 @@
 
 # Cully
 
-**Your agent's copilot. Your team's workspace.**
+**The harness runtime for coding agents and software projects.**
 
 [Website](https://cully.net) · [Documentation](https://docs.cully.net)
 
-Cully works around Claude Code, Codex, Cursor and other coding agents, adding live session guidance, private project memory and shared team workflows.
+Cully runs Claude Code, Codex, Cursor and other coding agents inside one terminal runtime, adding session health, advisor guidance, private project memory and shared team workflows. Each agent keeps its own reasoning and tools; Cully supplies the session around it.
 
 ## Why Cully
 
@@ -54,8 +54,8 @@ Signals depend on the agent's integrations. Token figures are estimates, not bil
 
 ## Solo and Team
 
-- **[Solo](https://docs.cully.net/solo):** session guidance, replay and private owner-scoped memory.
-- **[Team](https://docs.cully.net/team-workflows):** shared tasks, checkpoints, independent review and explicitly published lessons. Requires OAuth and project membership; agents launch manually.
+- **[Solo](https://docs.cully.net/solo):** a coding-agent harness runtime with session guidance, replay and private owner-scoped memory.
+- **[Team](https://docs.cully.net/team-workflows):** a project management harness runtime for people and AI agents, with shared tasks, checkpoints, independent review and explicitly published lessons. Requires OAuth and project membership; agents launch manually.
 
 Both use the same CLI. Private notes and local journals stay separate from shared project records.
 

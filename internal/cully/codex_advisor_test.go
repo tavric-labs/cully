@@ -22,6 +22,29 @@ func TestCodexAdviceContextPressure(t *testing.T) {
 	}
 }
 
+func TestAdvisorSignalsPreserveHostAndEvidenceLimits(t *testing.T) {
+	for _, agent := range []string{"claude", "codex", "cursor", "custom-agent"} {
+		view := sessionView{Agent: agent, JournalCoverage: "partial: older journal history was discarded"}
+		sig := advisorSignals(toolStats{Tools: 3, UnknownChecks: 1, Partial: true}, view)
+		if advisorAgent(sig) != agent {
+			t.Fatalf("routed %s as %s", agent, advisorAgent(sig))
+		}
+		for _, want := range []string{"unknown_check_outcomes=1", "signal_history_partial=true", "journal_coverage=partial:", "signal_coverage="} {
+			if !strings.Contains(sig, want) {
+				t.Fatalf("%s lost %q: %s", agent, want, sig)
+			}
+		}
+		if got := panelVerification(toolStats{Tools: 3}, view); strings.Contains(got, "no pending edits") {
+			t.Fatalf("journal gap claimed clean: %s", got)
+		}
+	}
+	for _, view := range []sessionView{{Agent: "cursor"}, {Agent: "custom-agent"}} {
+		if got := panelVerification(toolStats{Tools: 3}, view); strings.Contains(got, "no pending edits") {
+			t.Fatal(got)
+		}
+	}
+}
+
 func TestCodexCombinedAdviceKeepsWarningsAndDeepFindings(t *testing.T) {
 	t.Setenv("CLAUDE_CONFIG_DIR", t.TempDir())
 	session := "combined"

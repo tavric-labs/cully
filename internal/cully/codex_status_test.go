@@ -148,7 +148,7 @@ func TestCodexStatusDistinguishesAvailableAndMissingInstruments(t *testing.T) {
 			t.Fatalf("missing observed instrument %q", want)
 		}
 	}
-	for _, want := range []string{"Context  waiting for Codex footer", "Model  waiting for Codex footer", "Working tree  unavailable", "Errors 0", "Verification  no pending edits"} {
+	for _, want := range []string{"Context  waiting for Codex footer", "Model  waiting for Codex footer", "Working tree  unavailable", "Errors 0", "Verification  unknown: incomplete signals", "no tool events received"} {
 		if !strings.Contains(plain, normalizedCodexPanel(want)) {
 			t.Fatalf("missing instrument state %q", want)
 		}

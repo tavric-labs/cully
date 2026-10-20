@@ -7,6 +7,16 @@ description: Check your session and review Cully suggestions inside your coding 
 
 Cully checks the session signals your coding agent makes available and suggests practical improvements. It can point out a missing project instruction, a useful skill or an MCP connection. Suggestions are advisory: you review a change before applying it.
 
+## From a task to verified work
+
+The installed Cully skill guides the foreground agent to understand your prompt, choose the relevant project workflow and show the intended changes and checks. It asks for approval when execution has not already been authorized, then implements the agreed work and consults `cully status` and `cully suggestions` at meaningful checkpoints. The foreground agent owns the work; the background advisor stays read-only.
+
+After agreeing on the task, use `cully task NAME` inside the terminal. Advisor requests include that short accepted title, bounded to 60 characters, so guidance and memory recall can relate to the task. Without an accepted title, task intent remains unknown. Raw prompts are not captured or forwarded by this path. Clear the local title with `cully task --clear` and unlink the durable session task when finished.
+
+Completion depends on the project's acceptance checks and the final state, not on an advisor's silence. Missing signals and unavailable advice remain explicit. The skill guides supported agents; enforcing a task plan across arbitrary agent tools remains proposed in the [harness review](/harness-review).
+
+See [task and token guardrails](/guardrails) for measured human check-ins, repeated-read warnings, scope guidance and the automatic advisor request budget. Automatic requests are limited to six per rolling hour per Cully session key, with a two-minute cooldown and duplicate-evidence suppression; local warnings continue when the model advisor is deferred.
+
 `cully setup --all` installs the agent integrations and starts the advisor daemon along with the local memory services. After [setting up Cully](/quickstart), restart your agent and check suggestions:
 
 | Agent | In the agent |

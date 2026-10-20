@@ -1,11 +1,11 @@
 ---
 title: Solo mode
-description: A copilot for your coding agent and work environment, with session health, advice, replay, handoff and private memory.
+description: A local coding-agent harness runtime, with session health, advice, replay, handoff and private memory.
 ---
 
 # Solo mode
 
-**A copilot for your coding agent and work environment.**
+**The local runtime for your coding agents.**
 
 Run your preferred agent inside Cully. It helps you notice repeated failures, context pressure and unchecked edits, recover useful context, understand what happened and continue in another agent. Your journal stays local and your saved memory stays owner-scoped.
 

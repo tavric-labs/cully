@@ -15,7 +15,8 @@ import (
 // repeat a known waste, and never blocks or changes a permission. LivePlan
 // (Liu et al., 2026, arXiv:2608.06701) found that a rule-based monitor which
 // consults an advisor only on a flag steers agents at low cost; this is that
-// monitor's cheapest form. Two rules:
+// monitor's cheapest form. Alongside whole-file and retry nudges it checks for
+// stalled approaches and redundant reads using only journal facts/metadata.
 //
 //	whole-file read   a Read with no offset or limit of a file over
 //	                  guardBigFileBytes, once per file per session
@@ -67,6 +68,9 @@ func guardBashAdvice(events []journalEvent, command string) (string, int) {
 		if e.Class != journalCheck || e.Sig != sig {
 			continue
 		}
+		if e.Unknown {
+			continue
+		}
 		if !e.Failed {
 			break
 		}
@@ -83,12 +87,14 @@ func guardBashAdvice(events []journalEvent, command string) (string, int) {
 func guardSeen(session, key string) bool {
 	sum := sha256.Sum256([]byte(session + "\x00" + key))
 	path := filepath.Join(cullyDir(), "guard", hex.EncodeToString(sum[:6]))
-	if _, err := os.Stat(path); err == nil {
+	if os.MkdirAll(filepath.Dir(path), 0o700) != nil {
 		return true
 	}
-	if os.MkdirAll(filepath.Dir(path), 0o700) == nil {
-		_ = os.WriteFile(path, nil, 0o600)
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	if err != nil {
+		return true
 	}
+	_ = f.Close()
 	return false
 }
 
@@ -113,6 +119,17 @@ func RunGuardHook(agent string, r io.Reader, w io.Writer) {
 }
 
 func guardAdvice(agent string, event toolEvent) string {
+	session := os.Getenv("CULLY_PANE_SESSION")
+	if session == "" {
+		session = activePaneSession(event.Cwd, event.SessionID)
+	}
+	var events []journalEvent
+	if session != "" {
+		events = readSessionJournal(event.Cwd, session)
+		if n := guardCheckpoint(guardTaskEvents(session, events)); n.text != "" && !guardSeen(session, "checkpoint:"+readTask(session)+":"+n.reason+":"+n.epoch) {
+			return n.text
+		}
+	}
 	switch name := toolBaseName(event.ToolName); {
 	case name == "read" && agent == "claude":
 		var input struct {
@@ -123,21 +140,22 @@ func guardAdvice(agent string, event toolEvent) string {
 		if json.Unmarshal(event.ToolInput, &input) != nil {
 			return ""
 		}
+		if session != "" && input.Offset == 0 && input.Limit == 0 {
+			if advice, key := guardReread(event.Cwd, input.FilePath, events); advice != "" && !guardSeen(session, key) {
+				return advice
+			}
+		}
 		advice := guardReadAdvice(input.FilePath, input.Offset, input.Limit)
 		if advice == "" || guardSeen(event.SessionID, "read:"+input.FilePath) {
 			return ""
 		}
 		return advice
 	case name == "bash" || name == "exec_command" || name == "shell":
-		session := os.Getenv("CULLY_PANE_SESSION")
-		if session == "" {
-			session = activePaneSession(event.Cwd, event.SessionID)
-		}
 		command := shellCommandOf(event.ToolInput)
 		if session == "" || command == "" {
 			return "" // no journal outside the Cully terminal
 		}
-		advice, failures := guardBashAdvice(readSessionJournal(event.Cwd, session), command)
+		advice, failures := guardBashAdvice(events, command)
 		if advice == "" || guardSeen(event.SessionID, fmt.Sprintf("bash:%s:%d", commandSig(command), failures)) {
 			return ""
 		}
