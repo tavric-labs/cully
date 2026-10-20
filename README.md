@@ -75,6 +75,7 @@ cully status           # measured session health and risk
 cully replay           # what the agent did, and how
 cully handoff          # hand the session to another agent
 cully rescue           # when a session is stuck
+cully harness          # audit instructions, guardrails, memory, skills and hooks
 cully update --check   # see whether a newer CLI release exists
 cully workflow         # optional private dev-workflow-rules profile for the advisor
 ```
