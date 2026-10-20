@@ -59,6 +59,8 @@ Below the health bar, the panel shows session instruments and two prioritized ad
 
 Drag the horizontal health bar between the agent and Cully up to expand the panel or down to shrink it, all the way to one divider row. The agent's terminal resizes with it. Cully keeps your chosen height for the rest of the launch, including advisor refreshes and window resizes; smaller windows clamp it to leave the agent usable.
 
+The divider grip highlights when the pointer is over it, and Cully requests a vertical-resize cursor (OSC 22) while you hover or drag, restoring the default when you leave the bar or open the advisor. Cursor appearance depends on terminal support.
+
 In Warp, press `Ctrl+\` to enable divider dragging, drag the bar, then press `Ctrl+\` again or Esc to restore normal host scrolling. Other terminals allow dragging immediately. Click below the divider to open the advisor.
 
 Before your first drag, the panel grows only as far as its content needs. It always leaves the agent at least 12 rows on a normal screen (8 on a short one). Terminals shorter than 12 rows give the agent the whole screen.
