@@ -24,7 +24,7 @@ The docs source is Markdown in `docs/`. `docs/.vitepress/config.mts` defines the
 
 ## Publish on the existing VM
 
-`Dockerfile.website` packages the website and its Go submission server as `ghcr.io/mcp-runtime/cully-web:<commit>`. `Dockerfile.docs` packages only the docs as `ghcr.io/mcp-runtime/cully-docs:<commit>`. Their Compose files run `cully-web` and `cully-docs` separately on the existing `workspace_workspace` network. The VM's Docker Caddy routes `cully.net` to `cully-web:8080` and `docs.cully.net` to `cully-docs:8080`. Nginx resolves clean docs URLs such as `/quickstart` to generated HTML. No public container ports are required.
+`Dockerfile.website` packages the website and its Go submission server as `ghcr.io/tavric-labs/cully-web:<commit>`. `Dockerfile.docs` packages only the docs as `ghcr.io/tavric-labs/cully-docs:<commit>`. Their Compose files run `cully-web` and `cully-docs` separately on the existing `workspace_workspace` network. The VM's Docker Caddy routes `cully.net` to `cully-web:8080` and `docs.cully.net` to `cully-docs:8080`. Nginx resolves clean docs URLs such as `/quickstart` to generated HTML. No public container ports are required.
 
 `website-deploy.yml` runs for website inputs; `docs-deploy.yml` runs for docs and package inputs. Each workflow builds and smoke-tests its own image, publishes it to GHCR, deploys only its own Compose project, and verifies its own public revision marker. Pull requests run the build checks without publishing. The restricted SSH controller keeps independent state and restores the previous image if startup or public verification fails. Its temporary registry token is not retained on the VM.
 
@@ -74,3 +74,7 @@ Submission routes require same-origin requests, validate fields and image conten
 ## Installer download
 
 The website serves the repository's installer at `https://cully.net/install.sh`. The website build copies `install.sh` into its static image, and an installer change triggers only the website deployment. Keep the displayed `curl -fsSL https://cully.net/install.sh | sh` command aligned with [installation](../docs/installation.md).
+
+### Tavric Labs registry namespace migration
+
+The GitHub organization is now `tavric-labs`; source publishing and Compose references use `ghcr.io/tavric-labs`. The installed restricted SSH controllers contain their own image prefixes, so updating the workflow alone is insufficient. Before merging the namespace change into a branch that automatically deploys, snapshot the existing controller files, Compose files and deployment-state JSON; update the website/docs and personal-data controllers and their Compose files together using the reviewed bootstrap procedures and the existing deployment public keys. Preserve state, credentials, certificates and Caddy routes. Verify the matching current/rollback image tags are accessible in the new namespace before switching the installed Compose references. Rehearse the controller's fake-runner regressions first. A source change or successful image build is not evidence that the VM controller has been migrated.

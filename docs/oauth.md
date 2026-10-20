@@ -5,7 +5,7 @@ description: Set up OAuth when several people use a Cully server over HTTPS.
 
 # Add sign-in to Cully
 
-OAuth is optional for a company team deployment. You do not need it for `cully setup --agent codex --all` on your laptop. When an ops team deploys one Cully server for several people over HTTPS, OAuth lets each person sign in and access their own records. [MCP Auth](https://github.com/mcp-runtime/mcp-auth) can connect Cully to the company's OIDC or OAuth 2.0 identity provider.
+OAuth is optional for a company team deployment. You do not need it for `cully setup --agent codex --all` on your laptop. When an ops team deploys one Cully server for several people over HTTPS, OAuth lets each person sign in and access their own records. [MCP Auth](https://github.com/tavric-labs/mcp-auth) can connect Cully to the company's OIDC or OAuth 2.0 identity provider.
 
 MCP Auth is an authorization broker, not the company's user directory. The identity provider handles user sign-in; MCP Auth issues a token for Cully's exact public MCP URL; Cully verifies that token and uses its subject as the record owner. Read tools require `tools:read` and writes require `tools:write`. The [team deployment diagram](/team-deployment) shows the service flow.
 
@@ -19,7 +19,7 @@ For the provided Docker Compose stack, prepare two public hostnames pointing to 
    cully setup --all --prepare
    ```
 
-2. Register a client with your identity provider. Set its redirect URI to your MCP Auth callback, such as `https://auth.example.com/mcp-auth/identity/callback`. Follow the [MCP Auth connector guide](https://github.com/mcp-runtime/mcp-auth/blob/main/docs/auth-server.md#connect-an-organizations-identity-provider) for provider settings and identity claims.
+2. Register a client with your identity provider. Set its redirect URI to your MCP Auth callback, such as `https://auth.example.com/mcp-auth/identity/callback`. Follow the [MCP Auth connector guide](https://github.com/tavric-labs/mcp-auth/blob/main/docs/auth-server.md#connect-an-organizations-identity-provider) for provider settings and identity claims.
 
 3. Edit `~/.cully/self-hosted/config/.env` with your hostnames and the client secret:
 
@@ -31,7 +31,7 @@ For the provided Docker Compose stack, prepare two public hostnames pointing to 
 
    Use hostnames without `https://` or a path. Setup derives the public MCP URL, issuer and signing-key URL from them. Keep this file private.
 
-4. Create `~/.cully/self-hosted/config/connectors.json` for your provider. For Keycloak, copy `connectors.keycloak.example.json` from the same directory and replace its example realm, client and claim values. Keep the client secret in `.env`, not in the JSON file. If you define more than one connector, set `CULLY_MCP_AUTH_CONNECTOR` in `.env`. See the [MCP Auth connector settings](https://github.com/mcp-runtime/mcp-auth/blob/main/docs/auth-server.md#oidc-or-plain-oauth-20) for other providers.
+4. Create `~/.cully/self-hosted/config/connectors.json` for your provider. For Keycloak, copy `connectors.keycloak.example.json` from the same directory and replace its example realm, client and claim values. Keep the client secret in `.env`, not in the JSON file. If you define more than one connector, set `CULLY_MCP_AUTH_CONNECTOR` in `.env`. See the [MCP Auth connector settings](https://github.com/tavric-labs/mcp-auth/blob/main/docs/auth-server.md#oidc-or-plain-oauth-20) for other providers.
 
 5. Create the signing key:
 

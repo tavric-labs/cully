@@ -31,7 +31,7 @@ services:
       retries: 10
     networks: [private]
   mem0:
-    image: ghcr.io/mcp-runtime/cully-mem0:${CULLY_DATA_TAG:?set release tag}
+    image: ghcr.io/tavric-labs/cully-mem0:${CULLY_DATA_TAG:?set release tag}
     restart: unless-stopped
     command: [sh, -c, 'alembic upgrade head && uvicorn main:app --host 0.0.0.0 --port 8000']
     environment:
@@ -60,7 +60,7 @@ services:
     networks: [private, egress]
   migrate:
     profiles: [ops]
-    image: ghcr.io/mcp-runtime/cully-data:${CULLY_DATA_TAG:?set release tag}
+    image: ghcr.io/tavric-labs/cully-data:${CULLY_DATA_TAG:?set release tag}
     command: [migrate]
     environment:
       CULLY_DATABASE_URL: ${CULLY_DATABASE_URL:?set CULLY_DATABASE_URL}
@@ -69,7 +69,7 @@ services:
         condition: service_healthy
     networks: [private]
   cully-data-api:
-    image: ghcr.io/mcp-runtime/cully-data:${CULLY_DATA_TAG:?set release tag}
+    image: ghcr.io/tavric-labs/cully-data:${CULLY_DATA_TAG:?set release tag}
     environment:
       CULLY_DATABASE_URL: ${CULLY_DATABASE_URL:?set CULLY_DATABASE_URL}
       CULLY_DATA_API_TOKEN: ${CULLY_DATA_API_TOKEN:?set CULLY_DATA_API_TOKEN}

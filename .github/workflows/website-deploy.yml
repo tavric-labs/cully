@@ -38,7 +38,7 @@ concurrency:
   group: cully-website-production
   cancel-in-progress: false
 env:
-  IMAGE: ghcr.io/mcp-runtime/cully-web:${{ github.sha }}
+  IMAGE: ghcr.io/tavric-labs/cully-web:${{ github.sha }}
 jobs:
   build:
     runs-on: ubuntu-latest

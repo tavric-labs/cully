@@ -86,14 +86,14 @@ export default withMermaid(defineConfig({
           { text: 'Current capabilities', link: '/capabilities' },
           { text: 'Product vision', link: '/product-direction' },
           { text: 'Roadmap', link: '/roadmap' },
-          { text: 'Changelog ↗', link: 'https://github.com/mcp-runtime/cully/blob/main/CHANGELOG.md' }
+          { text: 'Changelog ↗', link: 'https://github.com/tavric-labs/cully/blob/main/CHANGELOG.md' }
         ]
       },
     ],
     search: { provider: 'local' },
-    socialLinks: [{ icon: 'github', link: 'https://github.com/mcp-runtime/cully' }],
+    socialLinks: [{ icon: 'github', link: 'https://github.com/tavric-labs/cully' }],
     editLink: {
-      pattern: 'https://github.com/mcp-runtime/cully/edit/main/docs/:path',
+      pattern: 'https://github.com/tavric-labs/cully/edit/main/docs/:path',
       text: 'Improve this page'
     },
     footer: {

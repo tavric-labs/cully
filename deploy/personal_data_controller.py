@@ -82,8 +82,8 @@ def execute(request, root=ROOT, runner=subprocess.run):
         runner(['docker', '--config', directory, 'login', 'ghcr.io', '--username',
                 request['registry_user'], '--password-stdin'],
                input=request['token'], text=True, check=True, capture_output=True)
-        runner(['docker', '--config', directory, 'pull', 'ghcr.io/mcp-runtime/cully-data:' + tag], check=True)
-        runner(['docker', '--config', directory, 'pull', 'ghcr.io/mcp-runtime/cully-mem0:' + tag], check=True)
+        runner(['docker', '--config', directory, 'pull', 'ghcr.io/tavric-labs/cully-data:' + tag], check=True)
+        runner(['docker', '--config', directory, 'pull', 'ghcr.io/tavric-labs/cully-mem0:' + tag], check=True)
         try:
             compose(root, tag, runner, directory)
         except subprocess.CalledProcessError:

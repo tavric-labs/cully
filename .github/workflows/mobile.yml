@@ -21,7 +21,7 @@ jobs:
       - run: python3 apps/scripts/check_models.py
       - uses: actions/checkout@v4
         with:
-          repository: mcp-runtime/mcp-mobile
+          repository: tavric-labs/mcp-mobile
           ref: v0.1.0
           path: .mobile-sdk
       - uses: actions/setup-java@v4
