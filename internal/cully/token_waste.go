@@ -1,0 +1,97 @@
+package cully
+
+import "fmt"
+
+// bigResultTokens is where one tool result starts to matter: it stays in the
+// context for the rest of the session and is re-read on every later turn.
+const bigResultTokens = 2000
+
+// TokenWaste summarises where a session's tool output went. It holds counts
+// and token estimates only, never tool output.
+type TokenWaste struct {
+	ResultTokens               int64
+	BigResults, BigTokens      int
+	FullReads, FullReadTokens  int // Read without offset or limit
+	BigBash, BigBashTokens     int
+	TopTool                    string
+	TopToolTokens, CullyTokens int64
+	ctxTokens                  int64
+	byTool                     map[string]int64
+	pendingRead                map[string]bool
+	toolOf                     map[string]string
+}
+
+func newTokenWaste() *TokenWaste {
+	return &TokenWaste{byTool: map[string]int64{}, pendingRead: map[string]bool{}, toolOf: map[string]string{}}
+}
+
+// useCall records a tool call so its result can be attributed. wholeFile marks
+// a Read with neither offset nor limit.
+func (w *TokenWaste) useCall(id, name string, wholeFile bool) {
+	if id == "" {
+		return
+	}
+	w.toolOf[id] = name
+	if name == "Read" {
+		w.pendingRead[id] = wholeFile
+	}
+}
+
+// result records the size of a tool result.
+func (w *TokenWaste) result(id, text string) {
+	name := w.toolOf[id]
+	if name == "" {
+		return
+	}
+	tokens := approxTokens(len(text))
+	w.ResultTokens += tokens
+	w.byTool[name] += tokens
+	if cullyTool(name) != "" {
+		w.CullyTokens += tokens
+	}
+	if tokens < bigResultTokens {
+		return
+	}
+	w.BigResults++
+	w.BigTokens += int(tokens)
+	switch {
+	case name == "Read" && w.pendingRead[id]:
+		w.FullReads++
+		w.FullReadTokens += int(tokens)
+	case name == "Bash":
+		w.BigBash++
+		w.BigBashTokens += int(tokens)
+	}
+}
+
+func (w *TokenWaste) finish(ctxTokens int64) {
+	w.ctxTokens = ctxTokens
+	for name, tokens := range w.byTool {
+		if tokens > w.TopToolTokens || tokens == w.TopToolTokens && name < w.TopTool {
+			w.TopTool, w.TopToolTokens = name, tokens
+		}
+	}
+}
+
+// Significant is true only when the waste is large enough to be worth the
+// user's attention: several big results, and a real share of the context or a
+// large absolute amount. The advisor stays quiet otherwise.
+func (w *TokenWaste) Significant() bool {
+	if w.BigResults < 3 {
+		return false
+	}
+	return w.BigTokens >= 10000 || (w.ctxTokens > 0 && int64(w.BigTokens)*100 >= w.ctxTokens*15)
+}
+
+func (w *TokenWaste) String() string {
+	top := "none"
+	if w.TopTool != "" {
+		top = fmt.Sprintf("%s(%d tok)", w.TopTool, w.TopToolTokens)
+	}
+	significant := "no"
+	if w.Significant() {
+		significant = "yes"
+	}
+	return fmt.Sprintf("token_waste_significant=%s  tool_result_tokens=%d  big_results=%d(%d tok)  full_file_reads=%d(%d tok)  big_bash=%d(%d tok)  top_output_tool=%s  cully_result_tokens=%d",
+		significant, w.ResultTokens, w.BigResults, w.BigTokens, w.FullReads, w.FullReadTokens, w.BigBash, w.BigBashTokens, top, w.CullyTokens)
+}
