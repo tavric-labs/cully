@@ -60,24 +60,35 @@ type AdvisorEval struct {
 func scanWaste(lines [][]byte) *TokenWaste {
 	w := newTokenWaste()
 	for _, line := range lines {
-		var e tEntry
-		if json.Unmarshal(line, &e) != nil {
-			continue
-		}
-		var items []contentItem
-		if json.Unmarshal(e.Message.Content, &items) != nil {
-			continue
-		}
-		for _, it := range items {
-			switch it.Type {
-			case "tool_use":
-				w.useCall(it.ID, it.Name, it.Input.Offset == 0 && it.Input.Limit == 0)
-			case "tool_result":
-				w.result(it.ToolUseID, toolResultText(it.Content))
-			}
-		}
+		scanWasteLine(w, line)
 	}
 	return w
+}
+
+// scanWasteLine updates counts without retaining the source line. Delegations
+// count actual tool calls rather than strings quoted inside tool output.
+func scanWasteLine(w *TokenWaste, line []byte) int {
+	var e tEntry
+	if json.Unmarshal(line, &e) != nil {
+		return 0
+	}
+	var items []contentItem
+	if json.Unmarshal(e.Message.Content, &items) != nil {
+		return 0
+	}
+	delegations := 0
+	for _, it := range items {
+		switch it.Type {
+		case "tool_use":
+			w.useCall(it.ID, it.Name, it.Input.Offset == 0 && it.Input.Limit == 0)
+			if it.Name == "Task" || it.Name == "Agent" {
+				delegations++
+			}
+		case "tool_result":
+			w.result(it.ToolUseID, toolResultText(it.Content))
+		}
+	}
+	return delegations
 }
 
 func readTranscriptLines(path string) [][]byte {

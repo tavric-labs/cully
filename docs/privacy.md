@@ -67,6 +67,18 @@ Audit events contain actor, action, target IDs and timestamp, without checkpoint
 
 The optional `dev-workflow-rules` skill is a private file under `~/.cully/skills/dev-workflow-rules/` that you review before it is saved. Cully sends at most 12 KiB of it, with likely credentials redacted, to your configured advisor model as background for local analysis. It is excluded from web-research prompts, is never saved to memory automatically, and grants no tool or infrastructure access. Wizard answers that look like credentials are rejected. Delete the file to remove it.
 
+## Harness measurements
+
+`cully harness` checks instruction and skill file names and selected agent configuration keys without printing their contents. It also streams recent local Claude transcripts to count oversized tool output and actual subagent calls. The terminal’s Harness column does this automatically for up to 20 sessions from the exact project’s folder, over the last 30 days, refreshed every five minutes. The CLI defaults to 40 sessions per project; `--all` explicitly measures all project folders, optionally filtered with `--only`.
+
+These measurements retain aggregate counts and token estimates, not transcript text, prompts, credentials or output. The background panel cache is in memory only. Nothing from these measurements is uploaded or saved to project memory automatically. Codex and Cursor transcripts are not measured. See [the harness guide](/harness) for limitations.
+
+## Cost reports, evaluation and mobile
+
+`cully savings` reads local Claude transcripts and reports aggregate injection and exploration estimates. `cully impact` reads a private local event ledger and may use a transcript-derived comparison for an estimated memory benefit. `cully advisor-eval` replays local Claude history; its explicit `--live` option sends derived signal summaries through the configured agent/model and may use recall or targeted public research. These tools do not save or upload raw transcript text. See [token impact](/token-impact) for the separate cost and sample boundaries.
+
+The [mobile Self preview](/mobile) retrieves bounded private personal notes through your signed-in MCP connection. Local tasks stay on the phone, downloaded models run locally, microphone capture is explicit and inference stops on backgrounding. It does not expose memory writes or Team actions. Device-specific credential handling and unverified preview behavior are documented in the mobile guide.
+
 ## Where file names can appear
 
 - In `cully replay`, `cully timeline`, `cully handoff` and `cully rescue` output on your machine.

@@ -41,7 +41,13 @@ Hooks do not send transcripts to Cully. The agent decides which facts are worth 
 | Test and review loops | The advisor can suggest a verifier, review control or better test workflow. The handoff records what actually passed and what remains unchecked. |
 | Model and budget pressure | With Claude Code's richer signals, the advisor can suggest a smaller model or a focused subagent when the task allows it. |
 
-These can reduce repeated work and material in the model's input. They are not a guaranteed reduction in billed tokens or elapsed time. MCP calls, hook continuations and the advisor's own model calls have a cost too. Cully currently does not report a measured before-and-after saving for a session. The richer live context, model and tool signals above are available in Claude Code; Codex and Cursor expose fewer signals to the local advisor today.
+These can reduce repeated work and material in the model's input. They are not a guaranteed reduction in billed tokens or elapsed time. MCP calls, hook continuations and the advisor's own model calls have a cost too. Cully reports observed events and observational comparisons through [token impact tools](/token-impact); it does not claim a controlled before-and-after saving for a session. The richer live context, model and tool signals above are available in Claude Code; Codex and Cursor expose fewer signals to the local advisor today.
+
+## Measure before changing the workflow
+
+Start with `cully harness` to find setup gaps and oversized-output estimates for recent Claude sessions. `cully impact` shows recorded lookup hits, analyses avoided and loops; `cully savings` compares estimated lookup overhead with pre-edit exploration. `cully advisor-eval` replays historical checkpoints to investigate token-waste advice. Read [measure token impact](/token-impact) before treating these different samples as evidence of savings.
+
+Use `cully workflow` to preview a private profile of project habits the advisor can read. A profile records your preferences; it grants no tool access. Token-spend advice must cite measured signal figures and should remain quiet without them.
 
 ## Move from task to checked result
 

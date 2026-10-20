@@ -22,7 +22,7 @@ Prepare  →  Work  →  Hand off  →  Review  →  Reuse
 | Understand | Events become a picture of the session | The [session journal](/session-intelligence) |
 | Remember | Decisions and results outlive the session | [Project memory](/memory) |
 | Advise | Warnings and next steps appear while you work | The [advisor](/advisor) |
-| Improve | Past sessions teach the next one | Workflow hints today; more on the [roadmap](/product-direction) |
+| Improve | Inspect setup, costs and useful patterns | [Harness audit](/harness), [token impact](/token-impact), workflow profiles and hints; broader learning remains on the [roadmap](/product-direction) |
 
 ## The picture
 

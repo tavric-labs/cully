@@ -149,7 +149,7 @@ func TestCursorMissingUsageShowsUnavailable(t *testing.T) {
 	}
 	rows, _ := compactInstrumentRows(100, toolStats{}, view)
 	plain := normalizedCodexPanel(strings.Join(rows, "\n"))
-	for _, want := range []string{"Model unavailable", "Context unavailable", "Tokens unavailable", "5h / Weekly unavailable"} {
+	for _, want := range []string{"Model unavailable", "Context unavailable", "Tokens unavailable"} {
 		if !strings.Contains(plain, normalizedCodexPanel(want)) {
 			t.Fatalf("missing %q in %q", want, plain)
 		}

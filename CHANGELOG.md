@@ -2,11 +2,13 @@
 
 ## Unreleased
 
-- Require the advisor to cite measured numbers (big_results tokens, full_file_reads, big_bash, top_output_tool) in every token-spend line and token TOOLGAP; without them it emits the no-action MEMO line and keeps no token lesson.
-- Add `cully harness`, a read-only audit of the agent setup (instructions, guardrails, memory, skills, subagents, hooks, plugins) with one suggestion per gap, inspired by the component model in Google Research's Harness². It reads file names and config keys only, and reports measured oversized-output tokens per session from recent transcripts as a before/after baseline, without claiming causation.
-- Document `cully update` and `cully workflow` in the README and advisor command table, describe how the workflow profile is handled in the privacy guide, and document the divider hover and resize cursor in the terminal guide.
+## 0.17.0
 
-- Make the `cully harness` Subagents and Skills gaps evidence-based: recorded delegations show Subagents as in use instead of missing, and remaining gaps cite your measured oversized-output tokens per session.
+- Add `cully harness`, a read-only setup audit with named gaps and a historical oversized-output baseline from recent local Claude sessions. Detect project/shared skills and supported agent config, and recognize actual subagent delegations.
+- Replace the panel’s leftmost activity counters with Harness readiness, gaps, historical estimates, model and verification state. Keep MCP health/authentication visible in compact layouts, omit unavailable quota/Git fields and label the Claude measurement source.
+- Stream harness transcript measurements for the exact project, exclude nested subagent histories, reject nonpositive limits and prevent stale background results from replacing the current project’s data.
+- Require measured signal figures in advisor token-spend recommendations and token tool-gap evidence; remain quiet when those figures are unavailable.
+- Expand docs and the website for harness auditing, impact/savings reports, advisor evaluation, workflow profiles, CLI updates, divider controls and the mobile Self developer preview. Correct stale measurement, privacy and verification claims.
 
 ## 0.16.0
 

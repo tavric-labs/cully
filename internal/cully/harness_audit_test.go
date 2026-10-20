@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestAuditHarnessFindsConfiguredComponents(t *testing.T) {
@@ -125,6 +126,10 @@ func TestAuditHarnessDetectsEachExtraSource(t *testing.T) {
 		{"project cursor mcp", "Memory", "proj/.cursor/mcp.json", `{"mcpServers":{"cully":{}}}`},
 		{"cursorrules", "Instructions", "proj/.cursorrules", "rules"},
 		{"cursor rules dir", "Instructions", "proj/.cursor/rules/a.mdc", "rules"},
+		{"shared project skill", "Skills", "proj/.cully/skills/cully/SKILL.md", "rules"},
+		{"codex project skill", "Skills", "proj/.codex/skills/review/SKILL.md", "rules"},
+		{"cursor project skill", "Skills", "proj/.cursor/skills/review/SKILL.md", "rules"},
+		{"shared agent skill", "Skills", "proj/.agents/skills/review/SKILL.md", "rules"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -134,9 +139,6 @@ func TestAuditHarnessDetectsEachExtraSource(t *testing.T) {
 				Cursor: filepath.Join(root, "cursor"), Project: filepath.Join(root, "proj"),
 			}
 			path := filepath.Join(root, c.file)
-			if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-				t.Fatal(err)
-			}
 			present := func() bool {
 				for _, it := range auditHarness(d) {
 					if it.Component == c.component {
@@ -149,6 +151,9 @@ func TestAuditHarnessDetectsEachExtraSource(t *testing.T) {
 			if present() {
 				t.Fatalf("%s present before any source exists", c.component)
 			}
+			if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+				t.Fatal(err)
+			}
 			if err := os.WriteFile(path, []byte(c.content), 0o600); err != nil {
 				t.Fatal(err)
 			}
@@ -156,6 +161,103 @@ func TestAuditHarnessDetectsEachExtraSource(t *testing.T) {
 				t.Errorf("%s not detected from %s", c.component, c.file)
 			}
 		})
+	}
+}
+
+func TestHarnessRejectsInvalidLimits(t *testing.T) {
+	for _, args := range [][]string{{"--max", "-1"}, {"--max", "0"}, {"--days", "0"}, {"--days", "-1", "--all"}} {
+		var out bytes.Buffer
+		if err := RunHarness(&out, args); err == nil || !strings.Contains(err.Error(), "positive") {
+			t.Errorf("%v: expected positive-limit error, got %v", args, err)
+		}
+	}
+}
+
+func TestAuditHarnessEmptyRootsDoNotReadWorkingDirectory(t *testing.T) {
+	t.Chdir(t.TempDir())
+	for _, name := range []string{"settings.json", ".claude.json", "config.toml", "AGENTS.md", "CLAUDE.md"} {
+		if err := os.WriteFile(name, []byte(`{"permissions":{},"hooks":{},"cully":{},"enabledPlugins":{}}`), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.MkdirAll("plugins/example", 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for _, it := range auditHarness(harnessDirs{}) {
+		if it.Present() {
+			t.Errorf("unset root read unrelated working directory: %+v", it)
+		}
+	}
+}
+
+func TestHarnessMeasurementUsesExactProjectAndRecentBoundedSessions(t *testing.T) {
+	root := t.TempDir()
+	data, err := os.ReadFile(replayTranscript(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	write := func(folder, name string, age time.Duration) {
+		t.Helper()
+		dir := filepath.Join(root, folder)
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		path := filepath.Join(dir, name+".jsonl")
+		if err := os.WriteFile(path, data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		stamp := time.Now().Add(-age)
+		if err := os.Chtimes(path, stamp, stamp); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("-project", "one", time.Hour)
+	write("-project", "two", 2*time.Hour)
+	write("-project", "old", 60*24*time.Hour)
+	write("-project-extra", "other", time.Hour)
+	write("-project/session/subagents", "child", time.Hour)
+	if got := measureHarnessEvidence(root, "-project", 30, 40); got.Sessions != 2 {
+		t.Fatalf("exact-project measurement included unrelated or old sessions: %+v", got)
+	}
+	if got := measureHarnessEvidence(root, "-project", 30, 1); got.Sessions != 1 {
+		t.Fatalf("session limit ignored: %+v", got)
+	}
+	total, by := measureAllProjects(root, "", 30, 40)
+	if total.Sessions != 3 || by["-project"].Sessions != 2 || by["-project-extra"].Sessions != 1 {
+		t.Fatalf("all-project totals overlap: total=%+v projects=%+v", total, by)
+	}
+}
+
+func TestHarnessDelegationsCountCallsOnly(t *testing.T) {
+	w := newTokenWaste()
+	for _, tc := range []struct {
+		line string
+		want int
+	}{
+		{`{"message":{"content":[{"type":"tool_use","id":"a","name": "Agent","input":{}}]}}`, 1},
+		{`{"message":{"content":[{"type":"tool_use","id":"b","name":"Task","input":{}}]}}`, 1},
+		{`{"message":{"content":[{"type":"text","text":"Agent Task"}]}}`, 0},
+		{`{"name":"Agent","message":{"content":[]}}`, 0},
+		{`invalid`, 0},
+	} {
+		if got := scanWasteLine(w, []byte(tc.line)); got != tc.want {
+			t.Errorf("%s: delegations=%d want=%d", tc.line, got, tc.want)
+		}
+	}
+}
+
+func TestRunHarnessResolvesRelativeProject(t *testing.T) {
+	isolateWorkflow(t)
+	project, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	if err := RunHarness(&out, []string{"--cwd", "."}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "HARNESS AUDIT  ("+project+")") {
+		t.Fatalf("relative project was not resolved: %s", out.String())
 	}
 }
 

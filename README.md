@@ -32,7 +32,10 @@ cully run claude      # or codex, cursor, or any agent on your PATH
 | --- | --- |
 | **One terminal for every agent** | Claude Code, Codex, Cursor CLI and any executable run in the same wrapper with a live health bar and advisor panel. |
 | **Loop detection** | "Cully noticed something: the same command failed 3 times after edits." |
-| **Advisor** | A second pair of eyes: context pressure, missing verification, broad searching, workflow gaps. Click it to open. Advice and lessons are only kept when they cite measured numbers. |
+| **Advisor** | A second pair of eyes: context pressure, missing verification, broad searching, workflow gaps. Click it to open. Token-spend recommendations must cite measured signal figures. |
+| **Harness audit** | Read-only setup checks, named gaps and a recent Claude oversized-output baseline in the CLI and terminal. |
+| **Token impact** | Observed memory hits, skipped analyses and loops, plus observational cost/exploration reports and advisor replay evaluation. |
+| **Workflow profile and updates** | An optional reviewed private profile for the advisor, and checksum-verified CLI updates. |
 | **Replay and timeline** | See what the agent did and how: which files it read, edited, created and deleted, which checks failed, where it looped. |
 | **Handoff** | A structured summary so a different agent can continue without rebuilding context. |
 | **Rescue** | Evidence and recovery steps when a session is stuck. |
@@ -44,7 +47,7 @@ cully run claude      # or codex, cursor, or any agent on your PATH
 ── Codex │ oauth-service:main │ 27m │ Context 63% │ ⚠ Loop 3x │ ● 2 unchecked ── Ctrl+] advisor ──
 ```
 
-Every value Cully shows is measured. A value with no data is left out, never guessed. See [current capabilities](https://docs.cully.net/capabilities) for exactly what ships today and what is only planned.
+Session counters come from observed signals. Token impact figures are labeled estimates; missing native values stay unavailable or are omitted. See [current capabilities](https://docs.cully.net/capabilities) for exactly what ships today and what is only planned.
 
 ## Team mode
 
@@ -75,7 +78,9 @@ cully status           # measured session health and risk
 cully replay           # what the agent did, and how
 cully handoff          # hand the session to another agent
 cully rescue           # when a session is stuck
-cully harness          # audit instructions, guardrails, memory, skills and hooks; Subagents and Skills gaps cite your measured tokens per session
+cully harness          # read-only setup audit and recent output baseline
+cully impact           # observed memory use, skipped analyses and loops
+cully savings          # Claude transcript cost and exploration comparison
 cully update --check   # see whether a newer CLI release exists
 cully workflow         # optional private dev-workflow-rules profile for the advisor
 ```
@@ -107,11 +112,15 @@ See the [architecture](https://docs.cully.net/architecture) and [how Cully works
 
 ## Privacy
 
-Your conversations are not Cully's database. The local session journal keeps the time, agent, kind of tool, pass or fail, project-relative file paths with the operation, and the program and recognized subcommand of a command. It never keeps prompts, file contents, command arguments or tool output. Set `CULLY_JOURNAL_PATHS=0` to stop recording paths and commands. See [privacy](https://docs.cully.net/privacy).
+Your conversations are not Cully's database. Harness, savings and advisor replay measurements read local Claude transcripts and retain counts or signal summaries, not raw transcript text. The local session journal keeps the time, agent, kind of tool, pass or fail, project-relative file paths with the operation, and the program and recognized subcommand of a command. It never keeps prompts, file contents, command arguments or tool output. Set `CULLY_JOURNAL_PATHS=0` to stop recording paths and commands. See [privacy](https://docs.cully.net/privacy).
+
+## Mobile developer preview
+
+[Cully Self](https://docs.cully.net/mobile) brings dated work briefs, local tasks and read-only questions over your own saved notes to Android and iOS. Inference and supported speech run on-device after an explicit model download. Source builds are available; store distribution and several device checks remain pending. This preview does not expose Team actions or run coding agents.
 
 ## Documentation
 
-[Quickstart](https://docs.cully.net/quickstart) · [The Cully terminal](https://docs.cully.net/terminal) · [Session intelligence](https://docs.cully.net/session-intelligence) · [Advisor](https://docs.cully.net/advisor) · [Memory](https://docs.cully.net/memory) · [Self-hosting](https://docs.cully.net/hosting) · [Team deployment](https://docs.cully.net/team-deployment)
+[Quickstart](https://docs.cully.net/quickstart) · [The Cully terminal](https://docs.cully.net/terminal) · [Session intelligence](https://docs.cully.net/session-intelligence) · [Advisor](https://docs.cully.net/advisor) · [Harness](https://docs.cully.net/harness) · [Token impact](https://docs.cully.net/token-impact) · [Mobile preview](https://docs.cully.net/mobile) · [Memory](https://docs.cully.net/memory) · [Self-hosting](https://docs.cully.net/hosting) · [Team deployment](https://docs.cully.net/team-deployment)
 
 ## Roadmap
 

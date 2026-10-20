@@ -128,6 +128,7 @@ func TestSkippedAnalysisIsCreditedWithTheTokensItAvoided(t *testing.T) {
 }
 
 func TestPanelLeadsWithWinsInsteadOfLastToolCall(t *testing.T) {
+	isolateWorkflow(t)
 	stats := toolStats{Cully: cullyStats{Calls: 12, Health: "healthy", Auth: "authenticated", CheckedAt: "2026-10-07T12:34:56Z"}}
 	stats.Impact = SummarizeImpact([]impactEvent{
 		{Kind: impactMemoryHit, Tokens: 100, At: time.Now()},
