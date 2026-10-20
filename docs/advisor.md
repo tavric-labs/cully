@@ -72,6 +72,15 @@ The wrapper detects `TERM_PROGRAM`, `TERM`, the login-shell environment and whet
 
 If the agent process cannot start, memory is marked **not run**, with a bounded failure category such as invalid MCP configuration or authentication required. This differs from a completed analysis whose actual recall failed. Raw CLI stderr is not exposed because it can include private tool data or credentials.
 
+## The PreToolUse guard
+
+Before a tool call, a small hook can nudge the agent away from a known waste. It only adds a line of context next to the tool result. It never blocks a call or changes a permission, and it fails open on any error. Two rules, both deterministic and with no model call:
+
+- **Whole-file read.** A `Read` of a file over 32 KB with no offset or limit gets a note with the file's size and a pointer to `offset` and `limit`. Once per file per session. Claude Code only, since Codex reads files through the shell.
+- **Repeated failure.** A shell command that has already failed twice in the Cully terminal's session journal, since it last passed, gets a note to read the first failure before retrying. It speaks again only when the count grows. It needs the journal, so it works only inside `cully run`.
+
+Set `CULLY_GUARD=off` to disable it. Claude Code and Codex install it with `cully setup` (Codex asks you to trust it in `/hooks`). Cursor has no equivalent hook here yet. The design follows LivePlan's finding that a rule-based monitor steers an agent cheaply when it speaks only on a flag; see [evaluate Cully](/evals).
+
 ## Preview a suggestion
 
 If Cully lists a numbered improvement, preview it with the number shown:

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add a PreToolUse guard for Claude Code and Codex: a hook that adds one line of context before a whole-file read of a file over 32 KB, or a shell command that already failed twice in the Cully terminal's journal. It never blocks or changes a permission, fails open, nudges once per file or failure count, and has `CULLY_GUARD=off`. Setup installs and uninstalls it, the plugins carry it, `cully eval advisor` checks it against planted file sizes and command histories, and the release now attaches each plugin as a zip and runs the plugin drift tests first.
+
 ## 0.18.0
 
 - Ship a Cully plugin for Claude Code, Cursor and Codex with marketplace manifests for each, carrying the same hooks and skill as `cully setup` (plus the `/cully` command for Claude Code and Cursor). Files are generated from the setup definitions; tests fail if a plugin's hooks or skill drift from setup, and Claude Code's own `plugin validate` checks the Claude plugin and marketplace. The Claude plugin is validated; Cursor and Codex follow their documented formats and are not yet installed in a live agent.

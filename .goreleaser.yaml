@@ -43,3 +43,5 @@ release:
   github:
     owner: tavric-labs
     name: cully
+  extra_files:
+    - glob: dist-plugins/*.zip

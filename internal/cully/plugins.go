@@ -21,9 +21,10 @@ const (
 )
 
 type pluginHook struct {
-	event, command string
-	async          bool // run without blocking the agent, for per-tool signals
-	noLoop         bool // Cursor stop hook: our marker prevents its own follow-up loop
+	event, command, matcher string
+	timeout                 int  // seconds; async hooks default to 5
+	async                   bool // run without blocking the agent, for per-tool signals
+	noLoop                  bool // Cursor stop hook: our marker prevents its own follow-up loop
 }
 
 func pluginClaudeHooks() []pluginHook {
@@ -33,6 +34,7 @@ func pluginClaudeHooks() []pluginHook {
 		{event: "Stop", command: "cully _internal continuity claude stop"},
 		{event: "SessionEnd", command: "cully _internal cleanup"},
 		{event: "PostToolUse", command: "cully _internal pane-signal claude", async: true},
+		{event: "PreToolUse", command: "cully _internal guard claude", matcher: claudeGuardMatcher, timeout: 5},
 	}
 }
 
@@ -40,6 +42,7 @@ func pluginCodexHooks() []pluginHook {
 	return []pluginHook{
 		{event: "SessionStart", command: "cully _internal continuity codex start"},
 		{event: "PostToolUse", command: "cully _internal codex-signal", async: true},
+		{event: "PreToolUse", command: "cully _internal guard codex", matcher: codexGuardMatcher, timeout: 5},
 	}
 }
 
@@ -64,9 +67,15 @@ func groupedHooks(hooks []pluginHook) map[string]any {
 		if h.async {
 			handler["async"] = true
 			handler["timeout"] = 5
+		} else if h.timeout > 0 {
+			handler["timeout"] = h.timeout
+		}
+		group := map[string]any{"hooks": []any{handler}}
+		if h.matcher != "" {
+			group["matcher"] = h.matcher
 		}
 		list, _ := events[h.event].([]any)
-		events[h.event] = append(list, map[string]any{"hooks": []any{handler}})
+		events[h.event] = append(list, group)
 	}
 	return map[string]any{"hooks": events}
 }
