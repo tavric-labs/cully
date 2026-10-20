@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Publish the plugins through each release: the release notes carry tag-pinned install commands for the Claude Code and Codex marketplaces, one tracked issue per release lists the directory submissions that need a person (Anthropic's directory and the Cursor Marketplace), and a CI job validates the Claude plugin with the real Claude Code CLI. Each plugin gains a README, and a test checks the manifests against both directories' checklists. The manifests still omit a version, which Anthropic's strict validation asks for; that decision is left open.
+
 - Add a PreToolUse guard for Claude Code and Codex: a hook that adds one line of context before a whole-file read of a file over 32 KB, or a shell command that already failed twice in the Cully terminal's journal. It never blocks or changes a permission, fails open, nudges once per file or failure count, and has `CULLY_GUARD=off`. Setup installs and uninstalls it, the plugins carry it, `cully eval advisor` checks it against planted file sizes and command histories, and the release now attaches each plugin as a zip and runs the plugin drift tests first.
 
 ## 0.18.0

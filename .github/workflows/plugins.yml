@@ -1,0 +1,30 @@
+name: Plugins
+on:
+  push:
+    branches: [main]
+    paths: ['plugins/**', '.claude-plugin/**', '.cursor-plugin/**', '.agents/**', 'internal/cully/plugins*.go', '.github/workflows/plugins.yml']
+  pull_request:
+    paths: ['plugins/**', '.claude-plugin/**', '.cursor-plugin/**', '.agents/**', 'internal/cully/plugins*.go', '.github/workflows/plugins.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      # Claude Code validates its own plugin and marketplace format offline.
+      - name: Install the Claude Code CLI
+        run: npm install -g @anthropic-ai/claude-code@2.1.304
+      - name: Check plugins against the generator, the checklists and claude plugin validate
+        run: |
+          go test ./internal/cully -run 'PluginFiles|PluginHooks|DirectoryChecklists|ClaudeValidates' -count=1 -v | tee plugin-test.log
+          # The Claude validation skips itself without the CLI; it must have run here.
+          grep -q -- '--- PASS: TestClaudeValidatesThePluginAndMarketplace' plugin-test.log
