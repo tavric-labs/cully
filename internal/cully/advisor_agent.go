@@ -42,6 +42,16 @@ Suggest the 1-3 most useful immediate improvements, grounded in current signals 
   observed signals justify them and that agent's configured capabilities support them;
   Codex/Cursor must not receive Claude /loop or Explore commands. Do not assume
   subagents, loops or features are enabled merely because another host has them.
+- reduce token spend, but only for the single most important cause. Act on token_waste only
+  when token_waste_significant=yes; otherwise say nothing about tokens. Name the evidence with
+  its numbers (for example full_file_reads, big_bash, top_output_tool, cully_result_tokens)
+  and give one concrete change: Read with offset/limit or Grep instead of whole-file reads,
+  filter or tail noisy command output, hand a noisy investigation to a subagent where the
+  active agent supports it, or compact or hand off at high context. If the waste is of a kind
+  that a published tool would fix better than a habit change (for example a CLI output
+  filter or deferred tool loading), add one TOOLGAP line so the research step can look for it.
+  Suggest at most one token optimization per run, never a list, and never repeat one the
+  signals show was already addressed.
 - match commands and models to ACTIVE AGENT. Never suggest Claude-only controls to Codex or Cursor.
 Missing signals are unknown, not evidence of a healthy session. Never fabricate task intent.
 Use WARN|, CAUT|, ADV|, or MEMO| followed by an icon and one clear actionable sentence.

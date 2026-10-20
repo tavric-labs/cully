@@ -40,6 +40,8 @@ type contentItem struct {
 	Input     struct {
 		Command      string `json:"command"`
 		FilePath     string `json:"file_path"`
+		Offset       int    `json:"offset"`
+		Limit        int    `json:"limit"`
 		SubagentType string `json:"subagent_type"`
 		Description  string `json:"description"`
 	} `json:"input"`
@@ -107,6 +109,7 @@ type Signals struct {
 	AvailableMCPServers string
 	AvailablePlugins    string
 	RecentPrompts       []string
+	TokenWaste          string
 }
 
 // RunAnalyze implements the Stop hook: gather cheap cully signals, throttle by
@@ -174,6 +177,7 @@ func collectSignals(in stopInput, turns int) Signals {
 	idToTool := map[string]string{} // tool_use id -> tool name, to attribute errors
 	toolErrs := map[string]int{}
 	notFound := 0
+	waste := newTokenWaste()
 
 	for _, e := range entries {
 		role := e.Message.Role
@@ -191,6 +195,7 @@ func collectSignals(in stopInput, turns int) Signals {
 			for _, it := range items {
 				if it.Type == "tool_use" {
 					hist[it.Name]++
+					waste.useCall(it.ID, it.Name, it.Input.Offset == 0 && it.Input.Limit == 0)
 					if it.ID != "" {
 						idToTool[it.ID] = it.Name
 					}
@@ -206,6 +211,9 @@ func collectSignals(in stopInput, turns int) Signals {
 							reads[it.Input.FilePath]++
 						}
 					}
+				}
+				if it.Type == "tool_result" {
+					waste.result(it.ToolUseID, toolResultText(it.Content))
 				}
 				// Fault acquisition: failed tool calls, classified by originating
 				// tool and by the not-found family (bad paths/symbols/commands).
@@ -295,6 +303,7 @@ func collectSignals(in stopInput, turns int) Signals {
 		ctxSource = "actual"
 	}
 
+	waste.finish(ctxTokens)
 	return Signals{
 		Turns:               turns,
 		Model:               fallback(lastModel, "?"),
@@ -320,6 +329,7 @@ func collectSignals(in stopInput, turns int) Signals {
 		AvailableMCPServers: listMCPServers(in.Cwd),
 		AvailablePlugins:    listPlugins(in.Cwd),
 		RecentPrompts:       prompts,
+		TokenWaste:          waste.String(),
 	}
 }
 
@@ -334,6 +344,7 @@ session_phase=%s  cost_index=%s
 tool_histogram: %s
 searches=%d  files_reread_3x+=%d
 tool_errors=%d  not_found_errors=%d  error_top=%s
+%s
 repo_lang=%s  graphify_graph=%s  repo_source_files=%s  est_graph_build=%s
 available_skills: %s
 available_agents: %s
@@ -345,6 +356,7 @@ recent_prompts: %s`,
 		detectPhase(s, "").label(), costIndex(),
 		histString(s.ToolHistogram), s.Searches, s.FilesReread3x,
 		s.ToolErrors, s.NotFoundErrors, s.ErrorTop,
+		fallback(s.TokenWaste, "token_waste_significant=unknown"),
 		s.RepoLang, graph, s.RepoSourceFiles, s.EstGraphBuild,
 		s.AvailableSkills,
 		s.AvailableAgents,
