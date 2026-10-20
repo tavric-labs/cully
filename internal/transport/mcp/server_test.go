@@ -148,8 +148,9 @@ func TestNoOAuthUsesFixedOwner(t *testing.T) {
 
 func TestWriteAcknowledgementDoesNotEchoRecordText(t *testing.T) {
 	secret := "approach text"
-	got := acknowledgeWrite(memory.Result{Entry: &memory.Entry{ID: "e1", Section: "personal", Summary: "s", Approach: &secret, Tags: []string{"x"}}})
-	if got.Entry.ID != "e1" || got.Entry.Section != "personal" {
+	agent := "agent-1"
+	got := acknowledgeWrite(memory.Result{Entry: &memory.Entry{ID: "e1", Section: "personal", AgentSessionID: &agent, Summary: "s", Approach: &secret, Tags: []string{"x"}}})
+	if got.Entry.ID != "e1" || got.Entry.Section != "personal" || got.Entry.AgentSessionID == nil || *got.Entry.AgentSessionID != agent {
 		t.Fatalf("lost identifiers: %+v", got.Entry)
 	}
 	if got.Entry.Summary != "" || got.Entry.Approach != nil || got.Entry.Tags != nil {
