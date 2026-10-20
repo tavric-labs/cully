@@ -30,7 +30,7 @@ Usage:
   cully status [directory]                Show session and agent status
   cully rescue [--cwd DIR] [--agent claude|codex|cursor] [--no-ai]
                                           Diagnose a stuck session from recorded evidence
-  cully suggestions                       Review suggested improvements
+  cully suggestions [--request N]         Review suggested improvements; --request prints a setup request for your agent
   cully impact [--days N] [--log]         What Cully saved and cost: memory used, analyses avoided, loops caught
   cully eval [setup|harness|advisor|memory] Score Cully as an agent against planted ground truth; see docs/evals.md
   cully savings [--days N]                Measure token cost against exploration avoided, from transcripts
@@ -122,7 +122,7 @@ func run(args []string) error {
 	case "workspace":
 		return runWorkspace(args[1:])
 	case "suggestions":
-		cully.RunList(os.Stdout)
+		return cully.RunSuggestions(os.Stdout, args[1:])
 	case "eval":
 		return cully.RunEval(os.Stdout, args[1:])
 	case "impact":

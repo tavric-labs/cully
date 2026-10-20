@@ -42,11 +42,21 @@ func advisorEvidence(signals string) string {
 // suggestion asks for a guarded setup in this repository; other advice asks the
 // agent to act on it only if it fits the current task.
 func advisorRequest(line, signals string) string {
-	text := truncateRunes(strings.TrimSpace(terminalSafeText(stripSeverityPrefix(line))), maxSuggestionRunes)
-	_, category := adviceBadge(line)
-	if category != "Apply" {
-		return "Please assess this Cully advisor note for the current task and act on it only if it applies: " + text
+	if _, category := adviceBadge(line); category != "Apply" {
+		return "Please assess this Cully advisor note for the current task and act on it only if it applies: " + suggestionText(line)
 	}
+	return advisorSetupRequest(line, signals)
+}
+
+func suggestionText(line string) string {
+	return truncateRunes(strings.TrimSpace(terminalSafeText(stripSeverityPrefix(line))), maxSuggestionRunes)
+}
+
+// advisorSetupRequest is the guarded request to set a suggestion up in the
+// repository. `cully suggestions --request N` prints it for chat clients that
+// have no Cully terminal.
+func advisorSetupRequest(line, signals string) string {
+	text := suggestionText(line)
 	var b strings.Builder
 	b.WriteString("Cully's advisor reviewed this session and suggests:\n\n")
 	b.WriteString(text + "\n\n")
