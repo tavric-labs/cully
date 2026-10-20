@@ -16,14 +16,14 @@ SITES = {
         'compose': 'compose.yaml',
         'project': 'cully-web',
         'revision_var': 'CULLY_WEB_REVISION',
-        'image': 'ghcr.io/mcp-runtime/cully-web:',
+        'image': 'ghcr.io/tavric-labs/cully-web:',
     },
     'docs': {
         'state': 'docs-state.json',
         'compose': 'compose.docs.yaml',
         'project': 'cully-docs',
         'revision_var': 'CULLY_DOCS_REVISION',
-        'image': 'ghcr.io/mcp-runtime/cully-docs:',
+        'image': 'ghcr.io/tavric-labs/cully-docs:',
     },
 }
 

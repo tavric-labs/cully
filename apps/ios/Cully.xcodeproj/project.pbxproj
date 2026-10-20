@@ -375,7 +375,7 @@
 /* Begin XCRemoteSwiftPackageReference section */
 		D7978C6824B20456BDF5C9A0 /* XCRemoteSwiftPackageReference "mcp-mobile" */ = {
 			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/mcp-runtime/mcp-mobile.git";
+			repositoryURL = "https://github.com/tavric-labs/mcp-mobile.git";
 			requirement = {
 				kind = exactVersion;
 				version = 0.1.0;

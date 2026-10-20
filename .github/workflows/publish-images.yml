@@ -16,9 +16,9 @@ permissions:
   packages: write
 env:
   RELEASE_TAG: ${{ inputs.tag }}
-  MCP_IMAGE: ghcr.io/mcp-runtime/cully-mcp:${{ inputs.tag }}
-  DATA_IMAGE: ghcr.io/mcp-runtime/cully-data:${{ inputs.tag }}
-  MEM0_IMAGE: ghcr.io/mcp-runtime/cully-mem0:${{ inputs.tag }}
+  MCP_IMAGE: ghcr.io/tavric-labs/cully-mcp:${{ inputs.tag }}
+  DATA_IMAGE: ghcr.io/tavric-labs/cully-data:${{ inputs.tag }}
+  MEM0_IMAGE: ghcr.io/tavric-labs/cully-mem0:${{ inputs.tag }}
 jobs:
   publish:
     runs-on: ubuntu-latest

@@ -14,9 +14,9 @@ concurrency:
   cancel-in-progress: false
 env:
   RELEASE_TAG: ${{ inputs.tag }}
-  MCP_IMAGE: ghcr.io/mcp-runtime/cully-mcp:${{ inputs.tag }}
-  DATA_IMAGE: ghcr.io/mcp-runtime/cully-data:${{ inputs.tag }}
-  MEM0_IMAGE: ghcr.io/mcp-runtime/cully-mem0:${{ inputs.tag }}
+  MCP_IMAGE: ghcr.io/tavric-labs/cully-mcp:${{ inputs.tag }}
+  DATA_IMAGE: ghcr.io/tavric-labs/cully-data:${{ inputs.tag }}
+  MEM0_IMAGE: ghcr.io/tavric-labs/cully-mem0:${{ inputs.tag }}
   MCP_RUNTIME_VERSION: v0.6.1
   MCP_RUNTIME_SHA256: 0f8ea74b54be043763fbf105245b8894b00b2bbe17beb3516b44ae0c43fb0165
   MCP_PLATFORM_API_URL: https://platform.mcpruntime.org
@@ -72,7 +72,7 @@ jobs:
           printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
       - name: Install pinned MCP Runtime CLI
         run: |
-          curl -fsSL -o mcp-runtime "https://github.com/mcp-runtime/mcp-runtime/releases/download/${MCP_RUNTIME_VERSION}/mcp-runtime-linux-amd64"
+          curl -fsSL -o mcp-runtime "https://github.com/tavric-labs/mcp-runtime/releases/download/${MCP_RUNTIME_VERSION}/mcp-runtime-linux-amd64"
           echo "${MCP_RUNTIME_SHA256}  mcp-runtime" | sha256sum -c -
           sudo install -m 0755 mcp-runtime /usr/local/bin/mcp-runtime
           mcp-runtime --version

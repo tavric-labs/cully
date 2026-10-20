@@ -126,9 +126,9 @@ func ensureStack(ref, base string) (string, error) {
 		return "", err
 	}
 	defer os.RemoveAll(temporary)
-	url := "https://github.com/mcp-runtime/cully/archive/refs/tags/" + ref + ".tar.gz"
+	url := "https://github.com/tavric-labs/cully/archive/refs/tags/" + ref + ".tar.gz"
 	if ref == "main" {
-		url = "https://github.com/mcp-runtime/cully/archive/refs/heads/main.tar.gz"
+		url = "https://github.com/tavric-labs/cully/archive/refs/heads/main.tar.gz"
 	}
 	fmt.Printf("Downloading Cully Docker stack from %s (%s); timeout: 3 minutes\n", ref, url)
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)

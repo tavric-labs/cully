@@ -1,6 +1,6 @@
 # Cully mobile clients
 
-Cully Self is a personal companion: a calm Today brief, a private task list and focus, an Advisor, and an Ask Cully composer with a microphone. Android and iOS source live here; the reusable connection SDK lives in [mcp-mobile](https://github.com/mcp-runtime/mcp-mobile), released as native Kotlin and Swift packages.
+Cully Self is a personal companion: a calm Today brief, a private task list and focus, an Advisor, and an Ask Cully composer with a microphone. Android and iOS source live here; the reusable connection SDK lives in [mcp-mobile](https://github.com/tavric-labs/mcp-mobile), released as native Kotlin and Swift packages.
 
 This is a developer preview. Workspace actions, coding terminals, phone dialer/camera/settings controls, calendar/contact access, and background agent execution are not exposed. Saved work notes are dated evidence, not live coding-session health. Task changes require explicit UI actions and stay on this device.
 

@@ -9,7 +9,7 @@
 # CURSOR_CONFIG_DIR. Add --oauth only when the MCP server requires OAuth.
 set -eu
 
-REPO="mcp-runtime/cully"
+REPO="tavric-labs/cully"
 
 agent=""
 mcp_url=""

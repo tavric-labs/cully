@@ -4,7 +4,7 @@ import Foundation
 
 let localSDK = ProcessInfo.processInfo.environment["MCP_MOBILE_PATH"]
 let mobile: Package.Dependency = localSDK.map { .package(name: "mcp-mobile", path: $0) }
-    ?? .package(url: "https://github.com/mcp-runtime/mcp-mobile.git", from: "0.1.0")
+    ?? .package(url: "https://github.com/tavric-labs/mcp-mobile.git", from: "0.1.0")
 
 let skipRuntime = ProcessInfo.processInfo.environment["CULLY_SKIP_LLAMA"] == "1"
 var engineTargets: [Target] = [.target(name: "CullyEngine", dependencies: skipRuntime ? [] : ["llama"], path: "Engine")]

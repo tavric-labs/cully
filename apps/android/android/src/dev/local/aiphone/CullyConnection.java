@@ -183,7 +183,7 @@ final class CullyConnection implements AutoCloseable {
     }
 
     private void testRead(McpMobileJavaClient session, int count) {
-        session.callTool("cully_context", "{\"query\":\"mcp-mobile-release-smoke-never-match-6f4b0c2d\",\"limit\":1,\"mode\":\"text\",\"project_url\":\"https://github.com/mcp-runtime/mcp-mobile\"}", new McpCallback() {
+        session.callTool("cully_context", "{\"query\":\"mcp-mobile-release-smoke-never-match-6f4b0c2d\",\"limit\":1,\"mode\":\"text\",\"project_url\":\"https://github.com/tavric-labs/mcp-mobile\"}", new McpCallback() {
             public void onSuccess(String json) { try { report(true, !new JSONObject(json).optBoolean("isError", false), count); } catch (Exception ignored) {} }
             public void onError(String code, String message) { report(false, false, count); }
         });

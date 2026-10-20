@@ -1,6 +1,6 @@
 services:
   cully-web:
-    image: ghcr.io/mcp-runtime/cully-web:${CULLY_WEB_REVISION:?set deployment commit}
+    image: ghcr.io/tavric-labs/cully-web:${CULLY_WEB_REVISION:?set deployment commit}
     restart: unless-stopped
     read_only: true
     tmpfs: [/tmp]

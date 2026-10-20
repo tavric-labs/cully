@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Update repository, installer, mobile SDK and container publishing/deployment references for the Tavric Labs organization rename. MCP Runtime remains the product name and existing Go module imports remain stable.
+
 ## 0.14.0
 
 - Add native Android and iOS Cully Self clients under `apps/`: Today briefs, personal task/focus management, Advisor handoffs, and a shared Ask Cully composer with microphone input. Reuse the Cully icon and the released mcp-mobile native SDKs; browser sign-in keeps service credentials on the server.
