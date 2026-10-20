@@ -519,6 +519,15 @@ func compactSessionStatusRows(cols, availableRows int, advice []string, stats to
 		rows = append(rows, "", footer)
 		return rows
 	}
+	// Wrapped harness gaps can grow with a sparse setup. Drop separators before
+	// clipping instruments so MCP authentication stays visible on short panels.
+	compact := make([]string, 0, len(status))
+	for _, row := range status {
+		if strings.TrimSpace(ansi.Strip(row)) != "" {
+			compact = append(compact, row)
+		}
+	}
+	status = compact
 	if len(status)+1+len(preview)+1 <= capacity {
 		rows := append(status, "")
 		rows = append(rows, preview...)
@@ -604,26 +613,28 @@ func compactInstrumentRows(cols int, stats toolStats, view sessionView) ([]strin
 	if view.Input != "" || view.Output != "" {
 		tokens = "Tokens in " + instrument(view.Input) + " / out " + instrument(view.Output)
 	}
-	quota := ""
-	if view.FiveHour != "" || view.Weekly != "" {
+	var quotas []string
+	if view.FiveHour != "" {
+		quotas = append(quotas, "5h "+instrument(strings.TrimPrefix(view.FiveHour, "5h ")))
+	}
+	if view.Weekly != "" {
 		weekly := view.Weekly
 		for _, prefix := range []string{"Weekly ", "Week ", "7d "} {
 			weekly = strings.TrimPrefix(weekly, prefix)
 		}
-		quota = "5h " + instrument(strings.TrimPrefix(view.FiveHour, "5h ")) + " · Week " + instrument(weekly)
+		quotas = append(quotas, "Week "+instrument(weekly))
 	}
-	changes := dim + "unavailable" + rst
-	if view.ChangesKnown {
-		changes = green + fmt.Sprintf("+%d", view.LinesAdded) + rst + "/" + red + fmt.Sprintf("-%d", view.LinesRemoved) + rst + fmt.Sprintf(" (%d tracked)", view.ChangedFiles)
-	}
+	quota := strings.Join(quotas, " · ")
 	showFast := view.Agent == "" || view.Agent == "codex"
-	work := "Git " + changes
-	if showFast {
-		work = "Fast " + instrument(strings.TrimPrefix(view.Fast, "Fast ")) + " · " + work
+	var workParts []string
+	if showFast && view.Fast != "" {
+		workParts = append(workParts, "Fast "+instrument(strings.TrimPrefix(view.Fast, "Fast ")))
 	}
-	if !view.ChangesKnown && (!showFast || view.Fast == "") {
-		work = ""
+	if view.ChangesKnown {
+		changes := green + fmt.Sprintf("+%d", view.LinesAdded) + rst + "/" + red + fmt.Sprintf("-%d", view.LinesRemoved) + rst + fmt.Sprintf(" (%d tracked)", view.ChangedFiles)
+		workParts = append(workParts, "Git "+changes)
 	}
+	work := strings.Join(workParts, " · ")
 	usage := []string{bold + "Project & usage" + rst, "", location, "Context " + context, tokens, quota, work}
 	cully := cullyInstrumentRows(stats, width)
 	groups := [][]string{activity, usage, cully}
@@ -655,8 +666,8 @@ func compactInstrumentRows(cols int, stats toolStats, view sessionView) ([]strin
 		// normal narrow terminal still leaves most rows to the conversation.
 		rows = rows[:len(rows)-1] // title and first group belong to one section
 		groups = [][]string{
-			append([]string{activity[0]}, activity[2:]...),
-			{usage[0], location, "Context " + context, strings.TrimSuffix(tokens+" · "+quota, " · "), work},
+			append([]string{activity[0] + " · Model " + model}, activity[3:]...),
+			{usage[0] + " · " + location, "Context " + context, strings.TrimSuffix(tokens+" · "+quota, " · "), work},
 			append([]string{cully[0]}, cully[2:]...),
 		}
 		for i, group := range groups {
@@ -665,6 +676,10 @@ func compactInstrumentRows(cols int, stats toolStats, view sessionView) ([]strin
 			}
 			for _, value := range group {
 				if value == "" {
+					continue
+				}
+				if strings.HasPrefix(ansi.Strip(value), "Gaps ") {
+					add(value)
 					continue
 				}
 				for _, line := range strings.Split(ansi.Wrap(value, width, ""), "\n") {

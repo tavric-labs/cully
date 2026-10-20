@@ -78,3 +78,13 @@ If Cully lists a numbered improvement, use its number with `cully apply 1 --dry-
 To stop and disconnect the local stack later, run `cully uninstall`. It keeps
 your notes by default. The [self-hosting guide](/hosting#uninstall-the-laptop-stack)
 explains the explicit data deletion option.
+
+## Check your setup and keep it current
+
+```sh
+cully harness         # read-only setup audit and recent output baseline
+cully workflow        # optional private profile; preview before saving
+cully update --check  # check for a newer CLI without changing it
+```
+
+Read [audit your harness](/harness) to interpret gaps and measurements. Run `cully update` to install a verified CLI release; upgrade memory services with your deployment tooling. See [installation and updates](/installation).

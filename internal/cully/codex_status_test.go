@@ -99,6 +99,7 @@ func TestCodexNativeFooterRetainsClippedInstruments(t *testing.T) {
 }
 
 func TestCodexCompactGroupSpacingAdaptsWithoutLosingMetrics(t *testing.T) {
+	isolateWorkflow(t)
 	stats := toolStats{Tools: 60, Searches: 3, Edits: 2, Checks: 1}
 	stats.Cully.Health, stats.Cully.Auth = "healthy", "authenticated"
 	stats.Cully.CheckedAt = "2026-10-07T12:34:56Z"
@@ -460,6 +461,7 @@ func TestCodexAdviceCategoriesIncludeApply(t *testing.T) {
 }
 
 func TestCodexCompactThreeGroupsAndObservedCullyStates(t *testing.T) {
+	isolateWorkflow(t)
 	stats := toolStats{Tools: 60, Searches: 3, Edits: 2, Checks: 1}
 	stats.Cully.Calls = 27
 	stats.Cully.Log = 2

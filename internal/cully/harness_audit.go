@@ -1,7 +1,7 @@
 package cully
 
 import (
-	"bytes"
+	"bufio"
 	"flag"
 	"fmt"
 	"io"
@@ -62,15 +62,19 @@ func under(root string, parts ...string) string {
 }
 
 func auditHarness(d harnessDirs) []harnessItem {
-	claudeSettings := filepath.Join(d.Claude, "settings.json")
-	codexConfig := filepath.Join(d.Codex, "config.toml")
+	claudeSettings := under(d.Claude, "settings.json")
+	codexConfig := under(d.Codex, "config.toml")
 	settings, codex := readCapped(claudeSettings), readCapped(codexConfig)
 
 	var guard, memory, hooks, plugins []string
+	claudeHome := ""
+	if d.Claude != "" {
+		claudeHome = filepath.Dir(d.Claude)
+	}
 	if strings.Contains(settings, `"permissions"`) {
 		guard = append(guard, claudeSettings)
 	}
-	for _, p := range []string{filepath.Join(d.Claude, "settings.local.json"), filepath.Join(d.Project, ".claude", "settings.json"), filepath.Join(d.Project, ".claude", "settings.local.json")} {
+	for _, p := range []string{under(d.Claude, "settings.local.json"), under(d.Project, ".claude", "settings.json"), under(d.Project, ".claude", "settings.local.json")} {
 		if strings.Contains(readCapped(p), `"permissions"`) {
 			guard = append(guard, p)
 		}
@@ -86,7 +90,7 @@ func auditHarness(d harnessDirs) []harnessItem {
 	}
 	for _, p := range []string{
 		under(d.Project, ".mcp.json"),
-		under(filepath.Dir(d.Claude), ".claude.json"), under(d.Claude, ".claude.json"),
+		under(claudeHome, ".claude.json"), under(d.Claude, ".claude.json"),
 		under(d.Cursor, "mcp.json"), under(d.Project, ".cursor", "mcp.json"),
 	} {
 		if strings.Contains(readCapped(p), "cully") {
@@ -111,8 +115,8 @@ func auditHarness(d harnessDirs) []harnessItem {
 	if strings.Contains(settings, `"enabledPlugins"`) {
 		plugins = append(plugins, claudeSettings)
 	}
-	if dirHasEntries(filepath.Join(d.Claude, "plugins")) {
-		plugins = append(plugins, filepath.Join(d.Claude, "plugins"))
+	if p := under(d.Claude, "plugins"); dirHasEntries(p) {
+		plugins = append(plugins, p)
 	}
 	var skills, agents []string
 	for _, dir := range []string{d.Claude, d.Codex, d.Cursor, d.Project} {
@@ -127,16 +131,18 @@ func auditHarness(d harnessDirs) []harnessItem {
 		}
 	}
 	if d.Project != "" {
-		if p := filepath.Join(d.Project, ".claude", "skills"); dirHasEntries(p) {
-			skills = append(skills, p)
-		}
-		if p := filepath.Join(d.Project, ".claude", "agents"); dirHasEntries(p) {
-			agents = append(agents, p)
+		for _, agentDir := range []string{".claude", ".codex", ".cursor", ".agents", ".cully"} {
+			if p := under(d.Project, agentDir, "skills"); dirHasEntries(p) {
+				skills = append(skills, p)
+			}
+			if p := under(d.Project, agentDir, "agents"); dirHasEntries(p) {
+				agents = append(agents, p)
+			}
 		}
 	}
 	instructions := firstExisting(
-		filepath.Join(d.Claude, "CLAUDE.md"), filepath.Join(d.Codex, "AGENTS.md"),
-		filepath.Join(d.Project, "CLAUDE.md"), filepath.Join(d.Project, "AGENTS.md"),
+		under(d.Claude, "CLAUDE.md"), under(d.Codex, "AGENTS.md"),
+		under(d.Project, "CLAUDE.md"), under(d.Project, "AGENTS.md"),
 		under(d.Project, ".cursorrules"),
 	)
 	if p := under(d.Project, ".cursor", "rules"); dirHasEntries(p) {
@@ -175,39 +181,55 @@ func projectFolderMatch(cwd string) string {
 }
 
 func measureHarnessEvidence(root, match string, days, max int) harnessEvidence {
+	if match == "" || days <= 0 || max <= 0 {
+		return harnessEvidence{}
+	}
 	since := time.Now().AddDate(0, 0, -days)
 	type found struct {
 		path string
 		mod  time.Time
 	}
 	var paths []found
-	_ = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
-		if err != nil || d.IsDir() || !strings.HasSuffix(path, ".jsonl") || !strings.Contains(filepath.Base(filepath.Dir(path)), match) {
-			return nil
+	folder := filepath.Join(root, match)
+	entries, _ := os.ReadDir(folder)
+	for _, d := range entries {
+		if d.IsDir() || !strings.HasSuffix(d.Name(), ".jsonl") {
+			continue
 		}
 		if info, err := d.Info(); err == nil && !info.ModTime().Before(since) {
-			paths = append(paths, found{path, info.ModTime()})
+			paths = append(paths, found{filepath.Join(folder, d.Name()), info.ModTime()})
 		}
-		return nil
-	})
+	}
 	sort.Slice(paths, func(i, j int) bool { return paths[i].mod.After(paths[j].mod) })
 	if len(paths) > max {
 		paths = paths[:max]
 	}
 	var ev harnessEvidence
 	for _, p := range paths {
-		lines := readTranscriptLines(p.path)
-		if len(lines) < 20 {
+		f, err := os.Open(p.path)
+		if err != nil {
 			continue
 		}
-		w := scanWaste(lines)
+		w := newTokenWaste()
+		lines, delegations := 0, 0
+		sc := bufio.NewScanner(f)
+		sc.Buffer(make([]byte, 64<<10), 8<<20)
+		for sc.Scan() {
+			if len(strings.TrimSpace(string(sc.Bytes()))) == 0 {
+				continue
+			}
+			lines++
+			delegations += scanWasteLine(w, sc.Bytes())
+		}
+		f.Close()
+		if sc.Err() != nil || lines < 20 {
+			continue
+		}
 		ev.Sessions++
 		ev.BigTokens += w.BigTokens
 		ev.BashTokens += w.BigBashTokens
 		ev.ReadTokens += w.FullReadTokens
-		for _, line := range lines {
-			ev.Delegations += bytes.Count(line, []byte(`"name":"Task"`)) + bytes.Count(line, []byte(`"name":"Agent"`))
-		}
+		ev.Delegations += delegations
 	}
 	return ev
 }
@@ -314,9 +336,21 @@ func RunHarness(w io.Writer, args []string) error {
 	if fs.NArg() != 0 {
 		return fmt.Errorf("usage: cully harness [--cwd DIR] [--all] [--days N] [--max N]")
 	}
-	if *cwd == "" {
-		*cwd, _ = os.Getwd()
+	if *days <= 0 || *max <= 0 {
+		return fmt.Errorf("--days and --max must be positive")
 	}
+	if *cwd == "" {
+		var err error
+		*cwd, err = os.Getwd()
+		if err != nil {
+			return err
+		}
+	}
+	absolute, err := filepath.Abs(*cwd)
+	if err != nil {
+		return err
+	}
+	*cwd = absolute
 	if *dir == "" {
 		*dir = filepath.Join(ConfigDir(), "projects")
 	}
@@ -339,6 +373,6 @@ func RunHarness(w io.Writer, args []string) error {
 		fmt.Fprintf(w, "  · %-18s missing — %s\n", it.Component, it.Hint)
 	}
 	ev.write(w, *days)
-	fmt.Fprintf(w, "\n%d of %d components configured. Read-only: only file names and config keys were checked, never contents.\n", len(items)-missing, len(items))
+	fmt.Fprintf(w, "\n%d of %d components configured. Read-only: setup checks use file names and config keys; transcript measurements retain counts only.\n", len(items)-missing, len(items))
 	return nil
 }

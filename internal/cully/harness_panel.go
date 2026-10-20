@@ -27,46 +27,62 @@ const (
 	harnessPanelDays  = 30
 )
 
-var harnessPanelCache struct {
+type harnessPanelState struct {
 	sync.Mutex
-	project             string
+	dirs                harnessDirs
+	generation          uint64
 	auditAt, measureAt  time.Time
 	data                harnessPanelData
+	items               []harnessItem
 	measuring, hasAudit bool
+}
+
+var harnessPanelCache harnessPanelState
+
+func summarizeHarnessPanel(items []harnessItem, ev harnessEvidence, measured bool) harnessPanelData {
+	d := harnessPanelData{Total: len(items), Evidence: ev, Measured: measured}
+	for _, it := range applyEvidence(items, ev) {
+		if it.Present() {
+			d.Ready++
+		} else {
+			d.Missing = append(d.Missing, it.Component)
+		}
+	}
+	return d
+}
+
+func (c *harnessPanelState) finishMeasurement(generation uint64, ev harnessEvidence) {
+	c.Lock()
+	defer c.Unlock()
+	if c.generation != generation {
+		return
+	}
+	c.data = summarizeHarnessPanel(c.items, ev, true)
+	c.measureAt, c.measuring = time.Now(), false
 }
 
 func harnessPanel(project string) harnessPanelData {
 	c := &harnessPanelCache
 	c.Lock()
 	defer c.Unlock()
-	if c.project != project {
-		c.project, c.hasAudit, c.measuring = project, false, false
+	dirs := harnessDirs{Claude: ConfigDir(), Codex: CodexConfigDir(), Cursor: CursorConfigDir(), Project: project}
+	if c.dirs != dirs {
+		c.dirs, c.hasAudit, c.measuring = dirs, false, false
+		c.generation++
 		c.data, c.auditAt, c.measureAt = harnessPanelData{}, time.Time{}, time.Time{}
 	}
 	now := time.Now()
 	if !c.hasAudit || now.Sub(c.auditAt) > harnessAuditTTL {
-		items := auditHarness(harnessDirs{Claude: ConfigDir(), Codex: CodexConfigDir(), Cursor: CursorConfigDir(), Project: project})
-		c.data.Ready, c.data.Total, c.data.Missing = 0, len(items), nil
-		for _, it := range items {
-			if it.Present() {
-				c.data.Ready++
-			} else {
-				c.data.Missing = append(c.data.Missing, it.Component)
-			}
-		}
+		c.items = auditHarness(dirs)
+		c.data = summarizeHarnessPanel(c.items, c.data.Evidence, c.data.Measured)
 		c.hasAudit, c.auditAt = true, now
 	}
 	if project != "" && !c.measuring && now.Sub(c.measureAt) > harnessMeasureTTL {
 		c.measuring = true
-		go func(project string) {
-			ev := measureHarnessEvidence(filepath.Join(ConfigDir(), "projects"), projectFolderMatch(project), harnessPanelDays, 20)
-			c.Lock()
-			defer c.Unlock()
-			if c.project == project {
-				c.data.Evidence, c.data.Measured, c.measureAt = ev, true, time.Now()
-			}
-			c.measuring = false
-		}(project)
+		go func(generation uint64) {
+			ev := measureHarnessEvidence(filepath.Join(dirs.Claude, "projects"), projectFolderMatch(project), harnessPanelDays, 20)
+			c.finishMeasurement(generation, ev)
+		}(c.generation)
 	}
 	return c.data
 }
@@ -93,10 +109,10 @@ func harnessPanelRows(d harnessPanelData) []string {
 	case !d.Measured:
 		rows = append(rows, "Waste "+dim+"measuring…"+rst)
 	case d.Evidence.Sessions == 0:
-		rows = append(rows, "Waste "+dim+"no recent sessions"+rst)
+		rows = append(rows, "Waste "+dim+"no recent Claude sessions"+rst)
 	default:
 		line := fmt.Sprintf("Waste %s tok/session · Bash %s", panelTokens(d.Evidence.perSession(d.Evidence.BigTokens)), panelTokens(d.Evidence.perSession(d.Evidence.BashTokens)))
-		rows = append(rows, line+dim+fmt.Sprintf(" (%d sessions, %dd)", d.Evidence.Sessions, harnessPanelDays)+rst)
+		rows = append(rows, line+dim+fmt.Sprintf(" (%d Claude sessions, %dd)", d.Evidence.Sessions, harnessPanelDays)+rst)
 	}
 	return rows
 }

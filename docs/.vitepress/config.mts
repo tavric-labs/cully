@@ -63,6 +63,7 @@ export default withMermaid(defineConfig({
         text: 'Use Cully',
         items: [
           { text: 'Keep sessions focused', link: '/session-optimization' },
+          { text: 'Audit your harness', link: '/harness' },
           { text: 'Privacy', link: '/privacy' },
           { text: 'Work across people and agents', link: '/team-workflows' }
         ]

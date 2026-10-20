@@ -63,6 +63,16 @@ Draft lessons are visible only to their author while that author retains project
 
 Audit events contain actor, action, target IDs and timestamp, without checkpoint or lesson text. Operators access them in the private database; they are not a coworker activity feed. Agent/session metadata is declared, with no inferred productivity scores or automatic journal uploads.
 
+## Your workflow profile
+
+The optional `dev-workflow-rules` skill is a private file under `~/.cully/skills/dev-workflow-rules/` that you review before it is saved. Cully sends at most 12 KiB of it, with likely credentials redacted, to your configured advisor model as background for local analysis. It is excluded from web-research prompts, is never saved to memory automatically, and grants no tool or infrastructure access. Wizard answers that look like credentials are rejected. Delete the file to remove it.
+
+## Harness measurements
+
+`cully harness` checks instruction and skill file names and selected agent configuration keys without printing their contents. It also streams recent local Claude transcripts to count oversized tool output and actual subagent calls. The terminal’s Harness column does this automatically for up to 20 sessions from the exact project’s folder, over the last 30 days, refreshed every five minutes. The CLI defaults to 40 sessions per project; `--all` explicitly measures all project folders, optionally filtered with `--only`.
+
+These measurements retain aggregate counts and token estimates, not transcript text, prompts, credentials or output. The background panel cache is in memory only. Nothing from these measurements is uploaded or saved to project memory automatically. Codex and Cursor transcripts are not measured. See [the harness guide](/harness) for limitations.
+
 ## Where file names can appear
 
 - In `cully replay`, `cully timeline`, `cully handoff` and `cully rescue` output on your machine.

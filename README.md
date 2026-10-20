@@ -76,6 +76,8 @@ cully replay           # what the agent did, and how
 cully handoff          # hand the session to another agent
 cully rescue           # when a session is stuck
 cully harness          # audit instructions, guardrails, memory, skills and hooks; Subagents and Skills gaps cite your measured tokens per session
+cully update --check   # see whether a newer CLI release exists
+cully workflow         # optional private dev-workflow-rules profile for the advisor
 ```
 
 See the [quickstart](https://docs.cully.net/quickstart) for prerequisites and other agents.

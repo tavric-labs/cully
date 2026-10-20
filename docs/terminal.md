@@ -57,7 +57,13 @@ The first row under the agent is a one-line health bar. Every value is measured.
 
 Below the health bar, the panel shows session instruments and two prioritized advisor comments. Click below the divider in the panel, or press `Ctrl+]` or `F6`, to open the full advisor. Select with the mouse or Up and Down, preview with Enter, and press Tab for every instrument. See the [advisor](/advisor) for what it analyzes and how you apply a suggestion. In Warp, open the advisor with `Ctrl+]` or `F6` first: mouse tracking is deferred so Warp scroll mode is not consumed while you work.
 
+At 120 columns or wider, three columns show **Harness**, **Project & usage** and **Cully impact**. Narrow screens stack the groups. Harness shows which setup components were found, gaps, recent oversized tool-output estimates, the model and pending checks. The impact column shows observed memory use, analyses avoided, loops caught and estimated net tokens, followed by MCP health and authentication. Open Tab details for tool counters.
+
+Harness estimates come from recent local **Claude** transcripts for this project, even when you are running another agent. They are a historical baseline, not the current Codex or Cursor session’s usage or proof of savings. Setup checks refresh every 30 seconds and background measurements every five minutes. See [audit your harness](/harness).
+
 Drag the horizontal health bar between the agent and Cully up to expand the panel or down to shrink it, all the way to one divider row. The agent's terminal resizes with it. Cully keeps your chosen height for the rest of the launch, including advisor refreshes and window resizes; smaller windows clamp it to leave the agent usable.
+
+The divider grip highlights when the pointer is over it, and Cully requests a vertical-resize cursor (OSC 22) while you hover or drag, restoring the default when you leave the bar or open the advisor. Cursor appearance depends on terminal support.
 
 In Warp, press `Ctrl+\` to enable divider dragging, drag the bar, then press `Ctrl+\` again or Esc to restore normal host scrolling. Other terminals allow dragging immediately. Click below the divider to open the advisor.
 
@@ -65,7 +71,7 @@ Before your first drag, the panel grows only as far as its content needs. It alw
 
 ## What each agent supplies
 
-All agents get the health bar, tool counts, check and edit state, loops, Git changes, daemon health and advice. What differs is what the agent itself reports.
+All agents get the health bar, harness overview, check and edit state, loops, Git changes, daemon health and advice. Tool counts remain in the expanded instruments. What differs is what the agent itself reports.
 
 | Agent | Extra signals in the terminal | How Cully gets them |
 | --- | --- | --- |
