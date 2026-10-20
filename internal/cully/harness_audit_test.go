@@ -79,3 +79,29 @@ func TestHarnessReportsMeasuredWasteAndStatesItIsNotProof(t *testing.T) {
 		t.Fatalf("missing transcripts must say nothing was measured: %v\n%s", err, empty.String())
 	}
 }
+
+func TestHarnessAllProjectsRanksByOversizedOutput(t *testing.T) {
+	isolateWorkflow(t)
+	data, err := os.ReadFile(replayTranscript(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"-a-one", "-b-two"} {
+		dir := filepath.Join(ConfigDir(), "projects", name)
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "s.jsonl"), data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var out bytes.Buffer
+	if err := RunHarness(&out, []string{"--all"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"MEASURED in 2 recent sessions", "TOP PROJECTS BY OVERSIZED OUTPUT", "-a-one", "-b-two"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("report lacks %q:\n%s", want, out.String())
+		}
+	}
+}

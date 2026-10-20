@@ -178,6 +178,51 @@ func measureHarnessEvidence(root, match string, days, max int) harnessEvidence {
 	return ev
 }
 
+// measureAllProjects measures every project's transcripts, so one report shows
+// where the oversized output actually comes from across all past sessions.
+func measureAllProjects(root, only string, days, max int) (harnessEvidence, map[string]harnessEvidence) {
+	var total harnessEvidence
+	by := map[string]harnessEvidence{}
+	entries, _ := os.ReadDir(root)
+	for _, e := range entries {
+		if !e.IsDir() || !strings.Contains(e.Name(), only) {
+			continue
+		}
+		ev := measureHarnessEvidence(root, e.Name(), days, max)
+		if ev.Sessions == 0 {
+			continue
+		}
+		by[e.Name()] = ev
+		total.Sessions += ev.Sessions
+		total.BigTokens += ev.BigTokens
+		total.BashTokens += ev.BashTokens
+		total.ReadTokens += ev.ReadTokens
+		total.Delegations += ev.Delegations
+	}
+	return total, by
+}
+
+func writeAllProjects(w io.Writer, total harnessEvidence, by map[string]harnessEvidence, days int) {
+	if total.Sessions == 0 {
+		fmt.Fprintf(w, "No Claude transcripts from the last %d days were found, so nothing was measured.\n", days)
+		return
+	}
+	total.write(w, days)
+	names := make([]string, 0, len(by))
+	for n := range by {
+		names = append(names, n)
+	}
+	sort.Slice(names, func(i, j int) bool { return by[names[i]].BigTokens > by[names[j]].BigTokens })
+	fmt.Fprintf(w, "\nTOP PROJECTS BY OVERSIZED OUTPUT\n")
+	for i, n := range names {
+		if i == 10 {
+			break
+		}
+		ev := by[n]
+		fmt.Fprintf(w, "  %-60s %3d sessions  %7d tokens  %5d per session  (Bash %d, reads %d)\n", truncateRunes(n, 60), ev.Sessions, ev.BigTokens, ev.perSession(ev.BigTokens), ev.BashTokens, ev.ReadTokens)
+	}
+}
+
 func (e harnessEvidence) write(w io.Writer, days int) {
 	if e.Sessions == 0 {
 		fmt.Fprintf(w, "\nNo Claude transcripts from the last %d days were found for this project, so nothing was measured.\n", days)
@@ -195,6 +240,9 @@ func RunHarness(w io.Writer, args []string) error {
 	fs.SetOutput(w)
 	cwd := fs.String("cwd", "", "project directory (default: current directory)")
 	days := fs.Int("days", 30, "look back this many days when measuring")
+	all := fs.Bool("all", false, "measure every project's recent sessions instead of auditing one setup")
+	only := fs.String("only", "", "with --all, only project folders containing this text (e.g. personal)")
+	max := fs.Int("max", 40, "most sessions to measure per project")
 	dir := fs.String("dir", "", "Claude projects directory (default ~/.claude/projects)")
 	if err := fs.Parse(args); err != nil {
 		if err == flag.ErrHelp {
@@ -203,13 +251,19 @@ func RunHarness(w io.Writer, args []string) error {
 		return err
 	}
 	if fs.NArg() != 0 {
-		return fmt.Errorf("usage: cully harness [--cwd DIR] [--days N]")
+		return fmt.Errorf("usage: cully harness [--cwd DIR] [--all] [--days N] [--max N]")
 	}
 	if *cwd == "" {
 		*cwd, _ = os.Getwd()
 	}
 	if *dir == "" {
 		*dir = filepath.Join(ConfigDir(), "projects")
+	}
+	if *all {
+		total, by := measureAllProjects(*dir, *only, *days, *max)
+		fmt.Fprintf(w, "HARNESS MEASUREMENT  (all projects, last %d days)\n\n", *days)
+		writeAllProjects(w, total, by, *days)
+		return nil
 	}
 	items := auditHarness(harnessDirs{Claude: ConfigDir(), Codex: CodexConfigDir(), Cursor: CursorConfigDir(), Project: *cwd})
 	missing := 0
@@ -222,7 +276,7 @@ func RunHarness(w io.Writer, args []string) error {
 		missing++
 		fmt.Fprintf(w, "  · %-18s missing — %s\n", it.Component, it.Hint)
 	}
-	measureHarnessEvidence(*dir, projectFolderMatch(*cwd), *days, 40).write(w, *days)
+	measureHarnessEvidence(*dir, projectFolderMatch(*cwd), *days, *max).write(w, *days)
 	fmt.Fprintf(w, "\n%d of %d components configured. Read-only: only file names and config keys were checked, never contents.\n", len(items)-missing, len(items))
 	return nil
 }
