@@ -99,7 +99,10 @@ func TestEndToEndMCPDatabase(t *testing.T) {
 		t.Fatal("cross-owner MCP search")
 	}
 	summary := "Go memory services verified"
-	if call(a, "cully_update", memory.UpdateInput{EntryID: entry.ID, Summary: &summary}).Entry.Summary != summary {
+	if updated := call(a, "cully_update", memory.UpdateInput{EntryID: entry.ID, Summary: &summary}).Entry; updated == nil || updated.ID != entry.ID {
+		t.Fatal("MCP update was not acknowledged")
+	}
+	if got := call(a, "cully_get", id).Entry; got == nil || got.Summary != summary {
 		t.Fatal("MCP update failed")
 	}
 	reader := connect("owner-a", "tools:read")
