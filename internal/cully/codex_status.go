@@ -657,7 +657,7 @@ func compactInstrumentRows(cols int, stats toolStats, view sessionView) ([]strin
 		groups = [][]string{
 			{activity[0], "Model " + model, fmt.Sprintf("Tools %d · Searches %d · Subagents %d · Web %d", stats.Tools, stats.Searches, stats.Agents, stats.Web), fmt.Sprintf("Edits %d · Checks %d · Commits %d · Errors %s", stats.Edits, stats.Checks, stats.Commits, errors), "Verification " + verification, loopRow},
 			{usage[0], location, "Context " + context, tokens + " · " + quota, work},
-			{cully[0], fmt.Sprintf("Calls %d observed", stats.Cully.Calls) + " · Auth " + observedState(stats.Cully.Auth, true), fmt.Sprintf("Log %d · Context %d · Recall %d · Search %d · Get %d · Other %d", stats.Cully.Log, stats.Cully.Context, stats.Cully.Recall, stats.Cully.Search, stats.Cully.Get, stats.Cully.Other)},
+			append([]string{cully[0]}, cully[2:]...),
 		}
 		for i, group := range groups {
 			if i > 0 {
@@ -676,26 +676,42 @@ func compactInstrumentRows(cols int, stats toolStats, view sessionView) ([]strin
 	return rows, context
 }
 
+// cullyInstrumentRows is the Cully column of the panel. It leads with what
+// Cully did for the user (memory used, analyses avoided, loops caught, net
+// tokens) and keeps MCP health and authentication to one compact line.
 func cullyInstrumentRows(stats toolStats, width int) []string {
 	c := stats.Cully
 	health := dim + "Awaiting first MCP response" + rst
+	if c.Calls > 0 {
+		health = dim + "Awaiting response evidence" + rst
+	}
 	if c.Health == "healthy" {
 		health = green + "● Healthy" + rst
 	} else if c.Health == "unhealthy" {
 		health = red + "● Unhealthy" + rst
-	} else if c.Calls > 0 {
-		health = dim + "Awaiting response evidence" + rst
 	}
-	auth := observedState(c.Auth, true)
-	rows := []string{bold + "Cully MCP" + rst + " · " + health, "", fmt.Sprintf("Calls %d observed", c.Calls), fmt.Sprintf("Log %d · Context %d · Recall %d", c.Log, c.Context, c.Recall), fmt.Sprintf("Search %d · Get %d · Other %d", c.Search, c.Get, c.Other), "Auth " + auth}
+	rows := []string{bold + "Cully impact" + rst + " · " + health, ""}
+	for _, line := range stats.Impact.Lines() {
+		switch {
+		case strings.HasPrefix(line, "Net -"):
+			line = red + bold + line + rst
+		case strings.HasPrefix(line, "Net +"):
+			line = green + bold + line + rst
+		case strings.HasPrefix(line, "Net"):
+			line = bold + line + rst
+		case strings.HasPrefix(line, "Memory not used"), strings.HasPrefix(line, "Memory checked"):
+			line = dim + line + rst
+		default:
+			line = green + "✓ " + rst + line
+		}
+		rows = append(rows, line)
+	}
+	rows = append(rows, fmt.Sprintf("MCP %d calls · Auth %s", c.Calls, observedState(c.Auth, true)))
 	if c.Foreground+c.Advisor+c.Startup > 0 {
 		rows = append(rows, fmt.Sprintf("Foreground %d · Advisor %d · Startup %d", c.Foreground, c.Advisor, c.Startup))
 	}
 	if c.SemanticRecall > 0 {
 		rows = append(rows, fmt.Sprintf("Semantic recall %d", c.SemanticRecall))
-	}
-	if c.CheckedAt != "" {
-		rows = append(rows, "Last observed "+c.CheckedAt)
 	}
 	return rows
 }

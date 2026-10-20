@@ -83,7 +83,7 @@ func TestCullyScopePanelKeepsBothCommentsAndCompleteDetails(t *testing.T) {
 	advice := []string{"CAUT|" + strings.Repeat("Inspect failures before repeating work. ", 4), "ADV|" + strings.Repeat("Run verification before finishing. ", 4)}
 	rows := compactSessionStatusRows(149, 43, advice, s, sessionView{})
 	text := normalizedCodexPanel(strings.Join(rows, "\n"))
-	for _, want := range []string{"Calls 30 observed", "Foreground 20", "Advisor 8", "Startup 2", "Semantic recall 6", "Inspect failures", "Run verification", "Open advisor"} {
+	for _, want := range []string{"MCP 30 calls", "Foreground 20", "Advisor 8", "Startup 2", "Semantic recall 6", "Inspect failures", "Run verification", "Open advisor"} {
 		if !strings.Contains(text, want) {
 			t.Fatal("compact panel lost", want, text)
 		}

@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -314,4 +315,32 @@ func RunImpact(w io.Writer, args []string) error {
 	}
 	im.Write(w, *showLog)
 	return nil
+}
+
+// impactCache avoids re-reading the ledger on every panel refresh.
+var impactCache struct {
+	sync.Mutex
+	size  int64
+	mtime time.Time
+	since time.Time
+	value Impact
+	valid bool
+}
+
+// ImpactSince is the impact of everything recorded since the given time, for
+// the panel. It re-reads the ledger only when the file changed.
+func ImpactSince(since time.Time) Impact {
+	path := impactLedgerFile()
+	info, err := os.Stat(path)
+	if err != nil {
+		return SummarizeImpact(nil, 0, 0)
+	}
+	impactCache.Lock()
+	defer impactCache.Unlock()
+	if impactCache.valid && impactCache.size == info.Size() && impactCache.mtime.Equal(info.ModTime()) && impactCache.since.Equal(since) {
+		return impactCache.value
+	}
+	value := SummarizeImpact(readImpactEvents(path, since), 0, 0)
+	impactCache.size, impactCache.mtime, impactCache.since, impactCache.value, impactCache.valid = info.Size(), info.ModTime(), since, value, true
+	return value
 }

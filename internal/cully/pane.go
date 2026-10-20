@@ -101,7 +101,12 @@ func RunPane(agentName string, args []string, input, output *os.File) error {
 	}
 	refreshSession()
 	readGitChanges(&view)
-	stats := readToolStats(session)
+	loadStats := func() toolStats {
+		s := readToolStats(session)
+		s.Impact = ImpactSince(view.Started)
+		return s
+	}
+	stats := loadStats()
 	view.Loops, _ = sessionLoops(currentDir(), session)
 	advice := combinedAdvice(session, stats, view)
 	var divider paneDivider
@@ -441,7 +446,7 @@ func RunPane(agentName string, args []string, input, output *os.File) error {
 		refreshSession()
 		readFooter()
 		persistSession()
-		stats = readToolStats(session)
+		stats = loadStats()
 		view.Loops, _ = sessionLoops(currentDir(), session)
 		advice = combinedAdvice(session, stats, view)
 		content = statusRows()
@@ -490,7 +495,7 @@ func RunPane(agentName string, args []string, input, output *os.File) error {
 			if !ok {
 				if dirty {
 					readFooter()
-					stats = readToolStats(session)
+					stats = loadStats()
 					view.Loops, _ = sessionLoops(currentDir(), session)
 					advice = combinedAdvice(session, stats, view)
 					content = statusRows()
@@ -529,7 +534,7 @@ func RunPane(agentName string, args []string, input, output *os.File) error {
 				readGitChanges(&view)
 				lastBeat = time.Now()
 			}
-			stats = readToolStats(session)
+			stats = loadStats()
 			readFooter()
 			if agent.Name == "claude" {
 				readClaudeContext(session, &view)

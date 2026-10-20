@@ -126,3 +126,40 @@ func TestSkippedAnalysisIsCreditedWithTheTokensItAvoided(t *testing.T) {
 		t.Fatalf("skipped=%d avoided=%d", im.AnalysesSkipped, im.AnalysisTokensAvoided)
 	}
 }
+
+func TestPanelLeadsWithWinsInsteadOfLastToolCall(t *testing.T) {
+	stats := toolStats{Cully: cullyStats{Calls: 12, Health: "healthy", Auth: "authenticated", CheckedAt: "2026-10-07T12:34:56Z"}}
+	stats.Impact = SummarizeImpact([]impactEvent{
+		{Kind: impactMemoryHit, Tokens: 100, At: time.Now()},
+		{Kind: impactAnalysisSkipped, Tokens: 1350, At: time.Now()},
+		{Kind: impactLoopCaught, At: time.Now()},
+	}, 0, 0)
+	view := sessionView{Project: "/work/cully", Daemon: true, Started: time.Now()}
+	for _, cols := range []int{149, 80} {
+		text := normalizedCodexPanel(strings.Join(compactSessionStatusRows(cols, 43, nil, stats, view), "\n"))
+		for _, want := range []string{"Cully impact", "Memory used 1×", "Analysis avoided 1×", "Loops caught 1", "Net +", "MCP 12 calls"} {
+			if !strings.Contains(text, want) {
+				t.Errorf("cols=%d panel lacks %q:\n%s", cols, want, text)
+			}
+		}
+		if strings.Contains(text, "2026-10-07T12:34:56Z") || strings.Contains(text, "Last observed") {
+			t.Errorf("cols=%d panel still shows the last tool call timestamp", cols)
+		}
+	}
+}
+
+func TestImpactSinceCachesUntilTheLedgerChanges(t *testing.T) {
+	t.Setenv("CLAUDE_CONFIG_DIR", t.TempDir())
+	since := time.Now().Add(-time.Hour)
+	if im := ImpactSince(since); im.MemoryHits != 0 {
+		t.Fatalf("no ledger yet: %+v", im)
+	}
+	recordImpact("s", impactMemoryHit, "cully_context", 50)
+	if im := ImpactSince(since); im.MemoryHits != 1 {
+		t.Fatalf("new event not seen: %+v", im)
+	}
+	recordImpact("s", impactMemoryHit, "cully_context", 50)
+	if im := ImpactSince(since); im.MemoryHits != 2 {
+		t.Fatalf("second event not seen: %+v", im)
+	}
+}
