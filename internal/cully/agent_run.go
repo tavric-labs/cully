@@ -17,6 +17,9 @@ func RunAgent(name string, args []string, input, output, stderr *os.File) error 
 		return err
 	}
 	if os.Getenv("CULLY_NO_PANE") != "1" && term.IsTerminal(int(input.Fd())) && term.IsTerminal(int(output.Fd())) && !agentUtilityCommand(agent.Name, args) {
+		if err := MaybeWorkflowOnboarding(input, output); err != nil {
+			return err
+		}
 		return agentRunResult(RunPane(name, args, input, output))
 	}
 	cmd := exec.Command(agent.Binary, args...)

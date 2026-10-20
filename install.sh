@@ -238,6 +238,7 @@ say 'Then verify: command -v cully; cully version'
 say 'If a different version still appears, run type -a cully to check other paths, aliases, or functions.'
 say "Expected binary: $BIN_DIR/cully; expected version: $new_ver"
 say 'Only ~/.local/bin/cully contains the installed binary; agent symlinks use that same version on every upgrade.'
+say 'Your first interactive Cully launch offers an optional dev-workflow-rules skill for your codebases, workflow and infrastructure boundaries. You can skip it or run cully workflow later.'
 if [ -n "$mcp_url" ]; then
   set -- setup --mcp-url "$mcp_url"
   [ -z "$agent" ] || set -- "$@" --agent "$agent"

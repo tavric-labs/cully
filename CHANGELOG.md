@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Add `cully update` with release checks, version selection, checksum verification and atomic CLI replacement; keep existing agent links, restart a running local advisor and direct service upgrades to deployment docs.
+- Offer a skippable first-run `dev-workflow-rules` skill with a reviewed private profile of codebases, workflow, infrastructure aliases and access boundaries; use bounded, redacted context in advisor analysis and support later creation with `cully workflow`.
+- Connect terminal mouse hover and drag handling to the divider highlight and resize-cursor request; restore the default cursor when leaving the bar or opening the advisor.
 - Add `deploy/migrate-registry-namespace.sh` to move an installed VM's website, docs and personal-data controllers to the `ghcr.io/tavric-labs` image namespace: dry-run report, snapshot, local image retag and controller install, with sandbox tests.
 ## 0.15.0
 

@@ -340,6 +340,8 @@ func RunPane(agentName string, args []string, input, output *os.File) error {
 				}
 				resizeMode = !resizeMode
 				divider.Dragging = false
+				divider.Hover = false
+				setPointer(false)
 				syncMouseTracking()
 				dirty = true
 				continue
@@ -347,12 +349,16 @@ func RunPane(agentName string, args []string, input, output *os.File) error {
 			if resizeMode && key.Action == "escape" && !drawer.Open {
 				resizeMode = false
 				divider.Dragging = false
+				divider.Hover = false
+				setPointer(false)
 				syncMouseTracking()
 				dirty = true
 				continue
 			}
 			if key.Action == "focus" {
 				divider.Dragging = false
+				divider.Hover = false
+				setPointer(false)
 				if drawer.Open {
 					if cancelPreview != nil {
 						cancelPreview()
@@ -367,9 +373,18 @@ func RunPane(agentName string, args []string, input, output *os.File) error {
 			}
 			if key.Mouse != nil {
 				mouse := key.Mouse
+				if !drawer.Open {
+					if motion, changed := divider.hover(mouse, rows, top); motion {
+						setPointer(divider.Hover || divider.Dragging)
+						dirty = dirty || changed
+						continue
+					}
+				}
 				if !drawer.Open && divider.handle(mouse, rows, top) {
 					content = statusRows()
 					resizeChild()
+					divider.Hover = mouse.Y == top+1
+					setPointer(divider.Dragging || divider.Hover)
 					dirty = true
 					continue
 				}
@@ -380,6 +395,8 @@ func RunPane(agentName string, args []string, input, output *os.File) error {
 				if !mouse.Release {
 					if !drawer.Open && mouse.Button == 0 && mouse.Y > top {
 						drawer.open(advice)
+						divider.Hover = false
+						setPointer(false)
 						syncMouseTracking()
 					} else if drawer.Open {
 						switch mouse.Button {

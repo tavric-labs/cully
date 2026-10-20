@@ -24,6 +24,8 @@ Usage:
                                          Use an existing server; set up integrations and advisor
   cully uninstall [--purge-data]           Stop local stack and remove managed agent setup
   cully uninstall [claude|codex|cursor|all] Remove one or all agent integrations
+  cully update [--check] [--version TAG]   Update this machine's CLI and running advisor
+  cully workflow [--skip]                Create optional dev-workflow-rules skill
   cully status [directory]                Show session and agent status
   cully rescue [--cwd DIR] [--agent claude|codex|cursor] [--no-ai]
                                           Diagnose a stuck session from recorded evidence
@@ -64,6 +66,25 @@ func main() {
 }
 
 func run(args []string) error {
+	// Only foreground entry points may ask first-run questions; utility calls,
+	// workers, redirected streams and native agent commands keep their IO.
+	onboard := len(args) == 0
+	if len(args) > 0 {
+		switch args[0] {
+		case "setup", "status":
+			onboard = true
+			for _, arg := range args[1:] {
+				if arg == "--help" || arg == "-h" {
+					onboard = false
+				}
+			}
+		}
+	}
+	if onboard {
+		if err := cully.MaybeWorkflowOnboarding(os.Stdin, os.Stdout); err != nil {
+			return err
+		}
+	}
 	if len(args) == 0 {
 		fmt.Print(help)
 		return nil
@@ -75,6 +96,10 @@ func run(args []string) error {
 		return runSetup(args[1:])
 	case "uninstall":
 		return runUninstall(args[1:])
+	case "update":
+		return cully.RunUpdate(os.Stdout, version, args[1:])
+	case "workflow":
+		return cully.RunWorkflowOnboarding(os.Stdin, os.Stdout, args[1:])
 	case "status":
 		if len(args) > 2 {
 			return fmt.Errorf("usage: cully status [directory]")
