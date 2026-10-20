@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Replace the panel's leftmost "Model & activity" counters (tools, searches, subagents, web, edits, checks, commits) with a Harness column: setup readiness with named gaps, the project's measured oversized-output tokens per session, the model, pending verification, and loops. Errors appear only when non-zero, and unavailable quota and Git placeholders are hidden.
 - Require the advisor to cite measured numbers (big_results tokens, full_file_reads, big_bash, top_output_tool) in every token-spend line and token TOOLGAP; without them it emits the no-action MEMO line and keeps no token lesson.
 - Add `cully harness`, a read-only audit of the agent setup (instructions, guardrails, memory, skills, subagents, hooks, plugins) with one suggestion per gap, inspired by the component model in Google Research's Harness². It reads file names and config keys only, and reports measured oversized-output tokens per session from recent transcripts as a before/after baseline, without claiming causation.
 

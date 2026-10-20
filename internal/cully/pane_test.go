@@ -158,7 +158,7 @@ if [ "$1" -lt 33 ]; then exit 2; fi
 	select {
 	case got := <-output:
 		plain := normalizedCodexPanel(got)
-		for _, want := range []string{"codex child", "Cully", "Tools 2", "73% left", "GPT-6.1-Sol medium"} {
+		for _, want := range []string{"codex child", "Cully", "Setup ", "73% left", "GPT-6.1-Sol medium"} {
 			if !strings.Contains(plain, want) {
 				t.Fatalf("pane missing %q", want)
 			}

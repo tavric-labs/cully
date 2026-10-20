@@ -576,11 +576,14 @@ func compactInstrumentRows(cols int, stats toolStats, view sessionView) ([]strin
 	if stats.EditsSinceCheck > 0 {
 		verification = yellow + fmt.Sprintf("%d edits need check", stats.EditsSinceCheck) + rst
 	}
-	activity := []string{bold + "Model & activity" + rst, "", "Model " + model, fmt.Sprintf("Tools %d · Searches %d · Subagents %d · Web %d", stats.Tools, stats.Searches, stats.Agents, stats.Web), fmt.Sprintf("Edits %d · Checks %d · Commits %d · Errors %s", stats.Edits, stats.Checks, stats.Commits, errors), "Verification " + verification}
-	loopRow := ""
+	activity := []string{bold + "Harness" + rst, "", "Model " + model}
+	activity = append(activity, harnessPanelRows(harnessPanel(view.Project))...)
+	activity = append(activity, "Verification "+verification)
+	if stats.Errors > 0 {
+		activity = append(activity, "Errors "+errors)
+	}
 	if view.Loops.Active() {
-		loopRow = "Loops " + yellow + view.Loops.Summary() + rst
-		activity = append(activity, loopRow)
+		activity = append(activity, "Loops "+yellow+view.Loops.Summary()+rst)
 	}
 	location := dim + "Project unavailable" + rst
 	if view.Project != "" {
@@ -601,7 +604,7 @@ func compactInstrumentRows(cols int, stats toolStats, view sessionView) ([]strin
 	if view.Input != "" || view.Output != "" {
 		tokens = "Tokens in " + instrument(view.Input) + " / out " + instrument(view.Output)
 	}
-	quota := dim + "5h / Weekly unavailable" + rst
+	quota := ""
 	if view.FiveHour != "" || view.Weekly != "" {
 		weekly := view.Weekly
 		for _, prefix := range []string{"Weekly ", "Week ", "7d "} {
@@ -619,10 +622,7 @@ func compactInstrumentRows(cols int, stats toolStats, view sessionView) ([]strin
 		work = "Fast " + instrument(strings.TrimPrefix(view.Fast, "Fast ")) + " · " + work
 	}
 	if !view.ChangesKnown && (!showFast || view.Fast == "") {
-		work = dim + "Git unavailable" + rst
-		if showFast {
-			work = dim + "Fast / Git unavailable" + rst
-		}
+		work = ""
 	}
 	usage := []string{bold + "Project & usage" + rst, "", location, "Context " + context, tokens, quota, work}
 	cully := cullyInstrumentRows(stats, width)
@@ -655,8 +655,8 @@ func compactInstrumentRows(cols int, stats toolStats, view sessionView) ([]strin
 		// normal narrow terminal still leaves most rows to the conversation.
 		rows = rows[:len(rows)-1] // title and first group belong to one section
 		groups = [][]string{
-			{activity[0], "Model " + model, fmt.Sprintf("Tools %d · Searches %d · Subagents %d · Web %d", stats.Tools, stats.Searches, stats.Agents, stats.Web), fmt.Sprintf("Edits %d · Checks %d · Commits %d · Errors %s", stats.Edits, stats.Checks, stats.Commits, errors), "Verification " + verification, loopRow},
-			{usage[0], location, "Context " + context, tokens + " · " + quota, work},
+			append([]string{activity[0]}, activity[2:]...),
+			{usage[0], location, "Context " + context, strings.TrimSuffix(tokens+" · "+quota, " · "), work},
 			append([]string{cully[0]}, cully[2:]...),
 		}
 		for i, group := range groups {
