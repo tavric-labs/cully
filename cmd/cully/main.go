@@ -28,6 +28,8 @@ Usage:
   cully rescue [--cwd DIR] [--agent claude|codex|cursor] [--no-ai]
                                           Diagnose a stuck session from recorded evidence
   cully suggestions                       Review suggested improvements
+  cully impact [--days N] [--log]         What Cully saved and cost: memory used, analyses avoided, loops caught
+  cully savings [--days N]                Measure token cost against exploration avoided, from transcripts
   cully task [NAME]                       Show or set the session task (--clear removes it)
   cully workspace --mcp-url URL --input FILE
                                          Team tasks, handoffs, review and shared lessons (OAuth)
@@ -92,6 +94,8 @@ func run(args []string) error {
 		return runWorkspace(args[1:])
 	case "suggestions":
 		cully.RunList(os.Stdout)
+	case "impact":
+		return cully.RunImpact(os.Stdout, args[1:])
 	case "savings":
 		return cully.RunSavings(os.Stdout, args[1:])
 	case "run":

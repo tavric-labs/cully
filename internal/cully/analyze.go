@@ -110,6 +110,7 @@ type Signals struct {
 	AvailablePlugins    string
 	RecentPrompts       []string
 	TokenWaste          string
+	WasteTokens         int64 // oversized output, set only when it is significant
 }
 
 // RunAnalyze implements the Stop hook: gather cheap cully signals, throttle by
@@ -133,11 +134,16 @@ func RunAnalyze(r io.Reader) {
 	k := analyzeCadence(n)
 	if n > 3 && n%k != 0 {
 		logf(in.SessionID, "analyze: turn %d (cadence k=%d) — skip", n, k)
+		// Analysing every prompt would resend the instructions and signals each time.
+		recordImpact(in.SessionID, impactAnalysisSkipped, "", approxTokens(len(sharedAdvisorInstructions))+typicalSignalTokens)
 		return
 	}
 	logf(in.SessionID, "analyze: turn %d (cadence k=%d) — run", n, k)
 
 	sig := collectSignals(in, n)
+	if sig.WasteTokens > 0 {
+		recordImpact(in.SessionID, impactWasteFlagged, "", sig.WasteTokens)
+	}
 	writeSnapshot(in.SessionID, buildSnapshot(sig, "", in.SessionID, in.Cwd))
 	spawnWorker(formatSignals(sig), in.SessionID, in.Cwd)
 }
@@ -304,7 +310,12 @@ func collectSignals(in stopInput, turns int) Signals {
 	}
 
 	waste.finish(ctxTokens)
+	var wasteTokens int64
+	if waste.Significant() {
+		wasteTokens = int64(waste.BigTokens)
+	}
 	return Signals{
+		WasteTokens:         wasteTokens,
 		Turns:               turns,
 		Model:               fallback(lastModel, "?"),
 		ApproxContextTokens: ctxTokens,
