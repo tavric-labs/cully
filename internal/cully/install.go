@@ -120,14 +120,6 @@ func codingAgentInstalled(id string) bool {
 	return ok && (dirExists(spec.ConfigDir()) || commandExists(spec.Binary) || commandExists(spec.ID))
 }
 
-func codingAgentPresent(id, cwd string) bool {
-	spec, ok := lookupAgentSpec(id)
-	if !ok {
-		return false
-	}
-	return spec.Present(cwd)
-}
-
 func commandExists(name string) bool {
 	_, err := exec.LookPath(name)
 	return err == nil
@@ -661,14 +653,9 @@ func mdcFrontmatterOnly(text string) bool {
 }
 
 func codexAgentInstructions() string {
-	return strings.ReplaceAll(legacyCodexAgentInstructions(), "Use the shared project skill at `.cully/skills/cully/SKILL.md`", "Use the user-level Cully skill at `"+filepath.Join(CodexConfigDir(), "skills", "cully", "SKILL.md")+"`")
-}
-
-// Kept for exact-match migration of older, generated project instructions.
-func legacyCodexAgentInstructions() string {
 	return `## Cully
 
-- Use the shared project skill at ` + "`.cully/skills/cully/SKILL.md`" + ` for Cully session controls.
+- Use the user-level Cully skill at ` + "`" + filepath.Join(CodexConfigDir(), "skills", "cully", "SKILL.md") + "`" + ` for Cully session controls.
 - In Codex, use /prompts:cully (or type /cully and select the saved cully prompt) for the in-session cully command.
 - For each substantive task, find relevant prior work with Cully MCP and save one concise work summary before finishing. Follow the Cully skill for project identity, owner section, and private-data rules.
 - Use the configured Cully MCP tools for shared personal and project memory.`

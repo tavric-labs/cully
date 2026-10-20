@@ -443,19 +443,14 @@ func TestInstallCodexAndCursorUserFiles(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	// Uninstall from a third project; legacy repository files must stay untouched.
+	// Uninstall from another project; it must not create project files.
 	project := t.TempDir()
 	t.Chdir(project)
-	if err := upsertManagedSection(filepath.Join(project, "AGENTS.md"), "codex", legacyCodexAgentInstructions()); err != nil {
-		t.Fatal(err)
-	}
-	before, _ := os.ReadFile(filepath.Join(project, "AGENTS.md"))
 	if err := Uninstall("codex", "cursor"); err != nil {
 		t.Fatal(err)
 	}
-	after, _ := os.ReadFile(filepath.Join(project, "AGENTS.md"))
-	if string(before) != string(after) {
-		t.Fatal("uninstall modified legacy project instructions")
+	if entries, err := os.ReadDir(project); err != nil || len(entries) != 0 {
+		t.Fatalf("uninstall changed project: %v, %v", entries, err)
 	}
 	agents, err = os.ReadFile(codexInstructionsPath())
 	if err != nil || string(agents) != custom {

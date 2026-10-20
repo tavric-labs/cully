@@ -20,20 +20,6 @@ Run setup once for your user account, from any directory. It configures selected
 
 Agent paths honor `CLAUDE_CONFIG_DIR`, `CODEX_HOME` and `CURSOR_CONFIG_DIR`. Existing user instructions outside Cully's marked section, unrelated settings, and commands or skills owned by the user are preserved. Setup detects installed agents from executables and user configuration, rather than files in the current repository. Codex's [global instruction discovery](https://learn.chatgpt.com/docs/agent-configuration/agents-md) applies its managed guidance across repositories.
 
-### Migrate older project installs
-
-After upgrading the CLI, rerun setup with the same server options and explicitly name a project to clean up:
-
-```sh
-cully setup --agent all --all --migrate-project /path/to/project
-# For an existing server instead:
-cully setup --agent all --mcp-url URL --migrate-project /path/to/project
-```
-
-Add `--oauth` if that server requires sign-in. Migration runs after user-level setup succeeds. It removes only unchanged legacy Cully skill and Cursor command files and the unchanged Cully section of the project's `AGENTS.md`. It preserves surrounding instructions, modified files, symlinks and unrelated files, and removes only empty directories. Review any reported preserved files manually; older skill versions may differ from the current built-in copy. Review the Git diff if those generated files were previously committed. `--prepare` cannot migrate a project.
-
-Ordinary setup and uninstall leave existing project files alone. Applying an explicitly reviewed advisor suggestion can still update project instructions or skills; that is separate from installation.
-
 ## macOS
 
 For the full local memory stack, install and start Docker Desktop before running the installer from the [quickstart](/quickstart). The [remote MCP path](#connect-to-a-remote-memory-stack) does not need Docker. The installer clears the download quarantine flag on the `cully` binary. Open a new terminal afterwards so your zsh startup file is reloaded.

@@ -109,7 +109,7 @@ func TestCodingAgentsFromCatalog(t *testing.T) {
 	if len(claude.MCPFiles) != 3 {
 		t.Fatalf("claude MCP files = %q", claude.MCPFiles)
 	}
-	if codingAgentPresent("nope", cwd) {
-		t.Fatal("unknown agent present")
+	if codingAgentInstalled("nope") {
+		t.Fatal("unknown agent installed")
 	}
 }

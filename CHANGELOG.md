@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Make agent setup and uninstall user-wide across projects: install Codex instructions and Cursor commands in user configuration, detect agents independently of repository files, and add explicit `--migrate-project DIR` cleanup that preserves modified legacy files. Remove the tracked generated project skill, ignore local `.cully` state, and update setup documentation and website guidance.
+- Make agent setup and uninstall user-wide across projects: install Codex instructions and Cursor commands in user configuration, detect agents independently of repository files. Remove the tracked generated project skill, ignore local `.cully` state, and update setup documentation and website guidance.
 
 - Shorten the README around Cully’s value, first-run setup and core capabilities, with detailed behavior linked to the guides.
 

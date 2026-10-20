@@ -30,7 +30,7 @@ The Cursor editor itself is not a terminal program, so the Cully terminal wraps 
 
 ## What setup installs
 
-All integrations live in the selected agent’s user configuration and work across local projects. Setup does not create project files. See [user-level paths and migration](/installation#one-setup-across-projects).
+All integrations live in the selected agent’s user configuration and work across local projects. Setup does not create project files. See [user-level paths](/installation#one-setup-across-projects).
 
 | Agent | Installed by `cully setup --all` |
 | --- | --- |
