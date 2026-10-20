@@ -200,8 +200,16 @@ esac
 					t.Fatalf("explicit Codex setup modified Cursor: %v", err)
 				}
 			}
-			if _, err := os.Stat(filepath.Join(project, "AGENTS.md")); err != nil {
-				t.Fatalf("missing project integration: %v", err)
+			if _, err := os.Stat(filepath.Join(root, ".codex", "AGENTS.md")); err != nil {
+				t.Fatalf("missing user-level integration: %v", err)
+			}
+			if entries, err := os.ReadDir(project); err != nil || len(entries) != 0 {
+				t.Fatalf("setup changed project: %v, %v", entries, err)
+			}
+			if len(test.agents) > 1 {
+				if _, err := os.Stat(filepath.Join(root, ".cursor", "commands", "cully.md")); err != nil {
+					t.Fatal(err)
+				}
 			}
 			if _, err := os.Stat(filepath.Join(setupDir, "AGENTS.md")); !os.IsNotExist(err) {
 				t.Fatalf("integration written to downloaded stack: %v", err)
@@ -215,8 +223,15 @@ esac
 			if err != nil {
 				t.Fatal(err)
 			}
+			project = filepath.Join(root, "another project")
+			if err := os.MkdirAll(project, 0o700); err != nil {
+				t.Fatal(err)
+			}
 			if output, err := runCLI(append([]string{"setup"}, args...)...); err != nil {
-				t.Fatalf("repeat setup: %v: %s", err, output)
+				t.Fatalf("repeat setup from another project: %v: %s", err, output)
+			}
+			if entries, err := os.ReadDir(project); err != nil || len(entries) != 0 {
+				t.Fatalf("repeat setup changed project: %v, %v", entries, err)
 			}
 			repeatedPID, err := os.ReadFile(pidPath)
 			if err != nil || string(pid) != string(repeatedPID) {

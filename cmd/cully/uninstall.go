@@ -39,11 +39,6 @@ func runUninstall(args []string) error {
 	if err := cully.Uninstall("all"); err != nil {
 		return err
 	}
-	if cwd, err := os.Getwd(); err == nil {
-		if err := cully.RemoveSharedSkillIfUnchanged(cwd); err != nil {
-			return err
-		}
-	}
 	base, err := selfHostedBase()
 	if err != nil {
 		return err

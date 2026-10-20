@@ -30,11 +30,13 @@ The Cursor editor itself is not a terminal program, so the Cully terminal wraps 
 
 ## What setup installs
 
+All integrations live in the selected agent’s user configuration and work across local projects. Setup does not create project files. See [user-level paths](/installation#one-setup-across-projects).
+
 | Agent | Installed by `cully setup --all` |
 | --- | --- |
 | Claude Code | Session and stop hooks, an asynchronous tool-event hook for the terminal, a status line that feeds the terminal panel (and shows itself when you run Claude outside the terminal), a `/cully` command and the Cully skill. |
-| Codex | A session-start hook, an asynchronous tool-event hook, a `/prompts:cully` prompt, managed `AGENTS.md` guidance and the skill. Codex's native footer settings stay yours. |
-| Cursor | Continuity hooks, asynchronous shell, file-edit and MCP hooks for the terminal, a project `/cully` command and the skill. |
+| Codex | A session-start hook, an asynchronous tool-event hook, a `/prompts:cully` prompt, managed user-level `AGENTS.md` guidance and the skill. Codex's native footer settings stay yours. |
+| Cursor | Continuity hooks, asynchronous shell, file-edit and MCP hooks for the terminal, a user-level `/cully` command and the skill. |
 
 The tool-event hooks send one small event per tool call to the local [session journal](/privacy), and only while the agent runs inside the Cully terminal. They store no prompts, commands or tool output. See [privacy](/privacy).
 

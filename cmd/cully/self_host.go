@@ -79,11 +79,7 @@ func runSelfHost(agent string, oauth, prepare bool) error {
 	if err != nil {
 		return err
 	}
-	cwd, err := os.Getwd()
-	if err != nil {
-		return err
-	}
-	command.Env = append(os.Environ(), "CULLY_CLI_BINARY="+executable, "CULLY_SETUP_CWD="+cwd, "BUILDKIT_PROGRESS=plain")
+	command.Env = append(os.Environ(), "CULLY_CLI_BINARY="+executable, "BUILDKIT_PROGRESS=plain")
 	command.Stdin = os.Stdin
 	command.Stdout = os.Stdout
 	command.Stderr = os.Stderr

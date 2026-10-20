@@ -39,3 +39,6 @@ build/
 /apps/**/xcuserdata/
 /apps/**/*.xcuserstate
 /apps/**/core*
+
+# User-managed Cully installation/state belongs in the user home.
+/.cully/

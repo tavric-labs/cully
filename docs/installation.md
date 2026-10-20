@@ -7,6 +7,19 @@ description: Choose an agent, set up PATH, pin a release or build Cully from sou
 
 Follow the [quickstart](/quickstart) to run the memory stack on your laptop, or [connect to a remote MCP server](#connect-to-a-remote-memory-stack) to keep only the agent integration and advisor on your machine. The installer accepts `--agent claude`, `--agent codex`, `--agent cursor` or `--agent all`; every agent uses the single binary at `~/.local/bin/cully`. Without `--mcp-url`, run `cully setup --all` after installation to start the local memory stack and advisor daemon.
 
+## One setup across projects
+
+Run setup once for your user account, from any directory. It configures selected agents in their user-level directories and starts one shared advisor. Open any project and run `cully run AGENT`; no per-project Cully folder, setup command or Git changes are needed. Sessions still derive their project identity from the active repository, so installing globally does not combine unrelated project memory or change access controls.
+
+| Files | Default location |
+| --- | --- |
+| Cully deployment settings and optional workflow profile | `~/.cully/` |
+| Claude hooks, command, skill and MCP registration | `~/.claude/` and Claude's user MCP configuration |
+| Codex hooks, prompt, skill, MCP registration and managed instructions | `~/.codex/`; instructions in `AGENTS.md`, or an existing `AGENTS.override.md` |
+| Cursor hooks, command, skill and MCP registration | `~/.cursor/` |
+
+Agent paths honor `CLAUDE_CONFIG_DIR`, `CODEX_HOME` and `CURSOR_CONFIG_DIR`. Existing user instructions outside Cully's marked section, unrelated settings, and commands or skills owned by the user are preserved. Setup detects installed agents from executables and user configuration, rather than files in the current repository. Codex's [global instruction discovery](https://learn.chatgpt.com/docs/agent-configuration/agents-md) applies its managed guidance across repositories.
+
 ## macOS
 
 For the full local memory stack, install and start Docker Desktop before running the installer from the [quickstart](/quickstart). The [remote MCP path](#connect-to-a-remote-memory-stack) does not need Docker. The installer clears the download quarantine flag on the `cully` binary. Open a new terminal afterwards so your zsh startup file is reloaded.

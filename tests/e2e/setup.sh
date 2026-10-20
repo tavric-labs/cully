@@ -65,6 +65,9 @@ fi
 
 # This must work from a clean home without running --prepare first. The CLI
 # downloads the matching public release archive and runs its setup script.
+project_dir="$e2e_root/project"
+mkdir -p "$project_dir"
+cd "$project_dir"
 "$cli" setup --all
 curl --fail --retry 12 --retry-delay 2 --retry-all-errors http://127.0.0.1:3393/healthz
 test -f "$CULLY_CONFIG_PATH"
@@ -73,7 +76,10 @@ grep -Fq '[mcp_servers.cully]' "$CODEX_HOME/config.toml"
 grep -Fq 'http://127.0.0.1:3393/mcp' "$CODEX_HOME/config.toml"
 "$cli" status | tee "$e2e_root/status"
 grep -Fq 'cully advisor daemon running' "$e2e_root/status"
-test -f "$HOME/AGENTS.md"
+test -f "$CODEX_HOME/AGENTS.md"
+test ! -e "$project_dir/AGENTS.md"
+test ! -e "$project_dir/.cully"
+test ! -e "$project_dir/.cursor"
 test ! -f "$stack_dir/AGENTS.md"
 "$cli" suggestions
 
@@ -90,6 +96,7 @@ test ! -e "$cli"
 test ! -e "$CULLY_CONFIG_PATH"
 test ! -e "$HOME/.cully/self-hosted"
 test ! -e "$CODEX_HOME/skills/cully/SKILL.md"
+test ! -e "$CODEX_HOME/AGENTS.md"
 if [[ -f "$CODEX_HOME/config.toml" ]]; then
   ! grep -Fq '[mcp_servers.cully]' "$CODEX_HOME/config.toml"
 fi

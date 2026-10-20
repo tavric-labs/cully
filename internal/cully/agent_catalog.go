@@ -148,7 +148,7 @@ func buildAgentCatalog() []agentSpec {
 				cursorDir := CursorConfigDir()
 				return agentConfigPaths{
 					ProjectDirs: []string{sharedSkillRoot(cwd), filepath.Join(cwd, ".cursor", "commands")},
-					UserDirs:    []string{filepath.Join(cursorDir, "rules")},
+					UserDirs:    []string{filepath.Join(cursorDir, "rules"), filepath.Join(cursorDir, "skills"), filepath.Join(cursorDir, "commands")},
 					MCPFiles:    []string{filepath.Join(cwd, ".cursor", "mcp.json"), filepath.Join(cursorDir, "mcp.json")},
 				}
 			},
