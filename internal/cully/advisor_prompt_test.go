@@ -67,3 +67,32 @@ func TestAdvisorSourceTrimsPunctuation(t *testing.T) {
 		}
 	}
 }
+
+func TestSuggestionsRequestPrintsGuardedRequestForNumberedFix(t *testing.T) {
+	t.Setenv("CLAUDE_CONFIG_DIR", t.TempDir())
+	t.Setenv("CULLY_SESSION", "")
+	t.Setenv("CLAUDE_SESSION_ID", "")
+	if err := writeReportLines("sess-req", "/proj/a", []string{"ADV|🔌 Configure Graphify for this repo to cut repeated reads. https://github.com/safishamsi/graphify"}); err != nil {
+		t.Fatal(err)
+	}
+	var out strings.Builder
+	if err := RunSuggestions(&out, []string{"--request", "1"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"Configure Graphify", "Source to check: https://github.com/safishamsi/graphify", "wait for my OK", "how to undo it"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("request lacks %q:\n%s", want, out.String())
+		}
+	}
+	if err := RunSuggestions(&out, []string{"--request", "2"}); err == nil || !strings.Contains(err.Error(), "only 1 available") {
+		t.Fatalf("out-of-range fix accepted: %v", err)
+	}
+	if err := RunSuggestions(&out, []string{"extra"}); err == nil {
+		t.Fatal("stray argument accepted")
+	}
+	// Plain `suggestions` still lists, and advertises the new route.
+	var list strings.Builder
+	if err := RunSuggestions(&list, nil); err != nil || !strings.Contains(list.String(), "cully suggestions --request <n>") {
+		t.Fatalf("%v\n%s", err, list.String())
+	}
+}

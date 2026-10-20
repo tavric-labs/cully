@@ -28,6 +28,10 @@ When `t3` is on your PATH, `cully setup` prints a reminder of this page.
 - Each session records its own agent session id, so you can tell which agent did what and resume it.
 - In a [team workspace](/team-workflows), agents in T3 Code claim and hand off tasks like any other client.
 
+## Act on advisor suggestions
+
+The advisor drawer's Enter key is part of the [Cully terminal](/terminal), so it is not there. The same request is one command away: ask your agent to run `cully suggestions` and then `cully suggestions --request 1`. The Cully skill tells the agent to follow the request it prints, which asks it to inspect the repository first, make the smallest change, ask before installing anything or using the network or your credentials, and explain how to undo it. Suggestions exist only when the agent's hooks have analysed the session; outside the Cully terminal Claude Code does this, while Codex and Cursor supply fewer signals.
+
 ## What you don't get
 
 The health bar, advisor panel, loop detection and replay come from the [Cully terminal](/terminal), which wraps an agent in a terminal. T3 Code draws its own interface, so those stay available only through `cully run`. Hooks that send tool events do so only inside the Cully terminal, so nothing extra is recorded in T3 Code. See [privacy](/privacy).

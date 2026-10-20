@@ -88,6 +88,7 @@ Review the preview. To apply it, run `cully apply 1` and confirm the proposed ch
 | --- | --- |
 | `cully status [directory]` | Shows session warnings and integration state for the current or specified directory. |
 | `cully suggestions` | Lists improvements and informational notes. |
+| `cully suggestions --request <n>` | Prints the guarded setup request for a numbered improvement, the same one Enter adds to your prompt in the advisor drawer. Use it in a client without the Cully terminal. |
 | `cully apply <n> --dry-run` | Previews a numbered improvement. |
 | `cully apply <n>` | Applies one after confirmation. |
 | `cully setup --all [--agent AGENT]` | Starts the local stack, installs agent integrations and starts the advisor; detects agents by default. |
