@@ -4,6 +4,8 @@
 
 ## 0.18.0
 
+- Add a retrieval eval for Cully memory: a deterministic dataset of relevant notes, same-project distractors and other-project notes, scored for recall, precision, ranking, silence and cross-project leakage. `TestRetrievalEval` runs it against the live MCP stack (text search gated, semantic recall reported) as part of the end-to-end setup check.
+
 - Make agent setup and uninstall user-wide across projects: install Codex instructions and Cursor commands in user configuration, detect agents independently of repository files. Remove the tracked generated project skill, ignore local `.cully` state, and update setup documentation and website guidance.
 
 - Shorten the README around Cully’s value, first-run setup and core capabilities, with detailed behavior linked to the guides.
