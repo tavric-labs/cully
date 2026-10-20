@@ -52,6 +52,15 @@ func dirHasEntries(path string) bool {
 	return err == nil && len(entries) > 0
 }
 
+// under joins parts onto root, or returns "" (which nothing reads) when root
+// is unset, so an empty directory never resolves relative to the working one.
+func under(root string, parts ...string) string {
+	if root == "" {
+		return ""
+	}
+	return filepath.Join(append([]string{root}, parts...)...)
+}
+
 func auditHarness(d harnessDirs) []harnessItem {
 	claudeSettings := filepath.Join(d.Claude, "settings.json")
 	codexConfig := filepath.Join(d.Codex, "config.toml")
@@ -75,8 +84,29 @@ func auditHarness(d harnessDirs) []harnessItem {
 	if strings.Contains(codex, "cully") {
 		memory = append(memory, codexConfig)
 	}
+	for _, p := range []string{
+		under(d.Project, ".mcp.json"),
+		under(filepath.Dir(d.Claude), ".claude.json"), under(d.Claude, ".claude.json"),
+		under(d.Cursor, "mcp.json"), under(d.Project, ".cursor", "mcp.json"),
+	} {
+		if strings.Contains(readCapped(p), "cully") {
+			memory = append(memory, p)
+		}
+	}
 	if strings.Contains(settings, `"hooks"`) {
 		hooks = append(hooks, claudeSettings)
+	}
+	for _, p := range []string{
+		under(d.Project, ".claude", "settings.json"), under(d.Project, ".claude", "settings.local.json"),
+		under(d.Cursor, "hooks.json"), under(d.Project, ".cursor", "hooks.json"),
+		under(d.Codex, "hooks.json"),
+	} {
+		if strings.Contains(readCapped(p), `"hooks"`) {
+			hooks = append(hooks, p)
+		}
+	}
+	if strings.Contains(codex, "[hooks") {
+		hooks = append(hooks, codexConfig)
 	}
 	if strings.Contains(settings, `"enabledPlugins"`) {
 		plugins = append(plugins, claudeSettings)
@@ -107,7 +137,11 @@ func auditHarness(d harnessDirs) []harnessItem {
 	instructions := firstExisting(
 		filepath.Join(d.Claude, "CLAUDE.md"), filepath.Join(d.Codex, "AGENTS.md"),
 		filepath.Join(d.Project, "CLAUDE.md"), filepath.Join(d.Project, "AGENTS.md"),
+		under(d.Project, ".cursorrules"),
 	)
+	if p := under(d.Project, ".cursor", "rules"); dirHasEntries(p) {
+		instructions = append(instructions, p)
+	}
 	return []harnessItem{
 		{"Instructions", instructions, "Add a short CLAUDE.md or AGENTS.md with build, test and review rules for this project."},
 		{"Guardrails", guard, "Set permission rules or an approval policy so risky commands need confirmation."},
@@ -234,6 +268,33 @@ func (e harnessEvidence) write(w io.Writer, days int) {
 	fmt.Fprintln(w, "  This is a baseline, not proof. Change one component, then rerun after a similar amount of work and compare tokens per session.")
 }
 
+// applyEvidence makes the Subagents and Skills gaps evidence-based. Built-in
+// Task subagents need no agents/ directory, so recorded delegations count as
+// Subagents in use; a remaining gap cites the user's own measured tokens per
+// session. It never changes what auditHarness found on disk for other items.
+func applyEvidence(items []harnessItem, ev harnessEvidence) []harnessItem {
+	out := make([]harnessItem, len(items))
+	copy(out, items)
+	for i, it := range out {
+		if it.Present() {
+			continue
+		}
+		switch it.Component {
+		case "Subagents":
+			if ev.Delegations > 0 {
+				out[i].Found = []string{fmt.Sprintf("%d delegations in recent sessions", ev.Delegations)}
+			} else if ev.BigTokens > 0 {
+				out[i].Hint = fmt.Sprintf("Bash %d and whole-file reads %d tokens per session of oversized results; define a subagent for large searches.", ev.perSession(ev.BashTokens), ev.perSession(ev.ReadTokens))
+			}
+		case "Skills":
+			if ev.ReadTokens > 0 {
+				out[i].Hint = fmt.Sprintf("Whole-file reads cost %d tokens per session; capture the repeated workflow as a skill. cully workflow creates a private dev-workflow-rules one.", ev.perSession(ev.ReadTokens))
+			}
+		}
+	}
+	return out
+}
+
 // RunHarness implements `cully harness`.
 func RunHarness(w io.Writer, args []string) error {
 	fs := flag.NewFlagSet("harness", flag.ContinueOnError)
@@ -265,7 +326,8 @@ func RunHarness(w io.Writer, args []string) error {
 		writeAllProjects(w, total, by, *days)
 		return nil
 	}
-	items := auditHarness(harnessDirs{Claude: ConfigDir(), Codex: CodexConfigDir(), Cursor: CursorConfigDir(), Project: *cwd})
+	ev := measureHarnessEvidence(*dir, projectFolderMatch(*cwd), *days, *max)
+	items := applyEvidence(auditHarness(harnessDirs{Claude: ConfigDir(), Codex: CodexConfigDir(), Cursor: CursorConfigDir(), Project: *cwd}), ev)
 	missing := 0
 	fmt.Fprintf(w, "HARNESS AUDIT  (%s)\n\n", *cwd)
 	for _, it := range items {
@@ -276,7 +338,7 @@ func RunHarness(w io.Writer, args []string) error {
 		missing++
 		fmt.Fprintf(w, "  · %-18s missing — %s\n", it.Component, it.Hint)
 	}
-	measureHarnessEvidence(*dir, projectFolderMatch(*cwd), *days, *max).write(w, *days)
+	ev.write(w, *days)
 	fmt.Fprintf(w, "\n%d of %d components configured. Read-only: only file names and config keys were checked, never contents.\n", len(items)-missing, len(items))
 	return nil
 }

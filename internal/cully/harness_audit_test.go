@@ -105,3 +105,116 @@ func TestHarnessAllProjectsRanksByOversizedOutput(t *testing.T) {
 		}
 	}
 }
+
+func TestAuditHarnessDetectsEachExtraSource(t *testing.T) {
+	cases := []struct {
+		name      string
+		component string
+		file      string // relative to the temp root
+		content   string
+	}{
+		{"project claude settings hooks", "Hooks and scripts", "proj/.claude/settings.json", `{"hooks":{}}`},
+		{"project claude local hooks", "Hooks and scripts", "proj/.claude/settings.local.json", `{"hooks":{}}`},
+		{"cursor hooks", "Hooks and scripts", "cursor/hooks.json", `{"hooks":{}}`},
+		{"project cursor hooks", "Hooks and scripts", "proj/.cursor/hooks.json", `{"hooks":{}}`},
+		{"codex hooks json", "Hooks and scripts", "codex/hooks.json", `{"hooks":{}}`},
+		{"codex toml hooks table", "Hooks and scripts", "codex/config.toml", "[hooks.stop]\n"},
+		{"project mcp json", "Memory", "proj/.mcp.json", `{"mcpServers":{"cully":{}}}`},
+		{"home claude json", "Memory", ".claude.json", `{"mcpServers":{"cully":{}}}`},
+		{"cursor mcp", "Memory", "cursor/mcp.json", `{"mcpServers":{"cully":{}}}`},
+		{"project cursor mcp", "Memory", "proj/.cursor/mcp.json", `{"mcpServers":{"cully":{}}}`},
+		{"cursorrules", "Instructions", "proj/.cursorrules", "rules"},
+		{"cursor rules dir", "Instructions", "proj/.cursor/rules/a.mdc", "rules"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			root := t.TempDir()
+			d := harnessDirs{
+				Claude: filepath.Join(root, ".claude"), Codex: filepath.Join(root, "codex"),
+				Cursor: filepath.Join(root, "cursor"), Project: filepath.Join(root, "proj"),
+			}
+			path := filepath.Join(root, c.file)
+			if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			present := func() bool {
+				for _, it := range auditHarness(d) {
+					if it.Component == c.component {
+						return it.Present()
+					}
+				}
+				t.Fatalf("no %s item", c.component)
+				return false
+			}
+			if present() {
+				t.Fatalf("%s present before any source exists", c.component)
+			}
+			if err := os.WriteFile(path, []byte(c.content), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if !present() {
+				t.Errorf("%s not detected from %s", c.component, c.file)
+			}
+		})
+	}
+}
+
+func TestAuditHarnessIgnoresUnrelatedConfigAndEmptyRules(t *testing.T) {
+	root := t.TempDir()
+	d := harnessDirs{Claude: filepath.Join(root, ".claude"), Codex: filepath.Join(root, "codex"), Cursor: filepath.Join(root, "cursor"), Project: filepath.Join(root, "proj")}
+	for _, dir := range []string{d.Claude, d.Codex, d.Cursor, filepath.Join(d.Project, ".cursor", "rules")} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	os.WriteFile(filepath.Join(d.Project, ".mcp.json"), []byte(`{"mcpServers":{"other":{}}}`), 0o600)
+	os.WriteFile(filepath.Join(d.Cursor, "hooks.json"), []byte(`{}`), 0o600)
+	for _, it := range auditHarness(d) {
+		if it.Present() {
+			t.Errorf("%s reported present: %v", it.Component, it.Found)
+		}
+	}
+}
+
+func TestApplyEvidence(t *testing.T) {
+	base := func() []harnessItem {
+		return []harnessItem{
+			{Component: "Skills", Hint: "skills hint"},
+			{Component: "Subagents", Hint: "generic hint"},
+			{Component: "Memory", Hint: "memory hint"},
+		}
+	}
+	tests := []struct {
+		name        string
+		ev          harnessEvidence
+		subPresent  bool
+		subContains string
+		skillsHint  string
+	}{
+		{"delegation present", harnessEvidence{Sessions: 2, BigTokens: 900, Delegations: 7}, true, "7 delegations in recent sessions", "skills hint"},
+		{"delegation absent with waste", harnessEvidence{Sessions: 2, BigTokens: 1000, BashTokens: 600, ReadTokens: 400}, false, "Bash 300 and whole-file reads 200 tokens per session", "200 tokens per session"},
+		{"no evidence", harnessEvidence{}, false, "generic hint", "skills hint"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			items := applyEvidence(base(), tc.ev)
+			skills, sub := items[0], items[1]
+			if sub.Present() != tc.subPresent {
+				t.Fatalf("Subagents present = %v, want %v", sub.Present(), tc.subPresent)
+			}
+			got := sub.Hint
+			if sub.Present() {
+				got = sub.Found[0]
+			}
+			if !strings.Contains(got, tc.subContains) {
+				t.Errorf("Subagents = %q, want %q", got, tc.subContains)
+			}
+			if !strings.Contains(skills.Hint, tc.skillsHint) {
+				t.Errorf("Skills = %q, want %q", skills.Hint, tc.skillsHint)
+			}
+			if items[2].Hint != "memory hint" {
+				t.Errorf("unrelated item changed: %q", items[2].Hint)
+			}
+		})
+	}
+}
