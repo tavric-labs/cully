@@ -75,6 +75,7 @@ cully status           # measured session health and risk
 cully replay           # what the agent did, and how
 cully handoff          # hand the session to another agent
 cully rescue           # when a session is stuck
+cully harness          # audit instructions, guardrails, memory, skills and hooks
 ```
 
 See the [quickstart](https://docs.cully.net/quickstart) for prerequisites and other agents.

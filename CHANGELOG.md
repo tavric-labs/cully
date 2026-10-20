@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add `cully harness`, a read-only audit of the agent setup (instructions, guardrails, memory, skills, subagents, hooks, plugins) with one suggestion per gap, inspired by the component model in Google Research's Harness². It reads file names and config keys only.
+
 ## 0.16.0
 
 - Add `cully update` with release checks, version selection, checksum verification and atomic CLI replacement; keep existing agent links, restart a running local advisor and direct service upgrades to deployment docs.
