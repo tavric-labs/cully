@@ -145,3 +145,17 @@ func TestNoOAuthUsesFixedOwner(t *testing.T) {
 		t.Fatalf("unexpected OAuth metadata: %d", resp.StatusCode)
 	}
 }
+
+func TestWriteAcknowledgementDoesNotEchoRecordText(t *testing.T) {
+	secret := "approach text"
+	got := acknowledgeWrite(memory.Result{Entry: &memory.Entry{ID: "e1", Section: "personal", Summary: "s", Approach: &secret, Tags: []string{"x"}}})
+	if got.Entry.ID != "e1" || got.Entry.Section != "personal" {
+		t.Fatalf("lost identifiers: %+v", got.Entry)
+	}
+	if got.Entry.Summary != "" || got.Entry.Approach != nil || got.Entry.Tags != nil {
+		t.Fatalf("echoed content: %+v", got.Entry)
+	}
+	if empty := acknowledgeWrite(memory.Result{Deleted: true}); empty.Entry != nil || !empty.Deleted {
+		t.Fatal("results without an entry must pass through")
+	}
+}

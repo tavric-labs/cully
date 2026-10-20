@@ -92,6 +92,8 @@ func run(args []string) error {
 		return runWorkspace(args[1:])
 	case "suggestions":
 		cully.RunList(os.Stdout)
+	case "savings":
+		return cully.RunSavings(os.Stdout, args[1:])
 	case "run":
 		if len(args) < 2 {
 			return fmt.Errorf("usage: cully run AGENT [ARGS...]")

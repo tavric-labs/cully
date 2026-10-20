@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add `cully savings` to measure whether Cully costs more tokens than it saves: measured tokens injected by Cully calls and schemas, plus an observational, confidence-labelled estimate of exploration avoided when a lookup returned prior work. It reads local Claude Code transcripts and keeps counts only.
+- Return a compact acknowledgement from MCP `cully_log` and `cully_update` instead of echoing the saved record back into the agent's context. Add the token-efficiency plan in `docs/token-efficiency-plan.md`.
 - Make the Cully panel divider an obvious drag handle: a heavy tinted bar with a grip chip at rest, a brighter bar under the pointer, and a solid band while dragging. The pointer becomes a vertical-resize cursor (OSC 22) over the bar where the terminal supports it; button-less motion is tracked only to highlight the bar and is not forwarded to the agent.
 - Give mobile Self a dated Today briefing: last 24 hours, a sampled seven-day review, projects, recorded learnings and explicit continuation drafts. Add optional read-only time-window filters with timestamp/project evidence, clear coverage and older-server states, and local AI reflection in Today and Advisor. Promote last-planned continuations, expand the saved approach/outcome in Recall how/why, and draft learning practice questions from recorded lessons; keep personal task changes explicit.
 - Update repository, installer, mobile SDK and container publishing/deployment references for the Tavric Labs organization rename. MCP Runtime remains the product name and existing Go module imports remain stable.

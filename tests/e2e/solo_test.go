@@ -99,13 +99,17 @@ func TestSolo(t *testing.T) {
 			t.Fatal("Solo connection gained Team access")
 		}
 	}
-	logged := call("cully_log", memory.LogInput{Summary: "Disposable container end-to-end check", Assistant: "other", Section: "personal", ProjectURL: &projectURL}).Entry
+	loggedSummary := "Disposable container end-to-end check"
+	logged := call("cully_log", memory.LogInput{Summary: loggedSummary, Assistant: "other", Section: "personal", ProjectURL: &projectURL}).Entry
 	if logged == nil || logged.ID == "" {
 		t.Fatal("MCP write did not reach PostgreSQL")
 	}
+	if logged.Summary != "" {
+		t.Fatalf("write acknowledgement echoed the record back: %+v", logged)
+	}
 	id := memory.IDInput{EntryID: logged.ID}
 	got := call("cully_get", id).Entry
-	if got == nil || got.Summary != logged.Summary {
+	if got == nil || got.Summary != loggedSummary {
 		t.Fatalf("MCP read did not return the written record: %+v", got)
 	}
 	found := func(entries []memory.Entry) bool {
@@ -116,7 +120,7 @@ func TestSolo(t *testing.T) {
 		}
 		return false
 	}
-	if !found(call("cully_search", memory.SearchInput{Query: logged.Summary}).Entries) {
+	if !found(call("cully_search", memory.SearchInput{Query: loggedSummary}).Entries) {
 		t.Fatal("PostgreSQL text search did not find the written record")
 	}
 	if !found(call("cully_recent", memory.RecentInput{Limit: 20}).Entries) {
@@ -143,7 +147,7 @@ func TestSolo(t *testing.T) {
 		t.Fatalf("context preview did not include the written record: %+v, %v", contextResult, err)
 	}
 	for {
-		if found(call("cully_recall", memory.SearchInput{Query: logged.Summary}).Entries) {
+		if found(call("cully_recall", memory.SearchInput{Query: loggedSummary}).Entries) {
 			break
 		}
 		if ctx.Err() != nil {
@@ -151,10 +155,12 @@ func TestSolo(t *testing.T) {
 		}
 		time.Sleep(2 * time.Second)
 	}
-	updatedSummary := logged.Summary + " updated"
-	updated := call("cully_update", memory.UpdateInput{EntryID: logged.ID, Summary: &updatedSummary}).Entry
-	if updated == nil || updated.Summary != updatedSummary {
-		t.Fatalf("MCP update did not change the record: %+v", updated)
+	updatedSummary := loggedSummary + " updated"
+	if updated := call("cully_update", memory.UpdateInput{EntryID: logged.ID, Summary: &updatedSummary}).Entry; updated == nil || updated.ID != logged.ID {
+		t.Fatalf("MCP update was not acknowledged: %+v", updated)
+	}
+	if again := call("cully_get", id).Entry; again == nil || again.Summary != updatedSummary {
+		t.Fatalf("MCP update did not change the record: %+v", again)
 	}
 	if !call("cully_delete", id).Deleted {
 		t.Fatal("MCP delete did not delete the record")
@@ -162,7 +168,7 @@ func TestSolo(t *testing.T) {
 	if found(call("cully_search", memory.SearchInput{Query: updatedSummary}).Entries) {
 		t.Fatal("deleted record remained visible to text search")
 	}
-	if found(call("cully_recall", memory.SearchInput{Query: logged.Summary}).Entries) {
+	if found(call("cully_recall", memory.SearchInput{Query: loggedSummary}).Entries) {
 		t.Fatal("deleted record remained visible to semantic recall")
 	}
 }

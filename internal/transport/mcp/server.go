@@ -30,9 +30,25 @@ func add[I any](server *sdk.Server, service memory.Service, identity func(contex
 		if err != nil {
 			return nil, memory.Result{}, err
 		}
-		out, err := service.Execute(ctx, owner, request(input))
+		req := request(input)
+		out, err := service.Execute(ctx, owner, req)
+		if err == nil && (req.Operation == "log" || req.Operation == "update") {
+			out = acknowledgeWrite(out)
+		}
 		return nil, out, err
 	})
+}
+
+// acknowledgeWrite drops the record text a write would echo back. The agent
+// just sent it, so returning it again only spends the agent's context; the id
+// and timestamps are enough to resume, update or delete the record later.
+func acknowledgeWrite(out memory.Result) memory.Result {
+	if out.Entry == nil {
+		return out
+	}
+	e := out.Entry
+	out.Entry = &memory.Entry{ID: e.ID, Section: e.Section, ProjectURL: e.ProjectURL, SessionRef: e.SessionRef, EntryType: e.EntryType, OccurredAt: e.OccurredAt, CreatedAt: e.CreatedAt, UpdatedAt: e.UpdatedAt}
+	return out
 }
 
 // toolRegistration is one MCP tool Cully serves. Handler registers exactly
