@@ -227,12 +227,6 @@ func RunPane(agentName string, args []string, input, output *os.File) error {
 			_ = pty.Setsize(child, &pty.Winsize{Rows: uint16(top), Cols: uint16(cols)})
 		}
 	}
-	var cancelPreview context.CancelFunc
-	defer func() {
-		if cancelPreview != nil {
-			cancelPreview()
-		}
-	}()
 	// Warp keeps host scroll mode while mouse tracking is off. Toggle tracking
 	// with the advisor drawer so clicks still work once the user opens it.
 	syncMouseTracking := func() {
@@ -243,12 +237,6 @@ func RunPane(agentName string, args []string, input, output *os.File) error {
 		writeMouseTracking(output, want)
 		mouseTracking = want
 	}
-	type reviewResult struct {
-		generation int
-		review     advisorReview
-		err        error
-	}
-	reviews := make(chan reviewResult, 1)
 	// OSC 22 asks the terminal for a vertical-resize pointer over the divider;
 	// terminals without support ignore it.
 	pointerOver := false
@@ -277,60 +265,23 @@ func RunPane(agentName string, args []string, input, output *os.File) error {
 		}
 		return renderTerminalPaneGrip(emulator, cols, rows, content, agent.NativeFooter, hud, divider.grip(), hint)
 	}
-	preview := func() {
-		if drawer.Busy || drawer.Details || len(drawer.Items) == 0 {
-			return
-		}
-		if drawer.Review != nil {
-			review := *drawer.Review
-			if review.Handoff != "" {
-				// Paste a request rather than submit an arbitrary action or discard the
-				// user's current draft. The foreground agent retains its normal review.
-				_, _ = child.Write([]byte("\x1b[200~\n" + terminalSafeText(review.Handoff) + "\x1b[201~"))
-				drawer.close()
-				syncMouseTracking()
-			} else if err := acceptAdvisorReview(view.Project, review); err != nil {
-				drawer.Message = red + "Could not apply: " + err.Error() + rst
-			} else {
-				drawer.Message = green + "✓ Applied · Esc returns to suggestions" + rst
-				drawer.Review = nil
-			}
-			dirty = true
+	// Enter pastes a request into the agent's input instead of submitting it, so
+	// the user keeps their draft, reads the request and decides whether to send.
+	insert := func() {
+		if drawer.Details || len(drawer.Items) == 0 {
 			return
 		}
 		line := drawer.Items[drawer.Selected]
 		if strings.HasPrefix(line, "MEMO|") {
-			drawer.Message = dim + "Informational tip · no action to apply" + rst
+			drawer.Message = dim + "Informational tip · nothing to add to the prompt" + rst
 			dirty = true
 			return
 		}
-		// Routine workflow actions belong in the coding session. Configuration
-		// advice can produce a small local-file preview using this agent's adapter.
-		_, category := adviceBadge(line)
-		if category != "Apply" {
-			review := advisorHandoff(line)
-			drawer.Review = &review
-			drawer.Scroll = 0
-			dirty = true
-			return
-		}
-		drawer.Busy = true
+		request := terminalSafeText(advisorRequest(line, readSessionSignals(session)))
+		_, _ = child.Write([]byte("\x1b[200~\n" + request + "\x1b[201~"))
+		drawer.close()
+		syncMouseTracking()
 		dirty = true
-		generation := drawer.Generation
-		project := view.Project
-		if cancelPreview != nil {
-			cancelPreview()
-		}
-		previewCtx, cancel := context.WithCancel(reviewContext)
-		previewCtx = withCodexMCPScope(previewCtx, session, "advisor")
-		cancelPreview = cancel
-		go func() {
-			review, err := prepareAdvisorReviewContext(previewCtx, agent.Name, project, line)
-			select {
-			case reviews <- reviewResult{generation, review, err}:
-			case <-reviewContext.Done():
-			}
-		}()
 	}
 	handleKeys := func(keys []panelKey) {
 		for _, key := range keys {
@@ -360,9 +311,6 @@ func RunPane(agentName string, args []string, input, output *os.File) error {
 				divider.Hover = false
 				setPointer(false)
 				if drawer.Open {
-					if cancelPreview != nil {
-						cancelPreview()
-					}
 					drawer.close()
 				} else {
 					drawer.open(advice)
@@ -405,12 +353,12 @@ func RunPane(agentName string, args []string, input, output *os.File) error {
 						case 65:
 							drawer.move(1)
 						case 0:
-							if index, ok := drawer.HitRows[mouse.Y]; ok && !drawer.Busy {
+							if index, ok := drawer.HitRows[mouse.Y]; ok {
 								drawer.Selected = index
 								drawer.Message = ""
 							}
 							if mouse.Y == drawer.AcceptRow {
-								preview()
+								insert()
 							}
 						}
 					}
@@ -421,9 +369,6 @@ func RunPane(agentName string, args []string, input, output *os.File) error {
 			if drawer.Open {
 				switch key.Action {
 				case "escape":
-					if drawer.Busy && cancelPreview != nil {
-						cancelPreview()
-					}
 					drawer.escape()
 					syncMouseTracking()
 				case "up":
@@ -439,13 +384,10 @@ func RunPane(agentName string, args []string, input, output *os.File) error {
 				case "end":
 					drawer.move(10000)
 				case "enter":
-					preview()
+					insert()
 				case "details":
-					if !drawer.Busy {
-						drawer.Details = !drawer.Details
-						drawer.Review = nil
-						drawer.Scroll = 0
-					}
+					drawer.Details = !drawer.Details
+					drawer.Scroll = 0
 				default:
 					if bytes.Equal(key.Data, []byte{3}) {
 						drawer.close()
@@ -471,16 +413,6 @@ func RunPane(agentName string, args []string, input, output *os.File) error {
 	}
 	for {
 		select {
-		case result := <-reviews:
-			if drawer.Open && result.generation == drawer.Generation {
-				drawer.Busy = false
-				drawer.Review = &result.review
-				drawer.Scroll = 0
-				if result.err != nil {
-					drawer.Message = yellow + result.err.Error() + " · session handoff is available" + rst
-				}
-				dirty = true
-			}
 		case chunk, ok := <-inputChunks:
 			if !ok {
 				inputChunks = nil

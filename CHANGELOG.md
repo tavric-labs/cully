@@ -4,6 +4,8 @@
 
 ## 0.18.0
 
+- Make Enter in the advisor drawer add a ready-made request to the coding agent's input, without submitting it or replacing your draft. For configuration advice, such as a tool the advisor found by analysing the session and researching the web, the request carries the measured signals and source link and asks the agent to set it up in the repository: inspect first, smallest repository-scoped change, ask before installing or using the network or credentials, never touch secrets, verify and explain how to undo. Remove the background model preview and Cully-written file changes from the drawer; `cully apply` is unchanged.
+
 - Make agent setup and uninstall user-wide across projects: install Codex instructions and Cursor commands in user configuration, detect agents independently of repository files. Remove the tracked generated project skill, ignore local `.cully` state, and update setup documentation and website guidance.
 
 - Shorten the README around Cully’s value, first-run setup and core capabilities, with detailed behavior linked to the guides.
