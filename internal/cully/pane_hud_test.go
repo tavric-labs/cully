@@ -63,3 +63,23 @@ func TestHUDRuleFitsWidth(t *testing.T) {
 		t.Fatal("the advisor hint should be visible when there is room")
 	}
 }
+
+func TestHUDRuleGripFitsWidthAndGrowsStronger(t *testing.T) {
+	hud := paneHUD(100, toolStats{}, sessionView{Agent: "codex", Project: "/p/app", Branch: "main", Started: time.Now()}, time.Now())
+	var weights []int
+	for _, grip := range []gripState{gripIdle, gripHover, gripDrag} {
+		for _, width := range []int{24, 40, 80, 200} {
+			rule := hudRuleGrip(width, hud, grip)
+			if got := ansi.StringWidth(ansi.Strip(rule)); got != width {
+				t.Fatalf("grip %v width %d: %d wide: %q", grip, width, got, ansi.Strip(rule))
+			}
+			if !strings.Contains(ansi.Strip(rule), "⇕") && !strings.Contains(ansi.Strip(rule), "▲") && !strings.Contains(ansi.Strip(rule), "▼") {
+				t.Fatalf("grip %v width %d has no visible handle: %q", grip, width, ansi.Strip(rule))
+			}
+		}
+		weights = append(weights, len(hudRuleGrip(80, hud, grip)))
+	}
+	if hudRuleGrip(80, hud, gripIdle) == hudRuleGrip(80, hud, gripHover) || hudRuleGrip(80, hud, gripHover) == hudRuleGrip(80, hud, gripDrag) {
+		t.Fatalf("grip states must look different: %v", weights)
+	}
+}

@@ -5,8 +5,40 @@ package cully
 // paneDivider remembers the requested height across terminal resizes. Automatic
 // growth stops after a drag, so refreshing advice cannot undo the users choice.
 type paneDivider struct {
-	Height           int
-	Manual, Dragging bool
+	Height                  int
+	Manual, Dragging, Hover bool
+}
+
+// gripState selects how strongly the divider is drawn: always visible at rest,
+// brighter under the pointer, and solid while it is being dragged.
+type gripState int
+
+const (
+	gripIdle gripState = iota
+	gripHover
+	gripDrag
+)
+
+func (d *paneDivider) grip() gripState {
+	switch {
+	case d.Dragging:
+		return gripDrag
+	case d.Hover:
+		return gripHover
+	}
+	return gripIdle
+}
+
+// hover tracks a button-less pointer move and reports whether the highlight
+// changed. Such motion never reaches the agent, which did not ask for it.
+func (d *paneDivider) hover(mouse *panelMouse, rows, top int) (motion, changed bool) {
+	if mouse.Release || mouse.Button&32 == 0 || mouse.Button&3 != 3 {
+		return false, false
+	}
+	over := !d.Dragging && rows >= 12 && top < rows && mouse.Y == top+1
+	changed = over != d.Hover
+	d.Hover = over
+	return true, changed
 }
 
 func (d *paneDivider) top(rows, contentRows int) int {
@@ -37,7 +69,7 @@ func (d *paneDivider) handle(mouse *panelMouse, rows, top int) bool {
 		return true
 	}
 	if rows >= 12 && top < rows && !mouse.Release && mouse.Button == 0 && mouse.Y == top+1 {
-		d.Dragging = true
+		d.Dragging, d.Hover = true, true
 		return true
 	}
 	return false

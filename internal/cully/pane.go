@@ -52,12 +52,12 @@ func RunPane(agentName string, args []string, input, output *os.File) error {
 	startup := "\x1b[?1049h\x1b[?25l"
 	mouseTracking := !profile.isWarp()
 	if mouseTracking {
-		startup += "\x1b[?1000h\x1b[?1002h\x1b[?1006h"
+		startup += "\x1b[?1000h\x1b[?1002h\x1b[?1003h\x1b[?1006h"
 	}
 	if _, err := io.WriteString(output, startup); err != nil {
 		return err
 	}
-	defer io.WriteString(output, "\x1b[?1000l\x1b[?1002l\x1b[?1006l\x1b[0m\x1b[?25h\x1b[?1049l") //nolint:errcheck
+	defer io.WriteString(output, "\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b[0m\x1b[?25h\x1b[?1049l") //nolint:errcheck
 	reviewContext, cancelReviews := context.WithCancel(context.Background())
 	defer cancelReviews()
 
@@ -244,6 +244,21 @@ func RunPane(agentName string, args []string, input, output *os.File) error {
 		err        error
 	}
 	reviews := make(chan reviewResult, 1)
+	// OSC 22 asks the terminal for a vertical-resize pointer over the divider;
+	// terminals without support ignore it.
+	pointerOver := false
+	setPointer := func(over bool) {
+		if over == pointerOver {
+			return
+		}
+		pointerOver = over
+		shape := "default"
+		if over {
+			shape = "ns-resize"
+		}
+		_, _ = io.WriteString(output, "\x1b]22;"+shape+"\x1b\\")
+	}
+	defer func() { setPointer(false) }()
 	paint := func() string {
 		if drawer.Open {
 			return drawer.render(cols, rows, stats, view)
@@ -255,7 +270,7 @@ func RunPane(agentName string, args []string, input, output *os.File) error {
 		} else if resizeMode {
 			hint = " drag ↕ · Esc ends resize "
 		}
-		return renderTerminalPane(emulator, cols, rows, content, agent.NativeFooter, hud, hint)
+		return renderTerminalPaneGrip(emulator, cols, rows, content, agent.NativeFooter, hud, divider.grip(), hint)
 	}
 	preview := func() {
 		if drawer.Busy || drawer.Details || len(drawer.Items) == 0 {
@@ -574,13 +589,17 @@ func currentDir() string {
 // Warp consumes scroll mode; enable it only for the advisor or divider resizing.
 func writeMouseTracking(w io.Writer, on bool) {
 	if on {
-		_, _ = io.WriteString(w, "\x1b[?1000h\x1b[?1002h\x1b[?1006h")
+		_, _ = io.WriteString(w, "\x1b[?1000h\x1b[?1002h\x1b[?1003h\x1b[?1006h")
 		return
 	}
-	_, _ = io.WriteString(w, "\x1b[?1000l\x1b[?1002l\x1b[?1006l")
+	_, _ = io.WriteString(w, "\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l")
 }
 
 func renderTerminalPane(emulator *vt.Emulator, cols, rows int, content []string, nativeFooter bool, hud string, hints ...string) string {
+	return renderTerminalPaneGrip(emulator, cols, rows, content, nativeFooter, hud, gripIdle, hints...)
+}
+
+func renderTerminalPaneGrip(emulator *vt.Emulator, cols, rows int, content []string, nativeFooter bool, hud string, grip gripState, hints ...string) string {
 	var out strings.Builder
 	limit := max(0, cols-1) // avoid triggering automatic terminal wrap
 	top := min(emulator.Height(), rows)
@@ -605,7 +624,7 @@ func renderTerminalPane(emulator *vt.Emulator, cols, rows int, content []string,
 		out.WriteString(line.Render())
 	}
 	if top < rows {
-		panel := panelLines(cols, rows-top, content, hud, hints...)
+		panel := panelLinesGrip(cols, rows-top, content, hud, grip, hints...)
 		for i, line := range panel {
 			fmt.Fprintf(&out, "\x1b[%d;1H\x1b[0m\x1b[2K%s\x1b[0m", top+i+1, line)
 		}

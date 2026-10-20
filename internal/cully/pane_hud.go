@@ -57,6 +57,13 @@ func paneHUD(cols int, stats toolStats, view sessionView, now time.Time) string 
 
 // hudRule draws the HUD inside a horizontal rule of the given width.
 func hudRule(width int, hud string, hints ...string) string {
+	return hudRuleGrip(width, hud, gripIdle, hints...)
+}
+
+// hudRuleGrip is hudRule with a drag handle whose weight follows the pointer:
+// a heavy tinted rule at rest, a bright one on hover and a solid band while
+// dragging. Without a HUD or room for the handle it stays a plain rule.
+func hudRuleGrip(width int, hud string, grip gripState, hints ...string) string {
 	if hud == "" || width < 24 {
 		return dim + strings.Repeat("─", max(0, width)) + rst
 	}
@@ -64,11 +71,35 @@ func hudRule(width int, hud string, hints ...string) string {
 	if len(hints) > 0 {
 		hint = hints[0]
 	}
-	body := ansi.Truncate(hud, max(1, width-ansi.StringWidth(hint)-6), "…")
-	left := dim + "── " + rst + body + dim + " "
-	fill := width - ansi.StringWidth(ansi.Strip(left)) - ansi.StringWidth(hint) - 2
-	if fill < 2 {
-		return left + dim + strings.Repeat("─", max(0, width-ansi.StringWidth(ansi.Strip(left)))) + rst
+	chip, tone, fillRune := " ⠿ ⇕ ⠿ ", "\x1b[36m", "━"
+	switch grip {
+	case gripHover:
+		chip, tone = " ⠿ ▲▼ ⠿ ", "\x1b[1;93m"
+	case gripDrag:
+		chip, tone, fillRune = " ▲ ⇕ ▼ ", "\x1b[1;30;103m", " "
 	}
-	return left + strings.Repeat("─", fill) + hint + "──" + rst
+	chipStyle := "\x1b[1;30;46m"
+	if grip == gripHover {
+		chipStyle = "\x1b[1;30;103m"
+	} else if grip == gripDrag {
+		chipStyle = "\x1b[1;97;41m"
+	}
+	handle := chipStyle + chip + rst + tone
+	if grip != gripIdle || width >= 40 {
+		hint = " " + strings.TrimLeft(hint, " ")
+	}
+	rule := "━"
+	if grip == gripDrag {
+		rule = " "
+	}
+	// On a narrow bar the hint goes first, then the HUD text shrinks; the handle stays.
+	for _, h := range []string{hint, ""} {
+		body := ansi.Truncate(hud, max(1, width-ansi.StringWidth(h)-ansi.StringWidth(chip)-8), "…")
+		left := tone + rule + rule + " " + rst + body + tone + " "
+		fill := width - ansi.StringWidth(ansi.Strip(left)) - ansi.StringWidth(chip) - ansi.StringWidth(h) - 2
+		if fill >= 2 {
+			return left + strings.Repeat(fillRune, fill) + handle + h + rule + rule + rst
+		}
+	}
+	return tone + strings.Repeat(rule, max(0, width)) + rst
 }

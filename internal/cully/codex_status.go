@@ -794,12 +794,16 @@ func paneTop(rows, statusRows int) int {
 }
 
 func panelLines(cols, height int, content []string, hud string, hints ...string) []string {
+	return panelLinesGrip(cols, height, content, hud, gripIdle, hints...)
+}
+
+func panelLinesGrip(cols, height int, content []string, hud string, grip gripState, hints ...string) []string {
 	lines := make([]string, max(0, height))
 	if height <= 0 {
 		return lines
 	}
 	width := max(0, cols-1)
-	lines[0] = hudRule(width, hud, hints...)
+	lines[0] = hudRuleGrip(width, hud, grip, hints...)
 	capacity := height - 1
 	if len(content) > capacity {
 		// Keep advice visible on shorter terminals. Drop secondary instruments
