@@ -27,6 +27,7 @@ type toolStats struct {
 	Tools, Errors, Searches, Edits, Checks, EditsSinceCheck int
 	Agents, Web, Commits                                    int
 	Cully                                                   cullyStats
+	Impact                                                  Impact `json:"-"` // loaded by the pane, never persisted
 }
 
 var (
