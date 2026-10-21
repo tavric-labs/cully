@@ -33,7 +33,7 @@ func TestWorkspaceCLIUsesPublicIdentity(t *testing.T) {
 		}
 		return &auth.TokenInfo{UserID: "dev", Scopes: []string{"tools:read"}, Expiration: time.Now().Add(time.Hour)}, nil
 	}
-	server := httptest.NewServer(mcpt.Handler(memory.Service{Store: workspaceCLIStore{}}, mcpt.AuthConfig{ExperimentalTeam: true, Mode: "oauth", Issuer: "https://issuer.test", Resource: "https://public.test/mcp", Verifier: verifier}, "/mcp", "test"))
+	server := httptest.NewServer(mcpt.Handler(memory.Service{Store: workspaceCLIStore{}}, mcpt.AuthConfig{Mode: "oauth", Issuer: "https://issuer.test", Resource: "https://public.test/mcp", Verifier: verifier}, "/mcp", "test"))
 	defer server.Close()
 	t.Setenv("CULLY_WORKSPACE_TOKEN", "test-user-token")
 	file := filepath.Join(t.TempDir(), "action.json")

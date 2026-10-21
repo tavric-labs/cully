@@ -91,12 +91,6 @@ struct CullyRootView: View {
                     Button("Draft a practice question") { draftQuestion(note, prompt: "Use saved Cully evidence to help me recall this recorded learning: \(note.learning ?? ""). Ask one question and suggest a small exercise; do not assume what I know.") }.buttonStyle(.bordered)
                 }
             }
-            if model.briefUpdated != nil {
-            card("PROJECTS IN THESE NOTES") {
-                if projects.isEmpty { Text("No project was attached to these sampled notes.").foregroundStyle(.secondary) }
-                ForEach(projects, id: \.self) { project in Text(project.replacingOccurrences(of: "https://github.com/", with: "")).font(.subheadline) }
-            }
-            }
             ForEach(visibleNotes) { note in
                 card(model.dayNotes.contains(where: { $0.id == note.id }) ? "LAST 24 HOURS" : "EARLIER THIS WEEK") {
                     Text(note.summary).font(.headline)
@@ -146,7 +140,6 @@ struct CullyRootView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     Text(localDate(note)).font(.caption).foregroundStyle(Theme.gold)
-                    if let project = note.project { Text(project.replacingOccurrences(of: "https://github.com/", with: "")).font(.caption) }
                     Text(note.summary).font(.headline)
                     if let value = note.approach, !value.isEmpty { card("HOW WE APPROACHED IT") { Text(value) } }
                     if let value = note.outcome, !value.isEmpty { card("SAVED OUTCOME") { Text(value) } }
@@ -160,7 +153,6 @@ struct CullyRootView: View {
         }.padding(22).foregroundStyle(Theme.ink).background(Theme.background).tint(Theme.gold).frame(minWidth: 330, minHeight: 480)
     }
     private var visibleNotes: [ContextNote] { weekly ? model.notes : model.dayNotes }
-    private var projects: [String] { Array(Set(visibleNotes.compactMap(\.project))).sorted() }
 
     private var tasks: some View {
         page {

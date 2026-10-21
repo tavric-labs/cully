@@ -74,8 +74,8 @@ func TestICContributorsStayPrivateAcrossTransports(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, tool := range tools.Tools {
-		if tool.Name == "cully_projects" || tool.Name == "cully_workspace_read" || tool.Name == "cully_workspace_write" {
-			t.Fatalf("IC exposes sharing or removed metadata: %s", tool.Name)
+		if tool.Name == "cully_projects" {
+			t.Fatalf("IC exposes removed metadata: %s", tool.Name)
 		}
 	}
 	if result, err := a.CallTool(ctx, &sdk.CallToolParams{Name: "cully_log", Arguments: memory.LogInput{Summary: "Private work", Assistant: "codex"}}); err != nil || result.IsError {

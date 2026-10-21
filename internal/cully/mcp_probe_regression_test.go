@@ -2,6 +2,7 @@ package cully
 
 import (
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 )
@@ -31,10 +32,23 @@ func TestCodexProbeCheckedAuthenticationStatus(t *testing.T) {
 		{Probed: true, Health: "healthy", Auth: "authenticated"},
 		{Probed: true, Health: "unhealthy", Auth: "unknown"},
 		{Probed: true, Health: "unhealthy", Auth: "unauthenticated"},
+		{Probed: true, Health: "unsupported", Auth: "unknown"},
+		{Probed: true, Health: "agent_signin", Auth: "unknown"},
 	} {
 		text := normalizedCodexPanel(strings.Join(cullyInstrumentRows(toolStats{Cully: state}, 180), "\n"))
 		if strings.Contains(text, "first call") || strings.Contains(text, "Auth unknown") {
 			t.Fatalf("checked status still looks unobserved: %s", text)
 		}
+	}
+}
+
+func TestCursorNativeSignInAndUnavailableChecks(t *testing.T) {
+	h, a, found := parseCursorMCPTools("Authentication required. Run agent mcp login cully.", errors.New("exit 1"))
+	if !found || h != "unhealthy" || a != "unauthenticated" {
+		t.Fatalf("Cursor MCP sign-in not recognized: %s %s %t", h, a, found)
+	}
+	h, a, found = agentMCPProbe(t.Context(), "another-agent")
+	if !found || h != "unsupported" || a != "unknown" {
+		t.Fatalf("unsupported agent was not explicit: %s %s %t", h, a, found)
 	}
 }

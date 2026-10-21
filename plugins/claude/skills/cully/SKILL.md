@@ -14,7 +14,9 @@ Cully is the coding-agent harness runtime for Solo and private IC work. Solo run
 
 ## Know where you are running
 
-Cully has Solo and IC modes. Solo uses one local owner. IC is an individual contributor within a company or team using shared services, with an OAuth identity for each contributor. Both keep all memory private. Shared infrastructure does not share notes. Team project management and sharing are deferred; do not invoke workspace actions in Solo or IC.
+Solo describes one local owner. IC describes an individual contributor using shared services with an OAuth identity. Both keep memory private, without a mode flag. Team workflows separately manage explicitly authorized project tasks, checkpoints, review and published lessons. Shared infrastructure never shares private notes automatically.
+
+For authorized team work, read `whoami`, `projects`, `board`, `inbox`, `task_get` or `lessons`. Claim/checkpoint/release a task explicitly, supply its current version, and refresh after a conflict. Start agents manually; do not auto-launch or reclaim an expired attempt. Review evidence is reported and tied to a revision. A task contributor cannot approve it; ask an authorized noncontributing maintainer to accept delivery. Draft lessons privately. Publish only when the user explicitly requests sharing and can review the exact content. Playbook adoption requires a project maintainer and a completed source task; it never changes instruction files automatically. See https://docs.cully.net/team-workflows for action inputs and limits.
 
 Cully's session features need the agent to run inside the Cully terminal, started by the user with `cully run claude`, `cully run codex`, `cully run cursor` or `cully run AGENT`. There the user sees a health bar and an advisor panel, and Cully records the session journal. Outside it, memory and the CLI commands below still work, but there is no journal for the current session.
 

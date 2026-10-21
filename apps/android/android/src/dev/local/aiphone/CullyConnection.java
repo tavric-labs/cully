@@ -53,7 +53,7 @@ final class CullyConnection implements AutoCloseable {
         if (arguments.optString("query").length() > 180) throw new IOException("Keep the context query short.");
         int limit = arguments.optInt("limit", 3);
         if(limit<1 || limit>3) throw new IOException("Request one to three notes.");
-        arguments.put("personal").put("limit", limit).put("mode", mode);
+        arguments.put("limit", limit).put("mode", mode);
         CountDownLatch done = new CountDownLatch(1);
         AtomicReference<String> result = new AtomicReference<>(), failure = new AtomicReference<>();
         org.mcpruntime.mobile.McpRequest request = session.callTool(name, arguments.toString(), new McpCallback() {

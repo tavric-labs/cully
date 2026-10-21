@@ -7,22 +7,19 @@ description: The Cully terminal, session journal, advisor and project memory aro
 
 Cully Solo is the coding-agent harness runtime. It runs the coding agents you already use in one terminal, observes their tool activity, tracks session health, remembers what matters and helps you recover or continue. Each agent keeps its own reasoning and tools.
 
-> **The harness runtime for coding agents and software projects.**
-> Solo is the coding-agent harness runtime. Team is the project management harness runtime for people and AI agents.
+> **Session intelligence. Private memory. A better harness.**
+> Work across agents, keep useful context, and improve the harness from measured evidence.
 
-Choose [Solo mode](/solo) for session health, advice, replay and private memory, or [Team mode](/team-workflows) for shared tasks, ownership, handoffs, review evidence and published lessons. Both use the same installed CLI and services. Project access is explicit; local journals and solo notes never become shared automatically. The session diagram below describes the Solo foundation; [architecture](/architecture#public-memory-boundary) explains Team's separate authorized records.
-
-```text
-Prepare  →  Work  →  Hand off  →  Review  →  Reuse
-```
+[Solo](/solo) describes one developer's local setup. IC describes an individual contributor using shared services with private, authenticated memory. These are usage descriptions, not mode flags. Existing [Team workflows](/team-workflows) manage explicitly authorized project tasks, handoffs and review separately from private memory. The diagram below shows the runtime shared by Solo and IC.
 
 | Step | What happens | What does it today |
 | --- | --- | --- |
 | Observe | Tool activity from the agent becomes events | The [Cully terminal](/terminal) and agent hooks |
 | Understand | Events become a picture of the session | The [session journal](/session-intelligence) |
-| Remember | Decisions and results outlive the session | [Project memory](/memory) |
+| Remember | Decisions and results outlive the session | [Private memory](/memory) |
 | Advise | Warnings and next steps appear while you work | The [advisor](/advisor) |
-| Improve | Inspect setup, costs and useful patterns | [Harness audit](/harness), [token impact](/token-impact), workflow profiles and hints; broader learning remains on the [roadmap](/product-direction) |
+| Evaluate | Test the harness and guidance against known failures | [Cully evaluations](/evals) and task measurements |
+| Improve | Review a proposed change and inspect what happens afterward | [Self-improvement](/self-improvement), [harness audit](/harness) and [token impact](/token-impact) |
 
 ## The picture
 

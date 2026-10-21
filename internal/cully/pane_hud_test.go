@@ -48,6 +48,40 @@ func TestPaneHUDContextColors(t *testing.T) {
 	}
 }
 
+func TestPaneHUDMetricsReplaceOnlyVisibleCompactDuplicates(t *testing.T) {
+	isolateWorkflow(t)
+	view := sessionView{HealthBar: true, Agent: "codex", Project: "/work/buddy", Branch: "feature", Started: time.Now().Add(-27 * time.Minute), ContextKnown: true, ContextLeft: 36, Model: "GPT", Daemon: true}
+	stats := toolStats{EditsSinceCheck: 2}
+	hud := paneHUD(240, stats, view, time.Now())
+	for _, color := range []string{cyan, blue, magenta, green, yellow} {
+		if !strings.Contains(hud, color) {
+			t.Errorf("HUD lacks color %q", color)
+		}
+	}
+	rows, _ := compactInstrumentRows(240, stats, view)
+	compact := ansi.Strip(strings.Join(rows, "\n"))
+	for _, duplicate := range []string{"Project buddy", "Context ", "elapsed", "2 edits need check"} {
+		if strings.Contains(compact, duplicate) {
+			t.Errorf("HUD metric repeated below: %q in %s", duplicate, compact)
+		}
+	}
+	for _, want := range []string{"Setup ", "Model GPT", "MCP ", "Usage"} {
+		if !strings.Contains(compact, want) {
+			t.Errorf("useful panel detail lost: %s", want)
+		}
+	}
+	full := ansi.Strip(strings.Join(sessionStatusRows(240, nil, stats, view), "\n"))
+	if !strings.Contains(full, "Context") || !strings.Contains(full, "buddy") {
+		t.Fatal("expanded view lost the full instruments")
+	}
+	// A narrow HUD cannot fit every value, so the lower panel must retain it.
+	view.Branch = strings.Repeat("long-branch", 12)
+	narrow, _ := compactInstrumentRows(80, stats, view)
+	if !strings.Contains(ansi.Strip(strings.Join(narrow, "\n")), "Context ") {
+		t.Fatal("clipped HUD context disappeared from the panel too")
+	}
+}
+
 func TestHUDRuleFitsWidth(t *testing.T) {
 	hud := paneHUD(100, toolStats{}, sessionView{Agent: "cursor", Project: "/p/app", Branch: "feature/long-branch-name", Started: time.Now()}, time.Now())
 	for _, width := range []int{24, 40, 80, 100, 200} {

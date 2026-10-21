@@ -113,7 +113,7 @@ func startTeamStack(t *testing.T) *teamStack {
 		t.Fatalf("migration: %v\n%s", err, output)
 	}
 	startProcess(t, ctx, filepath.Join(bin, "cully-data"), append(append([]string{}, env...), "CULLY_PORT="+dataPort), dataURL+"/readyz")
-	mcpEnv := append(append([]string{}, env...), "CULLY_PORT="+mcpPort, "CULLY_MCP_AUTH_MODE=oauth", "CULLY_EXPERIMENTAL_TEAM=1", "CULLY_AUTH_ISSUER="+jwks.URL, "CULLY_AUTH_RESOURCE="+endpoint, "CULLY_JWKS_URL="+jwks.URL)
+	mcpEnv := append(append([]string{}, env...), "CULLY_PORT="+mcpPort, "CULLY_MCP_AUTH_MODE=oauth", "CULLY_AUTH_ISSUER="+jwks.URL, "CULLY_AUTH_RESOURCE="+endpoint, "CULLY_JWKS_URL="+jwks.URL)
 	startProcess(t, ctx, filepath.Join(bin, "cully-mcp"), mcpEnv, "http://127.0.0.1:"+mcpPort+"/healthz")
 	return &teamStack{ctx: ctx, endpoint: endpoint, issuer: jwks.URL, key: key, pool: pool, cli: filepath.Join(bin, "cully"), env: env}
 }

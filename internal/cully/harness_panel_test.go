@@ -11,12 +11,12 @@ func TestHarnessPanelRowsShowSetupGapsAndMeasuredWaste(t *testing.T) {
 	d := harnessPanelData{Ready: 5, Total: 7, Missing: []string{"Guardrails", "Plugins"}, Measured: true, Agent: "claude",
 		Evidence: harnessEvidence{Sessions: 10, BigTokens: 23000, BashTokens: 15000}}
 	got := ansi.Strip(strings.Join(harnessPanelRows(d), "\n"))
-	for _, want := range []string{"Setup 5/7 ready", "Gaps Guardrails, Plugins", "Waste 2.3k tok/session · Bash 1.5k", "10 Claude sessions"} {
+	for _, want := range []string{"Setup 5/7 ready · missing: Guardrails, Plugins", "Waste 2.3k tok/session · Bash 1.5k", "10 Claude sessions"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("rows lack %q:\n%s", want, got)
 		}
 	}
-	if pending := ansi.Strip(strings.Join(harnessPanelRows(harnessPanelData{Ready: 7, Total: 7}), "\n")); !strings.Contains(pending, "measuring") || strings.Contains(pending, "Gaps") {
+	if pending := ansi.Strip(strings.Join(harnessPanelRows(harnessPanelData{Ready: 7, Total: 7}), "\n")); !strings.Contains(pending, "measuring") || strings.Contains(pending, "missing:") {
 		t.Errorf("unmeasured, complete setup: %s", pending)
 	}
 	// The measurement follows the running agent, and says so for each.
@@ -28,6 +28,16 @@ func TestHarnessPanelRowsShowSetupGapsAndMeasuredWaste(t *testing.T) {
 	}
 	if none := ansi.Strip(strings.Join(harnessPanelRows(harnessPanelData{Ready: 7, Total: 7, Measured: true, Agent: "claude"}), "\n")); !strings.Contains(none, "no recent Claude sessions") {
 		t.Errorf("no sessions: %s", none)
+	}
+}
+
+func TestSetupCountNamesItsMissingComponentOnTheSameRow(t *testing.T) {
+	rows := harnessPanelRows(harnessPanelData{Ready: 6, Total: 7, Missing: []string{"Skills"}})
+	if first := ansi.Strip(rows[0]); first != "Setup 6/7 ready · missing: Skills" {
+		t.Fatalf("setup count has no actionable component: %s", first)
+	}
+	if strings.Contains(strings.Join(rows, "\n"), "unhealthy") {
+		t.Fatal("configuration detection was presented as live service health")
 	}
 }
 

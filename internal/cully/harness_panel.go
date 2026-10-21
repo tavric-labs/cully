@@ -108,13 +108,14 @@ func panelTokens(n int) string {
 // model and verification state that sit beside them.
 func harnessPanelRows(d harnessPanelData) []string {
 	ready := green
-	if d.Total > 0 && d.Ready*2 < d.Total {
+	if d.Total > 0 && d.Ready < d.Total {
 		ready = yellow
 	}
-	rows := []string{"Setup " + ready + bold + fmt.Sprintf("%d/%d", d.Ready, d.Total) + rst + " ready"}
+	setup := "Setup " + ready + bold + fmt.Sprintf("%d/%d", d.Ready, d.Total) + rst + " ready"
 	if len(d.Missing) > 0 {
-		rows = append(rows, dim+"Gaps "+strings.Join(d.Missing, ", ")+rst)
+		setup += " · " + yellow + "missing: " + strings.Join(d.Missing, ", ") + rst
 	}
+	rows := []string{setup}
 	name := agentDisplayName(d.Agent)
 	switch {
 	case d.Unsupported:

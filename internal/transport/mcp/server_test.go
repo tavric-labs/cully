@@ -64,7 +64,7 @@ func TestMCPToPrivateAPI(t *testing.T) {
 			t.Fatal(err)
 		}
 		tools, err := session.ListTools(ctx, nil)
-		if err != nil || len(tools.Tools) != len(toolRegistrations())-2 {
+		if err != nil || len(tools.Tools) != len(toolRegistrations()) {
 			t.Fatalf("tools=%v err=%v", tools, err)
 		}
 		result, err := session.CallTool(ctx, &sdk.CallToolParams{Name: "cully_log", Arguments: memory.LogInput{Summary: "Fixed OAuth", Assistant: "codex"}})

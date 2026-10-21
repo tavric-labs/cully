@@ -54,7 +54,7 @@ func MCP(version string, oauthFlag bool) error {
 	}
 	ctx, cancel := lifetime()
 	defer cancel()
-	option := mcpt.AuthConfig{ExperimentalTeam: s.ExperimentalTeam, Mode: s.AuthMode, Owner: s.Owner, Issuer: s.Issuer, Resource: s.Resource}
+	option := mcpt.AuthConfig{Mode: s.AuthMode, Owner: s.Owner, Issuer: s.Issuer, Resource: s.Resource}
 	if s.AuthMode == "oauth" {
 		option.Verifier, err = identity.NewVerifier(ctx, s.Issuer, s.Resource, s.JWKSURL)
 		if err != nil {

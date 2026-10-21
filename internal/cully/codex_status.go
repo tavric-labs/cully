@@ -19,6 +19,7 @@ import (
 const codexStatusConfig = `tui.status_line=["model-with-reasoning","context-remaining","total-input-tokens","total-output-tokens","five-hour-limit","weekly-limit","fast-mode"]`
 
 type sessionView struct {
+	HealthBar                                                     bool // true only when rendered under the pane HUD
 	Project, Branch, Model, Input, Output, FiveHour, Weekly, Fast string
 	ContextLeft                                                   int
 	ContextKnown                                                  bool
@@ -574,6 +575,9 @@ func compactSessionStatusRows(cols, availableRows int, advice []string, stats to
 		return []string{footer}
 	}
 	if capacity == 2 {
+		if view.ContextKnown && hudShows(cols, stats, view, fmt.Sprintf("Context %d%%", 100-view.ContextLeft)) {
+			return []string{status[0], footer}
+		}
 		return []string{"  " + ansi.Truncate("🧠 Context  "+context, width, "…") + rst, footer}
 	}
 	// Section titles get breathing room; related metric rows stay together.
@@ -611,7 +615,7 @@ func compactSessionStatusRows(cols, availableRows int, advice []string, stats to
 			break
 		}
 	}
-	if !contextVisible {
+	if !contextVisible && !(view.ContextKnown && hudShows(cols, stats, view, fmt.Sprintf("Context %d%%", 100-view.ContextLeft))) {
 		status[len(status)-1] = "  " + ansi.Truncate("🧠 Context  "+context, width, "…") + rst
 	}
 	rows := append(status, preview[:previewCount]...)
@@ -632,7 +636,10 @@ func compactInstrumentRows(cols int, stats toolStats, view sessionView) ([]strin
 		daemon = green + "● daemon online" + rst
 	}
 	title := cyan + bold + "✦ Cully" + rst + "  " + formatPhaseBadge(sessionPhase(stats, view))
-	state := daemon + dim + " · elapsed " + elapsed + rst
+	state := daemon
+	if !hudShows(cols, stats, view, healthDuration(time.Since(view.Started))) {
+		state += dim + " · elapsed " + elapsed + rst
+	}
 	if cols >= 120 {
 		add(title + strings.Repeat(" ", max(2, width-ansi.StringWidth(title)-ansi.StringWidth(state))) + state)
 	} else {
@@ -653,14 +660,16 @@ func compactInstrumentRows(cols int, stats toolStats, view sessionView) ([]strin
 	}
 	activity := []string{cyan + bold + "Harness" + rst, "", "Model " + model}
 	activity = append(activity, harnessPanelRows(harnessPanel(view.Project, view.Agent))...)
-	activity = append(activity, "Verification "+verification)
+	if !hudShows(cols, stats, view, fmt.Sprintf("● %d unchecked", stats.EditsSinceCheck)) {
+		activity = append(activity, "Verification "+verification)
+	}
 	if coverage := panelCoverage(stats, view); coverage != "" {
 		activity = append(activity, "Signals "+yellow+coverage+rst)
 	}
 	if stats.Errors > 0 {
 		activity = append(activity, "Errors "+errors)
 	}
-	if view.Loops.Active() {
+	if view.Loops.Active() && !hudShows(cols, stats, view, fmt.Sprintf("⚠ Loop %dx", view.Loops.Loops[0].Attempts)) {
 		activity = append(activity, "Loops "+yellow+view.Loops.Summary()+rst)
 	}
 	location := dim + "Project unavailable" + rst
@@ -704,7 +713,23 @@ func compactInstrumentRows(cols int, stats toolStats, view sessionView) ([]strin
 		workParts = append(workParts, "Git "+changes)
 	}
 	work := strings.Join(workParts, " · ")
-	usage := []string{blue + bold + "Project & usage" + rst, "", location, "Context " + context, tokens, quota, work}
+	usage := []string{blue + bold + "Project & usage" + rst, ""}
+	locationKey := view.Project
+	if locationKey != "" {
+		locationKey = filepath.Base(locationKey)
+	}
+	if view.Branch != "" {
+		locationKey += ":" + view.Branch
+	}
+	if locationKey == "" || !hudShows(cols, stats, view, locationKey) {
+		usage = append(usage, location)
+	} else {
+		usage[0] = blue + bold + "Usage" + rst
+	}
+	if !view.ContextKnown || !hudShows(cols, stats, view, fmt.Sprintf("Context %d%%", 100-view.ContextLeft)) {
+		usage = append(usage, "Context "+context)
+	}
+	usage = append(usage, tokens, quota, work)
 	cully := cullyInstrumentRows(stats, width)
 	groups := [][]string{activity, usage, cully}
 	if cols >= 120 {
@@ -736,7 +761,7 @@ func compactInstrumentRows(cols int, stats toolStats, view sessionView) ([]strin
 		rows = rows[:len(rows)-1] // title and first group belong to one section
 		groups = [][]string{
 			append([]string{activity[0] + " · Model " + model}, activity[3:]...),
-			{usage[0] + " · " + location, "Context " + context, strings.TrimSuffix(tokens+" · "+quota, " · "), work},
+			usage,
 			append([]string{cully[0]}, cully[2:]...),
 		}
 		for i, group := range groups {
@@ -773,6 +798,12 @@ func cullyInstrumentRows(stats toolStats, width int) []string {
 		health = green + "● Healthy" + rst
 	} else if c.Health == "unhealthy" {
 		health = red + "● Unhealthy" + rst
+	} else if c.Probed && c.Health == "unsupported" {
+		health = dim + "Connection check unavailable" + rst
+	} else if c.Probed && c.Health == "agent_signin" {
+		health = yellow + "Agent sign-in needed for check" + rst
+	} else if c.Probed {
+		health = dim + "Connection not verified" + rst
 	}
 	rows := []string{magenta + bold + "Cully impact" + rst + " · " + health, ""}
 	for _, line := range stats.Impact.Lines() {
@@ -791,12 +822,16 @@ func cullyInstrumentRows(stats toolStats, width int) []string {
 		rows = append(rows, line)
 	}
 	auth := observedState(c.Auth, true)
-	if c.Probed && (c.Auth == "" || c.Auth == "unknown") {
+	if c.Auth == "" || c.Auth == "unknown" {
 		auth = dim + "not verified" + rst
 	}
 	row := fmt.Sprintf("MCP %s%d%s calls · Auth %s", cyan, c.Calls, rst, auth)
 	if c.Probed {
-		if c.Health == "unknown" {
+		if c.Health == "unsupported" {
+			row += dim + " (agent connection check unavailable)" + rst
+		} else if c.Health == "agent_signin" {
+			row += dim + " (connection check needs agent sign-in)" + rst
+		} else if c.Health == "unknown" {
 			row += dim + " (connection check inconclusive)" + rst
 		} else if c.Health == "unhealthy" && (c.Auth == "" || c.Auth == "unknown") {
 			row += dim + " (connection check failed)" + rst
@@ -809,7 +844,7 @@ func cullyInstrumentRows(stats toolStats, width int) []string {
 	if c.Calls == 0 && c.Auth == "" && !c.Probed {
 		// Health and auth are read from Cully tool responses, so nothing is
 		// known before the first call; say why instead of leaving a bare unknown.
-		row += dim + " (set by first call)" + rst
+		row += dim + " (awaiting connection evidence)" + rst
 	}
 	rows = append(rows, row)
 	if c.Foreground+c.Advisor+c.Startup > 0 {

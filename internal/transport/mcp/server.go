@@ -17,12 +17,11 @@ import (
 )
 
 type AuthConfig struct {
-	ExperimentalTeam bool // reserved for existing workspace integration tests
-	Mode             string
-	Owner            string
-	Verifier         auth.TokenVerifier
-	Issuer           string
-	Resource         string
+	Mode     string
+	Owner    string
+	Verifier auth.TokenVerifier
+	Issuer   string
+	Resource string
 }
 
 func add[I any](server *sdk.Server, service memory.Service, identity func(context.Context, bool) (string, error), name, description string, write bool, request func(I) memory.Request) {
@@ -109,7 +108,7 @@ func toolRegistrations() []toolRegistration {
 }
 
 func Handler(service memory.Service, cfg AuthConfig, path, version string) http.Handler {
-	server := sdk.NewServer(&sdk.Implementation{Name: "Cully", Version: version}, &sdk.ServerOptions{Instructions: "Cully provides Solo for one local owner and IC for signed-in individual contributors using shared infrastructure. Both keep memory private to its authenticated owner. Team project management is not enabled in these modes. At the start of substantive work, use cully_context with a focused task query and an opaque session_ref when known to get a few concise prior-work previews. Use semantic mode when text search misses, and cully_get only for a record whose full details matter. Before finishing substantive work, use cully_log to save one concise task summary with approach, outcome, issues or missed steps, and next steps. Include the opaque session_ref and native agent_session_id supplied by an installed Cully hook when available so the conversation can be resumed. When the user accepts a task, call cully_session with that session_ref and the task name. Avoid duplicate records, raw transcripts and credentials. Search before answering history questions. Remember personal context when the user asks. Local session controls use the cully CLI."})
+	server := sdk.NewServer(&sdk.Implementation{Name: "Cully", Version: version}, &sdk.ServerOptions{Instructions: "Cully provides Solo for one local owner and IC for signed-in individual contributors using shared infrastructure. Both keep memory private to its authenticated owner. Existing Team workspace tools manage explicitly authorized projects, tasks, checkpoints, review and published lessons. Private memory remains separate; never infer sharing from a note or session. At the start of substantive work, use cully_context with a focused task query and an opaque session_ref when known to get a few concise prior-work previews. Use semantic mode when text search misses, and cully_get only for a record whose full details matter. Before finishing substantive work, use cully_log to save one concise task summary with approach, outcome, issues or missed steps, and next steps. Include the opaque session_ref and native agent_session_id supplied by an installed Cully hook when available so the conversation can be resumed. When the user accepts a task, call cully_session with that session_ref and the task name. Avoid duplicate records, raw transcripts and credentials. Search before answering history questions. Remember personal context when the user asks. Local session controls use the cully CLI."})
 	identity := func(ctx context.Context, write bool) (string, error) {
 		if cfg.Mode == "none" {
 			return cfg.Owner, nil
@@ -130,9 +129,6 @@ func Handler(service memory.Service, cfg AuthConfig, path, version string) http.
 	for _, t := range toolRegistrations() {
 		toolIdentity := identity
 		if strings.HasPrefix(t.name, "cully_workspace_") {
-			if !cfg.ExperimentalTeam {
-				continue
-			}
 			toolIdentity = func(ctx context.Context, write bool) (string, error) {
 				if cfg.Mode != "oauth" || cfg.Issuer == "" {
 					return "", memory.ErrForbidden

@@ -50,7 +50,7 @@ Immediate local rule warnings work offline; model-backed worker analysis and rem
 
 ## Public memory boundary
 
-Solo and IC do not register workspace tools. The existing experimental workspace implementation is reserved for future Team research; it is not enabled by ordinary local or OAuth setup. Solo and IC are descriptions of deployment usage, not selectable runtime modes. Its internal design follows.
+Private Solo and IC notes remain separate from existing Team workspace records. Shared infrastructure and sign-in do not publish notes automatically.
 
 Separate workspace tools coordinate team work. MCP requires OAuth and derives an issuer/subject-scoped principal for workspace operations; existing private-memory subject IDs are unaffected. Workspace requests travel through the same authenticated private API and repository interface. `internal/workspace` owns roles, task transitions, claims, review and publication for all transports.
 

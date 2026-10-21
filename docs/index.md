@@ -1,17 +1,17 @@
 ---
 title: Cully documentation
-description: Cully Solo is the coding-agent harness runtime, with session intelligence and private memory. Team is a project management harness runtime that connects people and AI agents with project tasks, handoffs, review evidence and shared learning.
+description: Session intelligence, private memory, recovery and an evidence-based improvement loop around your coding agents.
 ---
 
 # Cully docs
 
-**A self-improving harness for coding agents and software projects.**
+**Session intelligence. Private memory. A better harness.**
 
-Cully runs existing coding agents in one terminal runtime, with session intelligence, advisor guidance, recovery and memory. It also evaluates itself every five hours, proposes fixes from what fails, and writes a change only after you approve it. Each agent keeps its own reasoning and tools. [Solo](/solo) provides local session health, advice and private memory. [Team](/team-workflows) is a project management harness runtime for people and AI agents, connecting project tasks, portable checkpoints, review evidence and explicitly shared lessons. They use the same CLI and services; project access is explicit and solo records stay private.
+Cully gives your coding agents a wider view of the work: live session health, loop detection, private recall, recovery and an evaluation loop that proposes improvements you approve. Run Claude Code, Codex, Cursor or another agent in the same terminal harness. Each agent keeps its own reasoning, model and tools.
 
-```text
-Prepare  →  Work  →  Hand off  →  Review  →  Reuse
-```
+Cully observes the session, keeps useful context between agents, shows what was checked, and helps you recover when work stalls. It evaluates its setup and guidance every five hours, turns failing checks into proposals, and lets you inspect the results after an approved change.
+
+Use it on your own machine or as an individual contributor on shared infrastructure. Saved memory stays private to your identity. Solo and IC describe those uses; there is no mode flag. Existing [Team workflows](/team-workflows) separately coordinate project tasks, checkpoints, review and explicitly shared lessons.
 
 Works across agents. Learns across sessions.
 
@@ -30,7 +30,8 @@ Works across agents. Learns across sessions.
 | Put sessions on the record: forensics, review, playbooks | [Use cases](/use-cases) |
 | Review and approve what Cully proposes for itself | [Let Cully improve itself](/self-improvement) |
 | Know what is built and what is planned | [Current capabilities](/capabilities) |
-| Coordinate tasks, handoffs and review with teammates | [Team workflows](/team-workflows) |
+| Share infrastructure while keeping each contributor's memory private | [Contributor deployment](/team-deployment) |
+| Coordinate project tasks, handoffs and review | [Team workflows](/team-workflows) |
 
 ## Core concepts
 
@@ -43,14 +44,14 @@ Works across agents. Learns across sessions.
 | [Evaluate Cully](/evals) | Score setup, harness, the improvement loop, task efficiency, advisor and memory against planted ground truth |
 | [Self-improvement](/self-improvement) | A scheduled eval, suggestions you read, apply or drop, and a before/after check |
 | [Advisor](/advisor) | A second pair of eyes that warns and suggests while you work |
-| [Project memory](/memory) | Decisions and results that outlive the session |
+| [Private memory](/memory) | Decisions, attempts, results and session links that outlive the conversation |
 | [Agent integration](/agents) | How Claude Code, Codex, Cursor and others connect |
 | [Install as a plugin](/plugins) | Add Cully's hooks and skill from an agent's plugin marketplace |
-| [Team workspace](/team-workflows) | Project access, human-owned tasks, portable checkpoints, review evidence and published lessons |
+| [Team workspace](/team-workflows) | Project roles, task ownership, portable checkpoints, review and explicitly published lessons |
 
 ## Run Cully
 
-Solo's default stack runs on your laptop with one stable owner and no sign-in. For Team, deploy the services with [OAuth](/oauth), identify each person and grant explicit project roles. Each person's private memory stays separate from shared workspace records. See [self-hosting](/hosting) and [team deployment](/team-deployment).
+Solo's default stack runs on your laptop with one stable owner and no sign-in. Shared deployments use [OAuth](/oauth) to identify each contributor and keep records private. Clients discover sign-in from the server; they cannot choose a different owner. See [self-hosting](/hosting) and [contributor deployment](/team-deployment).
 
 ## Trust and direction
 
@@ -62,6 +63,6 @@ Solo's default stack runs on your laptop with one stable owner and no sign-in. F
 
 For project work, see [development](/development), the [roadmap](/roadmap) and the [changelog](https://github.com/tavric-labs/cully/blob/main/CHANGELOG.md).
 
-## Teams and project work
+## Work across people and agents
 
-A [team deployment](/team-deployment) provides private user memory alongside explicitly authorized project work. Read [work across people and agents](/team-workflows) to create tasks, continue from checkpoints, review evidence and publish lessons. [Product vision](/product-direction) separates this manual-launch implementation from further proposals.
+Cully already supports [Team workflows](/team-workflows): project access, task ownership, portable checkpoints, review evidence and explicitly published lessons. Private notes remain separate. Broader Team enhancements are planned; see [product direction](/product-direction).

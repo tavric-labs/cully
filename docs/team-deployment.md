@@ -5,7 +5,7 @@ description: Run one Cully stack for multiple people with private, per-user memo
 
 # Deploy Cully for individual contributors
 
-This guide is for the ops team running Cully for several people. For your own laptop, use the [quickstart](/quickstart). Everyone connects to the same public MCP endpoint and signs in using the configured methods: LDAP, Google, GitHub or an OIDC/OAuth provider. IC mode keeps memory private to each signed-in contributor. Services and the embedding model can be shared; notes cannot. Team project management and sharing are deferred.
+This guide is for the ops team running Cully for several people. For your own laptop, use the [quickstart](/quickstart). Everyone connects to the same public MCP endpoint and signs in using the configured methods: LDAP, Google, GitHub or an OIDC/OAuth provider. IC mode keeps memory private to each signed-in contributor. Services and the embedding model can be shared; notes cannot. Existing Team workflows use separate authorized project records and explicit sharing actions.
 
 The memory services and the advisor are installed in different places:
 
@@ -112,6 +112,14 @@ MCP uses a private service token to call the data API. The data API holds databa
 
 Set `CULLY_MCP_AUTH_MODE=oauth` on the MCP service. IC requires OAuth and rejects a fixed shared owner. Each request uses its verified subject for PostgreSQL reads/writes and Mem0's hashed user namespace. Source notes, sessions and projection jobs all carry that owner. Do not put names, email addresses or manually supplied owners in agent notes to select access.
 
-Only private memory tools are available in Solo and IC; workspace sharing tools are not registered. Keep the deployment issuer stable: one MCP deployment trusts one issuer, and its subject IDs define ownership. Changing issuer or identity mapping requires an explicit owner migration.
+Private memory tools stay owner-scoped. Workspace tools require OAuth and project authorization; they do not expose private notes. Keep the deployment issuer stable: one MCP deployment trusts one issuer, and its subject IDs define ownership. Changing issuer or identity mapping requires an explicit owner migration.
 
 Schema version 8 removes project/classification metadata and queues a Mem0 projection rebuild. Follow the [schema upgrade steps](/memory#upgrade-the-private-schema), use matching service versions and refresh agent skills. A service-image rollback alone cannot restore dropped columns; keep a database backup.
+
+## Enable the team workspace
+
+Apply the current schema migration (version 8) before starting the updated data service. Gate `cully_workspace_read` with `tools:read` and `cully_workspace_write` with `tools:write`; both require OAuth even though they are discoverable in no-OAuth mode. Existing owners and note content remain private; schema 8 removes obsolete private metadata as described above.
+
+Each person calls `whoami` to obtain their workspace principal, bound to the verified issuer and subject. The team creator becomes its first admin. Admins explicitly add team members and projects; project maintainers or team admins grant project roles. Team membership alone does not grant project reads. See [team workflows](/team-workflows).
+
+Changes and audit events commit together in PostgreSQL. Limits per team are 100 members, 50 projects, 500 tasks, 500 lessons, 200 playbooks and a 1 MiB serialized aggregate. Per-team writes serialize under a row lock. Scale and normalize storage before raising these limits. Audit events are operator-accessible database records; there is no user-facing audit export or web board yet.

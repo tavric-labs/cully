@@ -10,20 +10,19 @@ import (
 )
 
 type Settings struct {
-	ExperimentalTeam bool
-	Address          string
-	DatabaseURL      string
-	DataAPIURL       string
-	DataAPIToken     string
-	Issuer           string
-	Resource         string
-	JWKSURL          string
-	MCPPath          string
-	AuthMode         string
-	Owner            string
-	Mem0URL          string
-	Mem0APIKey       string
-	MaxConns         int32
+	Address      string
+	DatabaseURL  string
+	DataAPIURL   string
+	DataAPIToken string
+	Issuer       string
+	Resource     string
+	JWKSURL      string
+	MCPPath      string
+	AuthMode     string
+	Owner        string
+	Mem0URL      string
+	Mem0APIKey   string
+	MaxConns     int32
 }
 
 func value(key, defaultValue string) string {
@@ -72,7 +71,6 @@ func LoadMCP(oauthFlag bool) (Settings, error) {
 	if oauthFlag {
 		s.AuthMode = "oauth"
 	}
-	s.ExperimentalTeam = s.AuthMode == "oauth" && os.Getenv("CULLY_EXPERIMENTAL_TEAM") == "1"
 	if s.AuthMode == "none" {
 		s.Owner = os.Getenv("CULLY_MCP_OWNER")
 		if strings.TrimSpace(s.Owner) == "" || len(s.Owner) > 512 || strings.TrimSpace(s.Owner) != s.Owner || strings.IndexFunc(s.Owner, unicode.IsControl) >= 0 {

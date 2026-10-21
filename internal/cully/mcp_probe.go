@@ -81,7 +81,7 @@ var claudeMCPList = func(ctx context.Context) (string, error) {
 }
 
 var cursorMCPTools = func(ctx context.Context) (string, error) {
-	out, err := mcpProbeCommand(ctx, "cursor-agent", "mcp", "list-tools", "cully").Output()
+	out, err := mcpProbeCommand(ctx, "cursor-agent", "mcp", "list-tools", "cully").CombinedOutput()
 	return string(out), err
 }
 
@@ -113,9 +113,24 @@ var agentMCPProbe = func(ctx context.Context, agent string) (string, string, boo
 		return probeCodexMCP(ctx)
 	case "cursor":
 		out, err := cursorMCPTools(ctx)
-		if err == nil && strings.Contains(out, "cully_context") {
-			return "healthy", "authenticated", true
-		}
+		return parseCursorMCPTools(out, err)
+	default:
+		return "unsupported", "unknown", true
+	}
+}
+
+// Tool discovery proves an MCP connection; a Cursor CLI login error does not
+// prove that the independently configured MCP credential is invalid.
+func parseCursorMCPTools(out string, err error) (string, string, bool) {
+	if err == nil && strings.Contains(out, "cully_context") {
+		return "healthy", "authenticated", true
+	}
+	lower := strings.ToLower(out)
+	if err != nil && strings.Contains(lower, "mcp login") {
+		return "unhealthy", "unauthenticated", true
+	}
+	if err != nil && (strings.Contains(lower, "cursor_api_key") || strings.Contains(lower, "agent login") || strings.Contains(lower, "cursor-agent login")) {
+		return "agent_signin", "unknown", true
 	}
 	return "", "", false
 }
@@ -133,7 +148,7 @@ func runMCPProbe(ctx context.Context, agent string, p *mcpProber) {
 		if !found {
 			health, auth = "unknown", "unknown"
 		}
-		if health != "healthy" {
+		if health != "healthy" && health != "unsupported" {
 			delay = 30 * time.Second
 		}
 		p.set(mcpProbeResult{Health: health, Auth: auth, At: time.Now()})
