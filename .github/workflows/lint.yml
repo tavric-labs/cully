@@ -48,3 +48,13 @@ jobs:
         run: |
           cd deploy
           CULLY_DATA_TAG=v0.0.0 docker compose --env-file personal-data.env.example -f compose.personal-data.yaml config --quiet
+      - name: Login-method deployment configuration (no images started)
+        env:
+          MCP_AUTH_IMAGE: princekrroshan01/mcp-auth-server:ci-unreleased
+          CULLY_IMAGE_TAG: v0.0.0
+          MCP_AUTH_PROVIDER_ENV_FILE: ./provider.env.example
+        run: |
+          cd deploy/login-methods
+          docker compose --env-file .env.example --profile ops config --quiet
+          python3 -m json.tool config/login-methods.ldap.example.json > /dev/null
+          python3 -m json.tool config/login-methods.google.example.json > /dev/null

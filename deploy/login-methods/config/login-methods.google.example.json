@@ -1,0 +1,11 @@
+{
+  "methods": [
+    {
+      "id": "google",
+      "type": "google",
+      "client_id_env": "MCP_AUTH_GOOGLE_CLIENT_ID",
+      "client_secret_env": "MCP_AUTH_GOOGLE_CLIENT_SECRET",
+      "allowed_domains": ["example.com"]
+    }
+  ]
+}

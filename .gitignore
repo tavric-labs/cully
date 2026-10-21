@@ -15,6 +15,10 @@ build/
 /deploy/self-hosted/.secrets/
 /deploy/self-hosted/connectors.keycloak.json
 /deploy/self-hosted/connectors.json
+/deploy/login-methods/provider.env
+/deploy/login-methods/.secrets/
+/deploy/login-methods/config/login-methods.json
+/deploy/login-methods/config/connectors.json
 /docs/.vitepress/cache/
 
 /cully
