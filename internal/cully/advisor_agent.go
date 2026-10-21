@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -73,36 +72,13 @@ When an actual signal indicates a missing external capability or need for curren
 add at most one line: TOOLGAP: capability || concrete evidence || focused public search query.
 A separate research step will use this host's web tools. Do not invent integrations or URLs.
 Avoid generic shopping lists and repeated suggestions. The user chooses whether to apply advice.
-When project_url is provided in SIGNALS, use that exact project filter for memory recall.
+Use a focused task query and the supplied session_ref for memory recall. Never infer a project label.
 If task_intent is unknown, focus recall on evidenced workflow problems, never guess the task.
 Match command syntax and paths to execution_os and login_shell when supplied.
 terminal_program describes the client terminal, not the machine executing commands:
 Warp over SSH does not imply macOS commands work on the remote host. Do not invent client OS.
 For Cully pane focus recommend Ctrl+] or F6; Option/Alt+A requires Option-as-Meta.
 Never recommend changing zsh/bash configuration merely to fix terminal key forwarding.`
-
-func advisorProjectURL(cwd string) string {
-	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, "git", "-C", cwd, "remote", "get-url", "origin")
-	out, err := cmd.Output()
-	if err != nil {
-		return ""
-	}
-	remote := strings.TrimSpace(string(out))
-	if strings.HasPrefix(remote, "git@github.com:") {
-		remote = "https://github.com/" + strings.TrimPrefix(remote, "git@github.com:")
-	}
-	u, err := url.Parse(remote)
-	if err != nil || u.Hostname() != "github.com" {
-		return ""
-	}
-	parts := strings.Split(strings.Trim(strings.TrimSuffix(u.Path, ".git"), "/"), "/")
-	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
-		return ""
-	}
-	return "https://github.com/" + strings.Join(parts, "/")
-}
 
 func advisorAgent(sig string) string {
 	agent := strings.ToLower(strings.TrimSpace(parseSignalStr(sig, "agent=")))
@@ -130,7 +106,7 @@ func advisorSourceState(out, source string, failed bool) string {
 func advisorCommand(agent string, research bool) (string, []string, error) {
 	switch agent {
 	case "claude":
-		allowed := "ToolSearch,mcp__cully__cully_context,mcp__cully__cully_get,mcp__cully__cully_search,mcp__cully__cully_recall,mcp__cully__cully_projects"
+		allowed := "ToolSearch,mcp__cully__cully_context,mcp__cully__cully_get,mcp__cully__cully_search,mcp__cully__cully_recall,mcp__cully__cully_recent"
 		builtin := "ToolSearch"
 		if research {
 			allowed = "WebSearch,WebFetch"
@@ -142,7 +118,7 @@ func advisorCommand(agent string, research bool) (string, []string, error) {
 		if research {
 			web = "live"
 		}
-		return "codex", []string{"exec", "--ephemeral", "--sandbox", "read-only", "--skip-git-repo-check", "-c", "approval_policy=\"never\"", "-c", "web_search=\"" + web + "\"", "-c", "mcp_servers.cully.enabled_tools=[\"cully_context\",\"cully_get\",\"cully_search\",\"cully_recall\",\"cully_projects\"]", "-"}, nil
+		return "codex", []string{"exec", "--ephemeral", "--sandbox", "read-only", "--skip-git-repo-check", "-c", "approval_policy=\"never\"", "-c", "web_search=\"" + web + "\"", "-c", "mcp_servers.cully.enabled_tools=[\"cully_context\",\"cully_get\",\"cully_search\",\"cully_recall\",\"cully_recent\"]", "-"}, nil
 	case "cursor":
 		return "cursor-agent", []string{"--print", "--mode", "ask", "--output-format", "text"}, nil
 	default:

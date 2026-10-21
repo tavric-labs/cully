@@ -113,10 +113,10 @@ func TestTimelineAllTable(t *testing.T) {
 
 func TestHandoffSections(t *testing.T) {
 	full := buildHandoff(handoffInput{
-		ProjectURL: "https://github.com/o/r", Branch: "feat/x", DiffStat: "2 files changed, 5 insertions(+)",
+		Branch: "feat/x", DiffStat: "2 files changed, 5 insertions(+)",
 		Files: []string{"a.go", "b.go"}, TotalFiles: 2, Events: append(sampleSession(), tev(53, journalEdit, nil)),
 	})
-	for _, want := range []string{"## Task", "see Cully memory", `project_url="https://github.com/o/r"`, "## Completed work", "5 edits",
+	for _, want := range []string{"## Task", "see Cully memory", "focused task query", "## Completed work", "5 edits",
 		"## Current state", "Branch: feat/x", "- a.go", "## Verification", "unverified", "## Open problems", "1 loop",
 		"## Remaining work", "1 edit not yet", "## Known dead ends", "## For the next agent", "cully_context", "cully_log"} {
 		if !strings.Contains(full, want) {

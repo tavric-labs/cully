@@ -158,10 +158,10 @@ type Summary struct {
 	HasAnswerable, HasSilent            bool
 }
 
-// Run seeds the dataset under two fresh projects, scores every case and
-// removes what it seeded. projectURL and otherURL must be distinct, unused
-// projects so a failed earlier run cannot change the result.
-func Run(ctx context.Context, store Store, ds Dataset, projectURL, otherURL, runTag string, k int) (Report, error) {
+// Run seeds the dataset under two fresh session references, scores every case and
+// removes what it seeded. sessionRef and otherSession must be distinct, unused
+// session references so a failed earlier run cannot change the result.
+func Run(ctx context.Context, store Store, ds Dataset, sessionRef, otherSession, runTag string, k int) (Report, error) {
 	if err := ds.Validate(); err != nil {
 		return Report{}, err
 	}
@@ -173,11 +173,11 @@ func Run(ctx context.Context, store Store, ds Dataset, projectURL, otherURL, run
 		}
 	}()
 	for _, n := range ds.Notes {
-		project := projectURL
+		ref := sessionRef
 		if n.Other {
-			project = otherURL
+			ref = otherSession
 		}
-		in := memory.LogInput{Summary: n.Summary, Assistant: "other", Section: "personal", ProjectURL: &project, Tags: []string{"eval", runTag},
+		in := memory.LogInput{Summary: n.Summary, Assistant: "other", SessionRef: &ref,
 			OccurredAt: time.Now().Add(-time.Duration(n.AgeDays) * 24 * time.Hour).UTC().Format(time.RFC3339)}
 		if n.Approach != "" {
 			in.Approach = &n.Approach
@@ -201,7 +201,7 @@ func Run(ctx context.Context, store Store, ds Dataset, projectURL, otherURL, run
 	}
 	report := Report{K: k}
 	for _, c := range ds.Cases {
-		entries, err := store.Search(ctx, c.Mode, memory.SearchInput{Query: c.Query, ProjectURL: &projectURL, Limit: k})
+		entries, err := store.Search(ctx, c.Mode, memory.SearchInput{Query: c.Query, SessionRef: &sessionRef, Limit: k})
 		if err != nil {
 			return Report{}, fmt.Errorf("case %s: %w", c.ID, err)
 		}
@@ -211,7 +211,7 @@ func Run(ctx context.Context, store Store, ds Dataset, projectURL, otherURL, run
 			if !ok {
 				key = "unseeded:" + e.ID
 			}
-			if e.ProjectURL != nil && *e.ProjectURL != projectURL {
+			if e.SessionRef != nil && *e.SessionRef != sessionRef {
 				other[key] = true
 			}
 			keys = append(keys, key)

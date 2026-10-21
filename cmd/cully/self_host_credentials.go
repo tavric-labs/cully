@@ -331,7 +331,12 @@ func selfHostOAuthValues(directory string) (map[string]string, error) {
 			values[key] = value
 		}
 	}
-	for _, key := range []string{"CULLY_MCP_HOST", "CULLY_AUTH_HOST", "MCP_AUTH_UPSTREAM_CLIENT_SECRET"} {
+	customAuth := os.Getenv("CULLY_CUSTOM_AUTH") == "1"
+	required := []string{"CULLY_MCP_HOST", "CULLY_AUTH_HOST"}
+	if !customAuth {
+		required = append(required, "MCP_AUTH_UPSTREAM_CLIENT_SECRET")
+	}
+	for _, key := range required {
 		if !existingSelfHostSecret(values[key]) || strings.Contains(values[key], "example.com") {
 			return nil, fmt.Errorf("set a real %s in .env", key)
 		}
@@ -348,6 +353,9 @@ func selfHostOAuthValues(directory string) (map[string]string, error) {
 	values["CULLY_AUTH_RESOURCE"] = resource
 	if values["CULLY_AUTH_ISSUER"] == "" {
 		values["CULLY_AUTH_ISSUER"] = "https://" + values["CULLY_AUTH_HOST"] + "/mcp-auth"
+		if customAuth {
+			values["CULLY_AUTH_ISSUER"] = "https://" + values["CULLY_AUTH_HOST"]
+		}
 	}
 	if values["CULLY_JWKS_URL"] == "" {
 		values["CULLY_JWKS_URL"] = strings.TrimRight(values["CULLY_AUTH_ISSUER"], "/") + "/.well-known/jwks.json"
@@ -356,6 +364,10 @@ func selfHostOAuthValues(directory string) (map[string]string, error) {
 		if strings.Contains(values[key], "example.com") || strings.HasPrefix(values[key], "replace-with-") || !strings.HasPrefix(values[key], "https://") {
 			return nil, fmt.Errorf("%s must be a real HTTPS URL", key)
 		}
+	}
+	if customAuth {
+		values["CULLY_MCP_AUTH_CONNECTOR"] = ""
+		return values, nil // Provider-specific validation belongs to the chosen auth image.
 	}
 	contents, err := os.ReadFile(filepath.Join(directory, "connectors.json"))
 	if err != nil {

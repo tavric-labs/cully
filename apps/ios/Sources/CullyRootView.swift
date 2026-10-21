@@ -128,7 +128,7 @@ struct CullyRootView: View {
             if continuationNotes.isEmpty { Text("No next step was recorded in these notes. Your local focus can still guide today.").foregroundStyle(.secondary) }
             ForEach(continuationNotes) { note in
                 VStack(alignment: .leading, spacing: 10) {
-                    Text("\((note.projectURL ?? "Personal work").replacingOccurrences(of: "https://github.com/", with: "")) · \(localDate(note))").font(.caption).foregroundStyle(Theme.gold)
+                    Text(localDate(note)).font(.caption).foregroundStyle(Theme.gold)
                     Text(note.nextSteps ?? "").font(.headline)
                     if let issue = note.issue, !issue.isEmpty { Text("Reported blocker · \(issue)").font(.subheadline).foregroundStyle(.secondary) }
                     HStack { Button("Make a task") { draft = note.nextSteps ?? ""; showTask = true }; Button("Recall why") { selectedNote = note } }.buttonStyle(.bordered)
@@ -137,7 +137,7 @@ struct CullyRootView: View {
         }
     }
     private func draftQuestion(_ note: ContextNote, prompt: String) {
-        question = prompt + (note.projectURL.map { " Project: \($0)" } ?? "")
+        question = prompt
         selectedNote = nil
     }
     private func recallSheet(_ note: ContextNote) -> some View {
@@ -146,7 +146,7 @@ struct CullyRootView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     Text(localDate(note)).font(.caption).foregroundStyle(Theme.gold)
-                    if let project = note.projectURL { Text(project.replacingOccurrences(of: "https://github.com/", with: "")).font(.caption) }
+                    if let project = note.project { Text(project.replacingOccurrences(of: "https://github.com/", with: "")).font(.caption) }
                     Text(note.summary).font(.headline)
                     if let value = note.approach, !value.isEmpty { card("HOW WE APPROACHED IT") { Text(value) } }
                     if let value = note.outcome, !value.isEmpty { card("SAVED OUTCOME") { Text(value) } }
@@ -160,7 +160,7 @@ struct CullyRootView: View {
         }.padding(22).foregroundStyle(Theme.ink).background(Theme.background).tint(Theme.gold).frame(minWidth: 330, minHeight: 480)
     }
     private var visibleNotes: [ContextNote] { weekly ? model.notes : model.dayNotes }
-    private var projects: [String] { Array(Set(visibleNotes.compactMap(\.projectURL))).sorted() }
+    private var projects: [String] { Array(Set(visibleNotes.compactMap(\.project))).sorted() }
 
     private var tasks: some View {
         page {

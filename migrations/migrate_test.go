@@ -47,7 +47,24 @@ func TestApplyUpgradesSourceOnlySchema(t *testing.T) {
 		t.Fatal(err)
 	}
 	id := uuid.NewString()
-	if _, err = pool.Exec(ctx, "INSERT INTO cully_entries(id,owner_subject,section,entry_type,summary,assistant,occurred_at) VALUES($1::uuid,'owner-a','company','work','old note','codex',now())", id); err != nil {
+	if _, err = pool.Exec(ctx, "INSERT INTO cully_entries(id,owner_subject,section,project_url,entry_type,summary,assistant,occurred_at) VALUES($1::uuid,'owner-a','company','https://github.com/example/old-project','work','old note','codex',now())", id); err != nil {
+		t.Fatal(err)
+	}
+	// Exercise an existing v7 session/task link as well as a v2 note. The
+	// metadata cleanup must not move either record to a different owner.
+	for _, step := range []struct {
+		version int
+		sql     string
+	}{{3, sessionRefSchema}, {4, sessionsTasksSchema}, {5, validateTaskEntryTypeSchema}, {6, workspaceSchema}, {7, agentSessionIDSchema}} {
+		if err := applyOne(ctx, pool, step.version, step.sql); err != nil {
+			t.Fatal(err)
+		}
+	}
+	refValue := "codex-0123456789abcdef"
+	if _, err := pool.Exec(ctx, `INSERT INTO cully_entries(id,owner_subject,section,entry_type,summary,assistant,session_ref,occurred_at) VALUES('00000000-0000-0000-0000-000000000001','owner-a','company','task','Keep task link','codex',$1,now())`, refValue); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO cully_sessions(owner_subject,session_ref,section,assistant,task_id) VALUES('owner-a',$1,'company','codex','00000000-0000-0000-0000-000000000001')`, refValue); err != nil {
 		t.Fatal(err)
 	}
 	if err = Apply(ctx, pool); err != nil {
@@ -57,9 +74,22 @@ func TestApplyUpgradesSourceOnlySchema(t *testing.T) {
 		t.Fatal("migration is not idempotent:", err)
 	}
 	var summary string
+	var sessionOwner, taskID string
+	var sessionAgentID *string
+	if err := pool.QueryRow(ctx, `SELECT owner_subject,task_id::text,agent_session_id FROM cully_sessions WHERE session_ref=$1`, refValue).Scan(&sessionOwner, &taskID, &sessionAgentID); err != nil || sessionOwner != "owner-a" || taskID != "00000000-0000-0000-0000-000000000001" || sessionAgentID != nil {
+		t.Fatalf("session/task provenance lost: owner=%s task=%s native=%v err=%v", sessionOwner, taskID, sessionAgentID, err)
+	}
+	var obsolete int
+	if err = pool.QueryRow(ctx, `SELECT count(*) FROM information_schema.columns WHERE table_schema=current_schema() AND table_name IN ('cully_entries','cully_sessions') AND column_name IN ('project_url','project','section','category','theme','tags')`).Scan(&obsolete); err != nil || obsolete != 0 {
+		t.Fatalf("ambiguous columns remain: %d %v", obsolete, err)
+	}
 	var ref, agentID *string
 	if err = pool.QueryRow(ctx, "SELECT summary,session_ref,agent_session_id FROM cully_entries WHERE id=$1::uuid", id).Scan(&summary, &ref, &agentID); err != nil || summary != "old note" || ref != nil || agentID != nil {
 		t.Fatalf("old record lost: summary=%q ref=%v agentID=%v err=%v", summary, ref, agentID, err)
+	}
+	var queued bool
+	if err = pool.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM cully_mem0_jobs WHERE owner_subject='owner-a' AND entry_id=$1::uuid)", id).Scan(&queued); err != nil || !queued {
+		t.Fatalf("semantic metadata rebuild was not queued: %v", err)
 	}
 	var version5, versionRequired, validated bool
 	if err = pool.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM cully_schema_versions WHERE version=5)").Scan(&version5); err != nil || !version5 {

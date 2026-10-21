@@ -7,3 +7,8 @@ import _ "embed"
 //
 //go:embed setup.sh
 var SetupScript string
+
+// CustomAuthCompose adds the user-selected auth image and read-only inputs.
+//
+//go:embed compose.custom-auth.yaml
+var CustomAuthCompose string

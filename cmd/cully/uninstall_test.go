@@ -49,6 +49,9 @@ func TestSelfHostedUninstallStopsStackAndPurgesOnlySelfHostedState(t *testing.T)
 	if err := stopSelfHostedStack(false); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(setupDir, "compose.custom-auth.yaml"), []byte("services: {}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	if err := stopSelfHostedStack(true); err != nil {
 		t.Fatal(err)
 	}
@@ -62,6 +65,9 @@ func TestSelfHostedUninstallStopsStackAndPurgesOnlySelfHostedState(t *testing.T)
 	}
 	if !strings.Contains(lines[0], "--profile oauth --profile mcp-auth down") {
 		t.Fatalf("optional services were not included: %q", lines[0])
+	}
+	if !strings.Contains(lines[1], "compose.custom-auth.yaml") {
+		t.Fatal("custom auth service was omitted from teardown")
 	}
 	endpoints, err := selfHostedEndpoints(base)
 	if err != nil || len(endpoints) != 2 || endpoints[0] != "http://127.0.0.1:18080/mcp" || endpoints[1] != "https://memory.example.net/mcp" {

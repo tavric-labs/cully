@@ -22,7 +22,7 @@ const maxSourceSize = 200 << 20
 
 var releaseVersion = regexp.MustCompile(`^v?[0-9]+\.[0-9]+\.[0-9]+(?:-[A-Za-z0-9.-]+)?$`)
 
-func runSelfHost(agent string, oauth, prepare bool) error {
+func runSelfHost(agent string, oauth, prepare bool, auth mcpAuthOptions) error {
 	if agent != "" && agent != "claude" && agent != "codex" && agent != "cursor" && agent != "all" {
 		return fmt.Errorf("choose an agent: claude, codex, cursor, or all")
 	}
@@ -48,9 +48,23 @@ func runSelfHost(agent string, oauth, prepare bool) error {
 	if err := linkStackConfig(setupDir, configDir); err != nil {
 		return err
 	}
+	customAuth := false
+	if oauth {
+		auth, customAuth, err = prepareMCPAuth(auth, configDir, setupDir)
+		if err != nil {
+			return err
+		}
+		if customAuth {
+			fmt.Printf("Using MCP Auth %s\n", auth.Image)
+		}
+	}
 	fmt.Printf("Cully self-hosted configuration: %s\n", configDir)
 	if prepare {
-		fmt.Println("Edit .env and, for OAuth, connectors.json and .secrets/signing-key.pem; then run cully setup --all (add --oauth for team sign-in).")
+		if customAuth {
+			fmt.Println("MCP Auth image and config paths saved. Edit .env with public hostnames and create .secrets/signing-key.pem; then run cully setup --all --oauth.")
+		} else {
+			fmt.Println("Edit .env and, for OAuth, connectors.json and .secrets/signing-key.pem; then run cully setup --all (add --oauth for private IC sign-in).")
+		}
 		return nil
 	}
 	// Run the current helper against the matching release's Docker files.
@@ -79,7 +93,18 @@ func runSelfHost(agent string, oauth, prepare bool) error {
 	if err != nil {
 		return err
 	}
-	command.Env = append(os.Environ(), "CULLY_CLI_BINARY="+executable, "BUILDKIT_PROGRESS=plain")
+	for _, value := range os.Environ() {
+		key, _, _ := strings.Cut(value, "=")
+		switch key {
+		case "CULLY_CUSTOM_AUTH", "CULLY_MCP_AUTH_IMAGE", "CULLY_MCP_AUTH_CONFIG_DIR", "CULLY_MCP_AUTH_ENV_FILE":
+			continue
+		}
+		command.Env = append(command.Env, value)
+	}
+	command.Env = append(command.Env, "CULLY_CLI_BINARY="+executable, "BUILDKIT_PROGRESS=plain")
+	if customAuth && oauth {
+		command.Env = append(command.Env, "CULLY_CUSTOM_AUTH=1", "CULLY_MCP_AUTH_IMAGE="+auth.Image, "CULLY_MCP_AUTH_CONFIG_DIR="+auth.ConfigDir, "CULLY_MCP_AUTH_ENV_FILE="+auth.EnvFile)
+	}
 	command.Stdin = os.Stdin
 	command.Stdout = os.Stdout
 	command.Stderr = os.Stderr

@@ -17,11 +17,12 @@ import (
 )
 
 type AuthConfig struct {
-	Mode     string
-	Owner    string
-	Verifier auth.TokenVerifier
-	Issuer   string
-	Resource string
+	ExperimentalTeam bool // reserved for existing workspace integration tests
+	Mode             string
+	Owner            string
+	Verifier         auth.TokenVerifier
+	Issuer           string
+	Resource         string
 }
 
 func add[I any](server *sdk.Server, service memory.Service, identity func(context.Context, bool) (string, error), name, description string, write bool, request func(I) memory.Request) {
@@ -48,7 +49,7 @@ func acknowledgeWrite(out memory.Result) memory.Result {
 		return out
 	}
 	e := out.Entry
-	out.Entry = &memory.Entry{ID: e.ID, Section: e.Section, ProjectURL: e.ProjectURL, SessionRef: e.SessionRef, AgentSessionID: e.AgentSessionID, EntryType: e.EntryType, OccurredAt: e.OccurredAt, CreatedAt: e.CreatedAt, UpdatedAt: e.UpdatedAt}
+	out.Entry = &memory.Entry{ID: e.ID, SessionRef: e.SessionRef, AgentSessionID: e.AgentSessionID, EntryType: e.EntryType, OccurredAt: e.OccurredAt, CreatedAt: e.CreatedAt, UpdatedAt: e.UpdatedAt}
 	return out
 }
 
@@ -65,7 +66,7 @@ func toolRegistrations() []toolRegistration {
 	return []toolRegistration{
 		{name: "cully_workspace_read", description: "Read an authorized team workspace: whoami, projects, board, inbox, task_get (portable checkpoint/review packet), lessons (up to three). Requires OAuth; private memory remains separate.", register: registerWorkspace},
 		{name: "cully_workspace_write", description: "Explicit team changes: team_create, team_member, project_create, project_member, task_create, task_claim, task_checkpoint, task_release, task_state, task_submit, task_approve, learning_draft, learning_publish, learning_unshare, learning_edit, learning_delete, playbook_adopt. Requires OAuth and project roles. Supply the current version for task and learning changes. Use manual agent launch; evidence is reported, never an independent attestation. Publishing a lesson is an explicit sharing action.", write: true, register: registerWorkspace},
-		{name: "cully_log", description: "Save a personal or company memory record.", write: true, register: func(t toolRegistration, server *sdk.Server, service memory.Service, identity func(context.Context, bool) (string, error)) {
+		{name: "cully_log", description: "Save a private, authenticated-owner-scoped work record.", write: true, register: func(t toolRegistration, server *sdk.Server, service memory.Service, identity func(context.Context, bool) (string, error)) {
 			add(server, service, identity, t.name, t.description, t.write, func(v memory.LogInput) memory.Request { return memory.Request{Operation: "log", Log: &v} })
 		}},
 		{name: "cully_search", description: "Search authoritative source records using PostgreSQL full-text search.", register: func(t toolRegistration, server *sdk.Server, service memory.Service, identity func(context.Context, bool) (string, error)) {
@@ -74,10 +75,10 @@ func toolRegistrations() []toolRegistration {
 		{name: "cully_recall", description: "Recall live source records through self-hosted Mem0 semantic memory. Requires configured Mem0 indexing.", register: func(t toolRegistration, server *sdk.Server, service memory.Service, identity func(context.Context, bool) (string, error)) {
 			add(server, service, identity, t.name, t.description, t.write, func(v memory.SearchInput) memory.Request { return memory.Request{Operation: "recall", Search: &v} })
 		}},
-		{name: "cully_recent", description: "List recent memory records by section or project.", register: func(t toolRegistration, server *sdk.Server, service memory.Service, identity func(context.Context, bool) (string, error)) {
+		{name: "cully_recent", description: "List recent owned records, optionally filtered by session or time.", register: func(t toolRegistration, server *sdk.Server, service memory.Service, identity func(context.Context, bool) (string, error)) {
 			add(server, service, identity, t.name, t.description, t.write, func(v memory.RecentInput) memory.Request { return memory.Request{Operation: "recent", Recent: &v} })
 		}},
-		{name: "cully_context", description: "Get up to five concise, owner-scoped prior-work previews for a project or task. Filter by project or opaque session_ref when known. Use text or semantic mode with a query, or recent mode without one. Recent mode accepts optional since (inclusive) and until (exclusive) RFC3339 timestamps. Results include project, timestamp and has_more; previews are not complete activity. Fetch full details with cully_get only when needed.", register: func(t toolRegistration, server *sdk.Server, service memory.Service, identity func(context.Context, bool) (string, error)) {
+		{name: "cully_context", description: "Get up to five concise, owner-scoped prior-work previews for a task. Filter by opaque session_ref when known. Use text or semantic mode with a query, or recent mode without one. Recent mode accepts optional since (inclusive) and until (exclusive) RFC3339 timestamps. Results include timestamp, session links and has_more; previews are not complete activity. Fetch full details with cully_get only when needed.", register: func(t toolRegistration, server *sdk.Server, service memory.Service, identity func(context.Context, bool) (string, error)) {
 			sdk.AddTool(server, &sdk.Tool{Name: t.name, Description: t.description, Annotations: &sdk.ToolAnnotations{ReadOnlyHint: true}}, func(ctx context.Context, _ *sdk.CallToolRequest, input ContextInput) (*sdk.CallToolResult, ContextResult, error) {
 				owner, err := identity(ctx, false)
 				if err != nil {
@@ -87,7 +88,7 @@ func toolRegistrations() []toolRegistration {
 				return nil, out, err
 			})
 		}},
-		{name: "cully_session", description: "Start or update the current agent session with its project, branch and an optional task name. A new task name saves one task record linked to the session; the same name again keeps or relinks that record without adding a duplicate. Omit task to keep the current link; pass clear_task to unlink it while keeping the task record.", write: true, register: func(t toolRegistration, server *sdk.Server, service memory.Service, identity func(context.Context, bool) (string, error)) {
+		{name: "cully_session", description: "Start or update the current agent session with its native agent session ID, branch and an optional task name. A new task name saves one task record linked to the session; the same name again keeps or relinks that record without adding a duplicate. Omit task to keep the current link; pass clear_task to unlink it while keeping the task record.", write: true, register: func(t toolRegistration, server *sdk.Server, service memory.Service, identity func(context.Context, bool) (string, error)) {
 			add(server, service, identity, t.name, t.description, t.write, func(v memory.SessionInput) memory.Request { return memory.Request{Operation: "session", Session: &v} })
 		}},
 		{name: "cully_session_get", description: "Get one session by its opaque session_ref, including its task.", register: func(t toolRegistration, server *sdk.Server, service memory.Service, identity func(context.Context, bool) (string, error)) {
@@ -98,22 +99,17 @@ func toolRegistrations() []toolRegistration {
 		{name: "cully_get", description: "Get one owned memory record.", register: func(t toolRegistration, server *sdk.Server, service memory.Service, identity func(context.Context, bool) (string, error)) {
 			add(server, service, identity, t.name, t.description, t.write, func(v memory.IDInput) memory.Request { return memory.Request{Operation: "get", ID: &v} })
 		}},
-		{name: "cully_update", description: "Update selected fields. Empty optional text clears a field. A task entry linked to a session keeps its session's section.", write: true, register: func(t toolRegistration, server *sdk.Server, service memory.Service, identity func(context.Context, bool) (string, error)) {
+		{name: "cully_update", description: "Update selected fields. Empty optional text clears a field.", write: true, register: func(t toolRegistration, server *sdk.Server, service memory.Service, identity func(context.Context, bool) (string, error)) {
 			add(server, service, identity, t.name, t.description, t.write, func(v memory.UpdateInput) memory.Request { return memory.Request{Operation: "update", Update: &v} })
 		}},
 		{name: "cully_delete", description: "Delete one owned record and queue deletion of its Mem0 projection.", write: true, register: func(t toolRegistration, server *sdk.Server, service memory.Service, identity func(context.Context, bool) (string, error)) {
 			add(server, service, identity, t.name, t.description, t.write, func(v memory.IDInput) memory.Request { return memory.Request{Operation: "delete", ID: &v} })
 		}},
-		{name: "cully_projects", description: "List projects with recent memory activity.", register: func(t toolRegistration, server *sdk.Server, service memory.Service, identity func(context.Context, bool) (string, error)) {
-			add(server, service, identity, t.name, t.description, t.write, func(v memory.ProjectsInput) memory.Request {
-				return memory.Request{Operation: "projects", Projects: &v}
-			})
-		}},
 	}
 }
 
 func Handler(service memory.Service, cfg AuthConfig, path, version string) http.Handler {
-	server := sdk.NewServer(&sdk.Implementation{Name: "Cully", Version: version}, &sdk.ServerOptions{Instructions: "Cully Solo is the coding-agent harness runtime, with session intelligence and private memory. Cully Team is the project management harness runtime for people and AI agents, with explicit project access. Team workflows use cully_workspace_read and cully_workspace_write with explicit project access; private memory stays owner-scoped. At the start of substantive work, use cully_context with a relevant project and query to get a few concise prior-work previews. Use semantic mode when text search misses, and cully_get only for a record whose full details matter. Before finishing substantive work, use cully_log to save one concise task summary with approach, outcome, issues or missed steps, and next steps. Include the opaque session_ref and native agent_session_id supplied by an installed Cully hook when available so the conversation can be resumed. When the user accepts a task, call cully_session with that session_ref and the task name. Avoid duplicate records, raw transcripts and credentials. Search before answering history questions. Remember personal context when the user asks. Local session controls use the cully CLI."})
+	server := sdk.NewServer(&sdk.Implementation{Name: "Cully", Version: version}, &sdk.ServerOptions{Instructions: "Cully provides Solo for one local owner and IC for signed-in individual contributors using shared infrastructure. Both keep memory private to its authenticated owner. Team project management is not enabled in these modes. At the start of substantive work, use cully_context with a focused task query and an opaque session_ref when known to get a few concise prior-work previews. Use semantic mode when text search misses, and cully_get only for a record whose full details matter. Before finishing substantive work, use cully_log to save one concise task summary with approach, outcome, issues or missed steps, and next steps. Include the opaque session_ref and native agent_session_id supplied by an installed Cully hook when available so the conversation can be resumed. When the user accepts a task, call cully_session with that session_ref and the task name. Avoid duplicate records, raw transcripts and credentials. Search before answering history questions. Remember personal context when the user asks. Local session controls use the cully CLI."})
 	identity := func(ctx context.Context, write bool) (string, error) {
 		if cfg.Mode == "none" {
 			return cfg.Owner, nil
@@ -134,6 +130,9 @@ func Handler(service memory.Service, cfg AuthConfig, path, version string) http.
 	for _, t := range toolRegistrations() {
 		toolIdentity := identity
 		if strings.HasPrefix(t.name, "cully_workspace_") {
+			if !cfg.ExperimentalTeam {
+				continue
+			}
 			toolIdentity = func(ctx context.Context, write bool) (string, error) {
 				if cfg.Mode != "oauth" || cfg.Issuer == "" {
 					return "", memory.ErrForbidden

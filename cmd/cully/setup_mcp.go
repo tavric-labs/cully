@@ -22,8 +22,11 @@ func checkSetupMCP(w io.Writer, endpoint string, oauth bool) error {
 	client := sdk.NewClient(&sdk.Implementation{Name: "cully-setup", Version: version}, nil)
 	session, err := client.Connect(ctx, &sdk.StreamableClientTransport{Endpoint: endpoint, DisableStandaloneSSE: true, HTTPClient: &http.Client{Transport: transport}}, nil)
 	if err != nil {
-		if oauth && transport.requiresOAuth.Load() {
-			fmt.Fprintln(w, "MCP endpoint reached and requires OAuth. Authenticated tool discovery is pending: sign in using the agent instructions above, then check Cully in the agent's MCP settings.")
+		if transport.requiresOAuth.Load() {
+			if !oauth {
+				fmt.Fprintln(w, "Detected an OAuth-protected deployment automatically; no client mode flag or --oauth option is required to connect.")
+			}
+			fmt.Fprintln(w, "MCP endpoint reached and requires OAuth. Authenticated tool discovery is pending: sign in through your agent's MCP settings (Codex: codex mcp login cully), then check Cully there. Private ownership is assigned by the server.")
 			return nil
 		}
 		return fmt.Errorf("MCP initialization failed (agent configuration saved): %w; check the server URL/authentication and rerun setup", err)

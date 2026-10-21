@@ -725,8 +725,8 @@ func evalMemory(o evalOptions) EvalSuite {
 		return s
 	}
 	defer store.Close()
-	run := uuid.NewString()[:8]
-	report, err := evals.Run(ctx, store, ds, "https://github.com/cully-eval/app-"+run, "https://github.com/cully-eval/other-"+run, "eval-"+run, 5)
+	run := strings.ReplaceAll(uuid.NewString(), "-", "")[:16]
+	report, err := evals.Run(ctx, store, ds, "eval-"+run, "eval-other-"+run, "eval-"+run, 5)
 	if err != nil {
 		s.check("run retrieval eval", false, "%v", err)
 		return s

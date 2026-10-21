@@ -1,11 +1,11 @@
 ---
-title: Deploy Cully for a team
+title: Deploy Cully for individual contributors
 description: Run one Cully stack for multiple people with private, per-user memory.
 ---
 
-# Deploy Cully for a team
+# Deploy Cully for individual contributors
 
-This guide is for the ops team running Cully for several people. For your own laptop, use the [quickstart](/quickstart). Everyone connects to the same public MCP endpoint and signs in using the configured methods: LDAP, Google, GitHub or an OIDC/OAuth provider. Memory remains private to each person: `personal` and `company` organize records and do not share them. Separate [workspace operations](/team-workflows) provide explicitly authorized project tasks, checkpoints and published lessons.
+This guide is for the ops team running Cully for several people. For your own laptop, use the [quickstart](/quickstart). Everyone connects to the same public MCP endpoint and signs in using the configured methods: LDAP, Google, GitHub or an OIDC/OAuth provider. IC mode keeps memory private to each signed-in contributor. Services and the embedding model can be shared; notes cannot. Team project management and sharing are deferred.
 
 The memory services and the advisor are installed in different places:
 
@@ -14,7 +14,7 @@ The memory services and the advisor are installed in different places:
 | Each user's machine | Cully CLI, local advisor daemon, coding agent, Cully skill and session hooks. No local Mem0 or Docker stack is needed. |
 | Remote deployment | Public HTTPS endpoint for Cully MCP; private Cully data API, Mem0, source-note PostgreSQL and Mem0's pgvector database. These can run on different hosts. |
 
-The coding agent calls the remote MCP endpoint for shared memory. Its local hooks send session signals to the local advisor. Users' machines reach the public MCP and sign-in endpoints; the data API, Mem0 and databases communicate through private network connections.
+The coding agent calls the remote MCP endpoint for their private memory. Its local hooks send session signals to the local advisor. Users' machines reach the public MCP and sign-in endpoints; the data API, Mem0 and databases communicate through private network connections.
 
 ```mermaid
 flowchart LR
@@ -98,7 +98,7 @@ For a stack created by `cully setup --all`, review the generated files under `~/
 ## Connect sign-in
 
 1. Choose the public MCP URL, such as `https://mcp.example.com/mcp`, and an authorization-server URL. The exact MCP URL must be the token's resource audience.
-2. Choose LDAP, Google, GitHub or generic OIDC/OAuth through [MCP Auth's login-method configuration](https://github.com/tavric-labs/mcp-auth/blob/main/docs/login-methods.md), or use a compatible authorization server. See [Choose login methods](/oauth#choose-login-methods) for the Cully integration and release requirement. Grant `tools:read` and `tools:write` for the MCP resource.
+2. Choose LDAP, Google, GitHub or generic OIDC/OAuth through [MCP Auth's login-method configuration](https://github.com/tavric-labs/mcp-auth/blob/main/docs/login-methods.md), or use a compatible authorization server. For CLI-managed setup, [pass your config directory and provider env file to `cully setup`](/oauth#plug-in-your-mcp-auth-configuration). Grant `tools:read` and `tools:write` for the MCP resource.
 3. Configure Cully MCP with `CULLY_MCP_AUTH_MODE=oauth`, the issuer, exact resource URL and JWKS URL. The [configuration reference](/configuration#manual-mcp-service-settings) lists the service variables.
 4. Give each person the public MCP URL. They pick their agent and install and connect with:
 
@@ -108,10 +108,10 @@ For a stack created by `cully setup --all`, review the generated files under `~/
 
 MCP uses a private service token to call the data API. The data API holds database and Mem0 credentials. Keep those credentials in the deployment's secret store; agents need only the public MCP URL and their own OAuth sign-in. The [architecture](/architecture) shows the service flow.
 
-## Enable the team workspace
+## Private contributor boundary
 
-Apply migration 006 before starting the updated data service. Gate `cully_workspace_read` with `tools:read` and `cully_workspace_write` with `tools:write`; both require OAuth even though they are discoverable in no-OAuth mode. Existing memory owners and notes are unchanged.
+Set `CULLY_MCP_AUTH_MODE=oauth` on the MCP service. IC requires OAuth and rejects a fixed shared owner. Each request uses its verified subject for PostgreSQL reads/writes and Mem0's hashed user namespace. Source notes, sessions and projection jobs all carry that owner. Do not put names, email addresses or manually supplied owners in agent notes to select access.
 
-Each person calls `whoami` to obtain their workspace principal, bound to the verified issuer and subject. The team creator becomes its first admin. Admins explicitly add team members and projects; project maintainers or team admins grant project roles. Team membership alone does not grant project reads. See [team workflows](/team-workflows).
+Only private memory tools are available in Solo and IC; workspace sharing tools are not registered. Keep the deployment issuer stable: one MCP deployment trusts one issuer, and its subject IDs define ownership. Changing issuer or identity mapping requires an explicit owner migration.
 
-Changes and audit events commit together in PostgreSQL. Limits per team are 100 members, 50 projects, 500 tasks, 500 lessons, 200 playbooks and a 1 MiB serialized aggregate. Per-team writes serialize under a row lock. Scale and normalize storage before raising these limits. Audit events are operator-accessible database records; there is no user-facing audit export or web board yet.
+Schema version 8 removes project/classification metadata and queues a Mem0 projection rebuild. Follow the [schema upgrade steps](/memory#upgrade-the-private-schema), use matching service versions and refresh agent skills. A service-image rollback alone cannot restore dropped columns; keep a database backup.

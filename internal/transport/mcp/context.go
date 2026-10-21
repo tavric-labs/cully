@@ -14,9 +14,7 @@ import (
 // validation and owner scoping are identical to the full MCP tools.
 type ContextInput struct {
 	Query      string  `json:"query,omitempty"`
-	ProjectURL *string `json:"project_url,omitempty"`
 	SessionRef *string `json:"session_ref,omitempty"`
-	Section    *string `json:"section,omitempty"`
 	Mode       string  `json:"mode,omitempty"`  // text, semantic, or recent
 	Since      string  `json:"since,omitempty"` // recent mode only; inclusive RFC3339
 	Until      string  `json:"until,omitempty"` // recent mode only; exclusive RFC3339
@@ -26,7 +24,6 @@ type ContextInput struct {
 type ContextNote struct {
 	ID             string  `json:"id"`
 	OccurredAt     string  `json:"occurred_at"`
-	ProjectURL     *string `json:"project_url,omitempty"`
 	Date           string  `json:"date"`
 	EntryType      string  `json:"entry_type"`
 	Assistant      string  `json:"assistant"`
@@ -70,7 +67,7 @@ func compactContext(ctx context.Context, service memory.Service, owner string, i
 		if strings.TrimSpace(in.Query) != "" {
 			return ContextResult{}, fmt.Errorf("%w: recent mode does not use query", memory.ErrInvalid)
 		}
-		request = memory.Request{Operation: "recent", Recent: &memory.RecentInput{ProjectURL: in.ProjectURL, SessionRef: in.SessionRef, Section: in.Section, Since: in.Since, Until: in.Until, Limit: limit + 1}}
+		request = memory.Request{Operation: "recent", Recent: &memory.RecentInput{SessionRef: in.SessionRef, Since: in.Since, Until: in.Until, Limit: limit + 1}}
 	case "text", "semantic":
 		if in.Since != "" || in.Until != "" {
 			return ContextResult{}, fmt.Errorf("%w: time windows require recent mode", memory.ErrInvalid)
@@ -79,7 +76,7 @@ func compactContext(ctx context.Context, service memory.Service, owner string, i
 		if mode == "semantic" {
 			operation = "recall"
 		}
-		request = memory.Request{Operation: operation, Search: &memory.SearchInput{Query: in.Query, ProjectURL: in.ProjectURL, SessionRef: in.SessionRef, Section: in.Section, Limit: limit + 1}}
+		request = memory.Request{Operation: operation, Search: &memory.SearchInput{Query: in.Query, SessionRef: in.SessionRef, Limit: limit + 1}}
 	default:
 		return ContextResult{}, fmt.Errorf("%w: mode must be text, semantic, or recent", memory.ErrInvalid)
 	}
@@ -97,7 +94,7 @@ func compactContext(ctx context.Context, service memory.Service, owner string, i
 			break
 		}
 		out.Notes = append(out.Notes, ContextNote{
-			ID: entry.ID, OccurredAt: entry.OccurredAt.Format(time.RFC3339), ProjectURL: entry.ProjectURL, Date: entry.OccurredAt.Format(time.DateOnly), EntryType: entry.EntryType,
+			ID: entry.ID, OccurredAt: entry.OccurredAt.Format(time.RFC3339), Date: entry.OccurredAt.Format(time.DateOnly), EntryType: entry.EntryType,
 			Assistant: entry.Assistant, SessionRef: entry.SessionRef, AgentSessionID: entry.AgentSessionID, Summary: preview(entry.Summary, 180),
 			Approach: previewPtr(entry.Approach, 120), Outcome: previewPtr(entry.Outcome, 120),
 			Issue: previewPtr(entry.Issue, 120), Learning: previewPtr(entry.Learning, 120),

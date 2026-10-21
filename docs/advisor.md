@@ -146,3 +146,7 @@ Set these environment variables only when you want to change the defaults:
 | `CULLY_DEBUG=1` | Enable local debug logs. |
 
 Cully honors `CLAUDE_CONFIG_DIR`, `CODEX_HOME` and `CURSOR_CONFIG_DIR` for custom agent directories. Local snapshots and diagnostics support the advisor; they are not automatically saved as memory records.
+
+## Act on a workflow warning
+
+Open the advisor with Ctrl+] or F6, select a warning and press Enter. Cully puts a proposed next step in the active agent’s input for you to review and send. A many-searches warning asks the agent to narrow the unanswered question to known paths or symbols; a focused-check warning asks it to inspect the diff and choose an appropriate check. The prompt explains the scope and preserves existing permissions. Cully never submits it automatically or treats an advisor suggestion as authorization.

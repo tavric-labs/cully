@@ -88,7 +88,7 @@ func (s *Store) execute(ctx context.Context, tx pgx.Tx, owner string, r memory.R
 		if v.OccurredAt != "" {
 			when, _ = time.Parse(time.RFC3339, v.OccurredAt)
 		}
-		e, err := one(ctx, tx, `INSERT INTO cully_entries AS e (id,owner_subject,section,project_url,session_ref,agent_session_id,category,entry_type,summary,approach,outcome,issue,learning,next_steps,assistant,tags,occurred_at) VALUES ($1::uuid,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) RETURNING `+record, uuid.NewString(), owner, v.Section, v.ProjectURL, v.SessionRef, v.AgentSessionID, v.Category, v.EntryType, v.Summary, v.Approach, v.Outcome, v.Issue, v.Learning, v.NextSteps, v.Assistant, v.Tags, when)
+		e, err := one(ctx, tx, `INSERT INTO cully_entries AS e (id,owner_subject,session_ref,agent_session_id,entry_type,summary,approach,outcome,issue,learning,next_steps,assistant,occurred_at) VALUES ($1::uuid,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING `+record, uuid.NewString(), owner, v.SessionRef, v.AgentSessionID, v.EntryType, v.Summary, v.Approach, v.Outcome, v.Issue, v.Learning, v.NextSteps, v.Assistant, when)
 		out.Entry = e
 		return out, err
 	case "session":
@@ -107,30 +107,6 @@ func (s *Store) execute(ctx context.Context, tx pgx.Tx, owner string, r memory.R
 		return out, err
 	case "update":
 		v := r.Update
-		// A task entry linked to a session keeps its session's scope.
-		// Sessions reject section changes, so a linked task cannot move
-		// to another section through an update either.
-		if v.Section != nil {
-			// Serialize with session link/unlink, which holds the same lock.
-			var taskSession *string
-			err := tx.QueryRow(ctx, `SELECT session_ref FROM cully_entries WHERE owner_subject=$1 AND id=$2::uuid AND entry_type='task'`, owner, v.EntryID).Scan(&taskSession)
-			if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-				return out, err
-			}
-			if taskSession != nil {
-				if err := lockSession(ctx, tx, owner, *taskSession); err != nil {
-					return out, err
-				}
-			}
-			var linked string
-			err = tx.QueryRow(ctx, `SELECT s.section FROM cully_sessions s WHERE s.owner_subject=$1 AND s.task_id=$2::uuid`, owner, v.EntryID).Scan(&linked)
-			if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-				return out, err
-			}
-			if err == nil && linked != *v.Section {
-				return out, fmt.Errorf("%w: linked task section cannot change", memory.ErrInvalid)
-			}
-		}
 		args := []any{owner, v.EntryID}
 		assignments := []string{}
 		add := func(field string, value any, cast string) {
@@ -140,18 +116,15 @@ func (s *Store) execute(ctx context.Context, tx pgx.Tx, owner string, r memory.R
 		fields := []struct {
 			name  string
 			value *string
-		}{{"summary", v.Summary}, {"approach", v.Approach}, {"outcome", v.Outcome}, {"issue", v.Issue}, {"learning", v.Learning}, {"next_steps", v.NextSteps}, {"section", v.Section}, {"category", v.Category}}
+		}{{"summary", v.Summary}, {"approach", v.Approach}, {"outcome", v.Outcome}, {"issue", v.Issue}, {"learning", v.Learning}, {"next_steps", v.NextSteps}}
 		for _, f := range fields {
 			if f.value != nil {
-				if *f.value == "" && f.name != "summary" && f.name != "section" {
+				if *f.value == "" && f.name != "summary" {
 					add(f.name, nil, "")
 				} else {
 					add(f.name, *f.value, "")
 				}
 			}
-		}
-		if v.Tags != nil {
-			add("tags", *v.Tags, "")
 		}
 		assignments = append(assignments, "updated_at=now()")
 		e, err := one(ctx, tx, "UPDATE cully_entries e SET "+strings.Join(assignments, ",")+" WHERE owner_subject=$1 AND id=$2::uuid RETURNING "+record, args...)
@@ -159,7 +132,7 @@ func (s *Store) execute(ctx context.Context, tx pgx.Tx, owner string, r memory.R
 		return out, err
 	case "recent":
 		v := r.Recent
-		where, args := filters(owner, v.ProjectURL, v.SessionRef, v.Section, v.Category, v.EntryType, v.Since)
+		where, args := filters(owner, v.SessionRef, v.EntryType, v.Since)
 		if v.Until != "" {
 			until, _ := time.Parse(time.RFC3339, v.Until)
 			args = append(args, until)
@@ -173,38 +146,21 @@ func (s *Store) execute(ctx context.Context, tx pgx.Tx, owner string, r memory.R
 		return result, err
 	case "search":
 		v := r.Search
-		where, args := filters(owner, v.ProjectURL, v.SessionRef, v.Section, v.Category, v.EntryType, v.Since)
+		where, args := filters(owner, v.SessionRef, v.EntryType, v.Since)
 		args = append(args, v.Query, v.Limit)
 		q, count := len(args)-1, len(args)
 		sql := fmt.Sprintf(`SELECT %s FROM cully_entries e WHERE %s AND search_vector @@ websearch_to_tsquery('english',$%d) ORDER BY ts_rank_cd(search_vector,websearch_to_tsquery('english',$%d)) DESC,e.occurred_at DESC,e.id LIMIT $%d`, record, where, q, q, count)
 		return rows(ctx, tx, sql, args...)
-	case "projects":
-		v := r.Projects
-		rs, err := tx.Query(ctx, `SELECT project_url,section,count(*),max(occurred_at) FROM cully_entries WHERE owner_subject=$1 AND project_url IS NOT NULL AND ($2::text IS NULL OR section=$2) GROUP BY project_url,section ORDER BY max(occurred_at) DESC,project_url LIMIT $3`, owner, v.Section, v.Limit)
-		if err != nil {
-			return out, err
-		}
-		defer rs.Close()
-		out.Projects = []memory.Project{}
-		for rs.Next() {
-			var p memory.Project
-			if err = rs.Scan(&p.ProjectURL, &p.Section, &p.EntryCount, &p.LastActivity); err != nil {
-				return out, err
-			}
-			p.LastActivity = p.LastActivity.In(memory.IST)
-			out.Projects = append(out.Projects, p)
-		}
-		return out, rs.Err()
 	}
 	return out, memory.ErrInvalid
 }
-func filters(owner string, project, session, section, category, kind *string, since string) (string, []any) {
+func filters(owner string, session, kind *string, since string) (string, []any) {
 	args := []any{owner}
 	parts := []string{"owner_subject=$1"}
 	for _, f := range []struct {
 		name  string
 		value *string
-	}{{"project_url", project}, {"session_ref", session}, {"section", section}, {"category", category}, {"entry_type", kind}} {
+	}{{"session_ref", session}, {"entry_type", kind}} {
 		if f.value != nil {
 			args = append(args, *f.value)
 			parts = append(parts, fmt.Sprintf("%s=$%d", f.name, len(args)))
@@ -272,14 +228,7 @@ func (s *Store) session(ctx context.Context, tx pgx.Tx, owner string, v *memory.
 	if err := lockSession(ctx, tx, owner, v.SessionRef); err != nil {
 		return out, err
 	}
-	var existingSection string
-	err := tx.QueryRow(ctx, "SELECT section FROM cully_sessions WHERE owner_subject=$1 AND session_ref=$2", owner, v.SessionRef).Scan(&existingSection)
-	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-		return out, err
-	}
-	if err == nil && existingSection != v.Section {
-		return out, fmt.Errorf("%w: session section cannot change", memory.ErrInvalid)
-	}
+	var err error
 	var taskID *string
 	if v.Task != nil && *v.Task != "" {
 		// Compare with the session's latest task record, not the current link,
@@ -293,7 +242,7 @@ func (s *Store) session(ctx context.Context, tx pgx.Tx, owner string, v *memory.
 		if latest != nil && *latest == *v.Task {
 			taskID = latestID
 		} else {
-			e, err := one(ctx, tx, `INSERT INTO cully_entries AS e (id,owner_subject,section,project_url,session_ref,entry_type,summary,assistant,tags,occurred_at) VALUES ($1::uuid,$2,$3,$4,$5,'task',$6,$7,'{}',now()) RETURNING `+record, uuid.NewString(), owner, v.Section, v.ProjectURL, v.SessionRef, *v.Task, v.Assistant)
+			e, err := one(ctx, tx, `INSERT INTO cully_entries AS e (id,owner_subject,session_ref,agent_session_id,entry_type,summary,assistant,occurred_at) VALUES ($1::uuid,$2,$3,$4,'task',$5,$6,now()) RETURNING `+record, uuid.NewString(), owner, v.SessionRef, v.AgentSessionID, *v.Task, v.Assistant)
 			if err != nil {
 				return out, err
 			}
@@ -304,9 +253,9 @@ func (s *Store) session(ctx context.Context, tx pgx.Tx, owner string, v *memory.
 	// An omitted task preserves the current link; only an explicit clear
 	// nulls it.
 	clearTask := v.ClearTask != nil && *v.ClearTask
-	_, err = tx.Exec(ctx, `INSERT INTO cully_sessions AS s (owner_subject,session_ref,section,project_url,assistant,branch,task_id) VALUES ($1,$2,$3,$4,$5,$6,$7::uuid)
-ON CONFLICT (owner_subject,session_ref) DO UPDATE SET project_url=COALESCE(EXCLUDED.project_url,s.project_url), branch=COALESCE(EXCLUDED.branch,s.branch), task_id=CASE WHEN $8::boolean THEN NULL ELSE COALESCE(EXCLUDED.task_id,s.task_id) END, assistant=EXCLUDED.assistant, last_seen_at=now()`,
-		owner, v.SessionRef, v.Section, v.ProjectURL, v.Assistant, v.Branch, taskID, clearTask)
+	_, err = tx.Exec(ctx, `INSERT INTO cully_sessions AS s (owner_subject,session_ref,agent_session_id,assistant,branch,task_id) VALUES ($1,$2,$3,$4,$5,$6::uuid)
+ON CONFLICT (owner_subject,session_ref) DO UPDATE SET agent_session_id=COALESCE(EXCLUDED.agent_session_id,s.agent_session_id), branch=COALESCE(EXCLUDED.branch,s.branch), task_id=CASE WHEN $7::boolean THEN NULL ELSE COALESCE(EXCLUDED.task_id,s.task_id) END, assistant=EXCLUDED.assistant, last_seen_at=now()`,
+		owner, v.SessionRef, v.AgentSessionID, v.Assistant, v.Branch, taskID, clearTask)
 	if err != nil {
 		return out, err
 	}

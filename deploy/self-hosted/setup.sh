@@ -58,11 +58,13 @@ fi
 exports=$("$cli" _internal self-hosted-credentials export)
 eval "$exports"
 if [ "$mode" = mcp-auth ]; then
-  [ -f connectors.json ] || { echo 'Create connectors.json for your identity provider first.' >&2; exit 2; }
+  if [ "${CULLY_CUSTOM_AUTH:-}" != 1 ]; then
+    [ -f connectors.json ] || { echo 'Create connectors.json for your identity provider first.' >&2; exit 2; }
+  fi
   [ -f .secrets/signing-key.pem ] || { echo 'Create .secrets/signing-key.pem first.' >&2; exit 2; }
 fi
 if [ "$mode" != none ]; then
-  say 'Validating OAuth hostnames and identity-provider connector'
+  say 'Validating OAuth hostnames and authentication configuration'
   oauth_exports=$("$cli" _internal self-hosted-credentials oauth-env "$mode")
   eval "$oauth_exports"
   endpoint=$CULLY_AUTH_RESOURCE
@@ -70,7 +72,12 @@ fi
 compose() {
   case "$mode" in
     none) CULLY_MCP_AUTH_MODE=none docker compose --env-file .env -f compose.yaml "$@" ;;
-    mcp-auth) CULLY_MCP_AUTH_MODE=oauth CULLY_MCP_OWNER='' docker compose --env-file .env -f compose.yaml --profile oauth --profile mcp-auth "$@" ;;
+    mcp-auth)
+      if [ "${CULLY_CUSTOM_AUTH:-}" = 1 ]; then
+        CULLY_MCP_AUTH_MODE=oauth CULLY_MCP_OWNER='' docker compose --env-file .env -f compose.yaml -f compose.custom-auth.yaml --profile oauth "$@"
+      else
+        CULLY_MCP_AUTH_MODE=oauth CULLY_MCP_OWNER='' docker compose --env-file .env -f compose.yaml --profile oauth --profile mcp-auth "$@"
+      fi ;;
   esac
 }
 
@@ -81,6 +88,13 @@ if [ -n "$(compose ps -q mcp 2>/dev/null)" ]; then running="--running"; fi
 stage='validating Compose'
 say '[3/7] Checking Docker Compose configuration'
 compose config --quiet
+if [ "${CULLY_CUSTOM_AUTH:-}" = 1 ]; then
+  bundled_auth=$(CULLY_MCP_AUTH_MODE=oauth CULLY_MCP_OWNER='' docker compose --env-file .env -f compose.yaml --profile mcp-auth ps -q mcp-auth)
+  if [ -n "$bundled_auth" ]; then
+    echo 'The bundled mcp-auth service is running. Stop it before switching to the custom auth service; preserve its state and signing key.' >&2
+    exit 2
+  fi
+fi
 stage='starting databases'
 say '[4/7] Pulling images if needed and starting PostgreSQL databases'
 compose up -d --wait db mem0-db
@@ -96,7 +110,9 @@ case "$mode" in
   mcp-auth)
     stage='building and starting memory services'
     say '[6/7] Building and starting Cully MCP, the private data API, Mem0, MCP Auth and Caddy'
-    compose up -d --build --wait data-api mem0 mcp mcp-auth caddy ;;
+    auth_service=mcp-auth
+    [ "${CULLY_CUSTOM_AUTH:-}" != 1 ] || auth_service=mcp-auth-custom
+    compose up -d --build --wait data-api mem0 mcp "$auth_service" caddy ;;
 esac
 
 if [ "$mode" = none ]; then
