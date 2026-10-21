@@ -144,9 +144,15 @@ func auditHarness(d harnessDirs) []harnessItem {
 		under(d.Claude, "CLAUDE.md"), under(d.Codex, "AGENTS.override.md"), under(d.Codex, "AGENTS.md"),
 		under(d.Project, "CLAUDE.md"), under(d.Project, "AGENTS.md"),
 		under(d.Project, ".cursorrules"),
+		// Other harnesses read their own instruction files; a project that
+		// serves several agents should not look uninstructed to the audit.
+		under(d.Project, "GEMINI.md"), under(d.Project, "CONVENTIONS.md"),
+		under(d.Project, ".windsurfrules"), under(d.Project, ".github", "copilot-instructions.md"),
 	)
-	if p := under(d.Project, ".cursor", "rules"); dirHasEntries(p) {
-		instructions = append(instructions, p)
+	for _, p := range []string{under(d.Project, ".cursor", "rules"), under(d.Project, ".openhands", "microagents")} {
+		if dirHasEntries(p) {
+			instructions = append(instructions, p)
+		}
 	}
 	return []harnessItem{
 		{"Instructions", instructions, "Add a short CLAUDE.md or AGENTS.md with build, test and review rules for this project."},

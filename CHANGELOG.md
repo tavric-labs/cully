@@ -2,7 +2,10 @@
 
 ## Unreleased
 
+## 0.21.0
+
 - Replace the workflow questionnaire with a starter `dev-workflow-rules` skill. The installer and first launch install `SKILL.md` with hint comments plus example `references/` files under `~/.cully/skills/dev-workflow-rules/`; Cully asks nothing, never replaces an existing skill, and strips hint comments before the advisor reads it.
+- Recognize instruction files used by other coding agents in the harness audit: `GEMINI.md`, Aider `CONVENTIONS.md`, `.windsurfrules`, `.github/copilot-instructions.md` and `.openhands/microagents`, so a project that serves several agents no longer looks uninstructed. Print a feature table after installation.
 
 ## 0.20.0
 

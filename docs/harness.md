@@ -16,7 +16,7 @@ cully harness --cwd /path/to/project
 
 | Component | What Cully looks for |
 | --- | --- |
-| Instructions | Project or global `CLAUDE.md` and `AGENTS.md`, project `.cursorrules` or Cursor rules |
+| Instructions | Project or global `CLAUDE.md` and `AGENTS.md`, project `.cursorrules` or Cursor rules, and instruction files for other agents: `GEMINI.md`, Aider `CONVENTIONS.md`, `.windsurfrules`, `.github/copilot-instructions.md` and `.openhands/microagents` |
 | Guardrails | Claude permission keys or Codex approval/sandbox keys |
 | Memory | A Cully reference in supported Claude, Codex, Cursor or project MCP configuration |
 | Skills | Agent skill directories, including project `.claude`, `.codex`, `.cursor`, `.agents` and `.cully` locations |
