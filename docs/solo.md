@@ -20,7 +20,7 @@ Use `cully status` for observed health, `cully replay` for session activity, `cu
 
 Run `cully harness` for setup gaps and recent oversized-output estimates. The terminal shows Harness, Project & usage and Cully impact together; open the advisor’s Tab view for all instruments. Run `cully impact` for observed memory hits, skipped analyses and loops, and `cully savings` for a Claude transcript cost/exploration comparison. These are estimates and observations, not guaranteed savings. See [harness](/harness) and [token impact](/token-impact).
 
-`cully workflow` previews an optional private profile of your build, test and release habits for the configured advisor model. `cully update --check` checks for a newer CLI; `cully update` verifies and installs it. Service upgrades still use your deployment tooling. See [installation](/installation).
+`cully workflow` installs an optional starter private profile of your build, test and release habits for the configured advisor model. `cully update --check` checks for a newer CLI; `cully update` verifies and installs it. Service upgrades still use your deployment tooling. See [installation](/installation).
 
 The [mobile Self preview](/mobile) reads dated personal notes and offers local tasks and questions. It does not run coding agents or expose Team actions.
 

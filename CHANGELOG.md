@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Replace the workflow questionnaire with a starter `dev-workflow-rules` skill. The installer and first launch install `SKILL.md` with hint comments plus example `references/` files under `~/.cully/skills/dev-workflow-rules/`; Cully asks nothing, never replaces an existing skill, and strips hint comments before the advisor reads it.
+
 ## 0.20.0
 
 - Add evidence-based “are we still on track?” checkpoints for failure loops, prolonged exploration and unchecked edits, with deduplicated pre-tool nudges and task boundaries. Warn before redundant full reads of unchanged files. Limit automatic advisor requests to six per rolling hour per Cully session, with a two-minute cooldown and unchanged-evidence suppression; explain deferrals while keeping local warnings available. Extend the canonical skill with scope, verification and user-budget guardrails.

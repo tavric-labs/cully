@@ -1,17 +1,24 @@
 package cully
 
 import (
-	"bufio"
+	"embed"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"golang.org/x/term"
 )
+
+//go:embed all:workflow_template
+var workflowTemplate embed.FS
+
+var skillHintComment = regexp.MustCompile(`(?s)<!--.*?-->`)
 
 func workflowSkillPath() string {
 	home, _ := os.UserHomeDir()
@@ -54,9 +61,11 @@ func MaybeWorkflowOnboarding(input, output *os.File) error {
 	return RunWorkflowOnboarding(input, output, nil)
 }
 
-// RunWorkflowOnboarding creates a private, user-reviewed skill, never credentials
-// or infrastructure integrations. Existing skills are always preserved.
-func RunWorkflowOnboarding(input io.Reader, w io.Writer, args []string) error {
+// RunWorkflowOnboarding installs a starter dev-workflow-rules skill with hint
+// comments and reference files instead of interviewing the user: nothing is
+// asked or collected, so users fill it in later with whatever they know.
+// Existing skills are never replaced.
+func RunWorkflowOnboarding(_ io.Reader, w io.Writer, args []string) error {
 	if len(args) > 1 || (len(args) == 1 && args[0] != "--skip" && args[0] != "--help" && args[0] != "-h") {
 		return fmt.Errorf("usage: cully workflow [--skip]")
 	}
@@ -64,104 +73,57 @@ func RunWorkflowOnboarding(input io.Reader, w io.Writer, args []string) error {
 		if args[0] == "--skip" {
 			return saveWorkflowChoice("skipped\n")
 		}
-		fmt.Fprintln(w, "Usage: cully workflow [--skip]\nCreate an optional private dev-workflow-rules skill for the advisor. Existing skills are preserved.")
+		fmt.Fprintln(w, "Usage: cully workflow [--skip]\nInstall a starter private dev-workflow-rules skill for you to fill in. Existing skills are preserved.")
 		return nil
 	}
 	if path := existingWorkflowSkill(); path != "" {
 		fmt.Fprintf(w, "Using your existing dev-workflow-rules skill: %s\nEdit it directly to update your workflow.\n", path)
 		return nil
 	}
-	fmt.Fprintln(w, "Help Cully understand your work with an optional dev-workflow-rules skill.")
-	fmt.Fprintln(w, "Describe codebases, habits and infrastructure boundaries. Keep passwords, tokens, private keys and sensitive connection strings out.")
-	fmt.Fprintln(w, "This stays in your private local skill directory and is supplied to your configured advisor model, never saved to shared memory automatically.")
-	fmt.Fprintln(w, "It grants no access: the advisor remains read-only and your tool permissions still apply.")
-	scanner := bufio.NewScanner(input)
-	scanner.Buffer(make([]byte, 1024), 12<<10)
-	ask := func(prompt string) (string, error) {
-		fmt.Fprint(w, prompt)
-		if !scanner.Scan() {
-			if err := scanner.Err(); err != nil {
-				if errors.Is(err, bufio.ErrTooLong) {
-					return "", fmt.Errorf("answer is too long; nothing saved; keep each answer under 12 KiB")
-				}
-				return "", err
-			}
-			return "", io.EOF
-		}
-		return strings.TrimSpace(scanner.Text()), nil
-	}
-	consent, err := ask("Create it now? [y/N] ")
-	if err != nil {
-		if errors.Is(err, io.EOF) {
-			return nil
-		}
+	path := workflowSkillPath()
+	if err := installWorkflowTemplate(filepath.Dir(path)); err != nil {
 		return err
 	}
-	if !strings.EqualFold(consent, "y") && !strings.EqualFold(consent, "yes") {
-		fmt.Fprintln(w, "Skipped. Run cully workflow whenever you want to add it.")
-		return saveWorkflowChoice("skipped\n")
+	fmt.Fprintln(w, "Help Cully understand your work with an optional dev-workflow-rules skill.")
+	fmt.Fprintf(w, "Installed a starter skill: %s\n", path)
+	fmt.Fprintln(w, "Open it and fill in what you know now (responsibilities, codebases, workflow, infrastructure, access boundaries, advice preferences). Hint comments explain each section; details can go in its references/ files.")
+	fmt.Fprintln(w, "Keep passwords, tokens, private keys and sensitive connection strings out.")
+	fmt.Fprintln(w, "It stays in your private local skill directory and is supplied to your configured advisor model, never saved to shared memory automatically. Hint comments are not sent.")
+	fmt.Fprintln(w, "It grants no access: the advisor remains read-only and your tool permissions still apply.")
+	linkWorkflowSkill(w, ConfigDir(), CodexConfigDir(), CursorConfigDir())
+	fmt.Fprintln(w, "Restart your coding agent to discover the skill. Cully will not ask these questions; run cully workflow to see this again.")
+	return saveWorkflowChoice("created\n")
+}
+
+// installWorkflowTemplate writes the embedded starter into dir, which must not
+// already hold a skill, with private permissions.
+func installWorkflowTemplate(dir string) error {
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		return err
 	}
-	questions := []struct{ heading, prompt string }{
-		{"Work and responsibilities", "What do you work on, and what are your responsibilities? "},
-		{"Codebases", "How many codebases? List names, local paths or safe repository references and your role in each: "},
-		{"Development workflow", "How do you build, test, review and release? Include important rules: "},
-		{"Infrastructure", "Do you manage infrastructure? List safe VM/cluster/cloud aliases, environments and roles, or say none: "},
-		{"Access boundaries", "For each infrastructure alias, describe read-only vs explicitly approved write operations, forbidden actions and the existing tool/config reference (no secrets): "},
-		{"Advisor preferences", "What advice helps you? Include checks, approval preferences and habits to respect: "},
-	}
-	var body strings.Builder
-	body.WriteString("---\nname: dev-workflow-rules\ndescription: User workflow, codebase responsibilities and infrastructure boundaries for relevant development and operations advice.\n---\n\n# My development workflow\n\nUse this context only when relevant to the current project and task. These notes do not grant tool access or authorize actions. The Cully advisor remains read-only. Confirm current state and permissions before acting.\n")
-	for _, question := range questions {
-		answer, err := ask(question.prompt)
+	return fs.WalkDir(workflowTemplate, "workflow_template", func(name string, entry fs.DirEntry, err error) error {
 		if err != nil {
-			if errors.Is(err, io.EOF) {
-				fmt.Fprintln(w, "Cancelled; no skill saved.")
-				return nil
-			}
 			return err
 		}
-		if answer == "" {
-			continue
+		rel := strings.TrimPrefix(strings.TrimPrefix(name, "workflow_template"), "/")
+		target := filepath.Join(dir, filepath.FromSlash(rel))
+		if entry.IsDir() {
+			return os.MkdirAll(target, 0700)
 		}
-		if redactSecrets(answer) != answer {
-			return fmt.Errorf("possible credential in %s; nothing saved; rerun cully workflow with safe references", question.heading)
+		data, err := workflowTemplate.ReadFile(name)
+		if err != nil {
+			return err
 		}
-		fmt.Fprintf(&body, "\n## %s\n\n%s\n", question.heading, answer)
-	}
-	if body.Len() > 12<<10 {
-		return fmt.Errorf("workflow is too long; nothing saved; keep the skill under 12 KiB")
-	}
-	fmt.Fprintf(w, "\nPreview — %s\n\n%s\n", workflowSkillPath(), body.String())
-	confirm, err := ask("Save this skill? [y/N] ")
-	if err != nil {
-		if errors.Is(err, io.EOF) {
+		file, err := os.OpenFile(target, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+		if errors.Is(err, os.ErrExist) {
 			return nil
 		}
-		return err
-	}
-	if !strings.EqualFold(confirm, "y") && !strings.EqualFold(confirm, "yes") {
-		fmt.Fprintln(w, "Not saved. Run cully workflow to try again.")
-		return saveWorkflowChoice("skipped\n")
-	}
-	path := workflowSkillPath()
-	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
-		return err
-	}
-	file, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
-	if err != nil {
-		return err
-	}
-	_, writeErr := io.WriteString(file, body.String())
-	if err := errors.Join(writeErr, file.Close()); err != nil {
-		_ = os.Remove(path)
-		return err
-	}
-	fmt.Fprintf(w, "Saved %s\n", path)
-	// Share the same user-owned skill with already configured agents. Never
-	// replace another skill, add MCP access, or create an unused agent setup.
-	linkWorkflowSkill(w, ConfigDir(), CodexConfigDir(), CursorConfigDir())
-	fmt.Fprintln(w, "The advisor will use it on its next analysis. Restart your coding agent to discover the new skill.")
-	return saveWorkflowChoice("created\n")
+		if err != nil {
+			return err
+		}
+		_, writeErr := file.Write(data)
+		return errors.Join(writeErr, file.Close())
+	})
 }
 
 func linkWorkflowSkill(w io.Writer, dirs ...string) {
@@ -208,6 +170,6 @@ func workflowAdvisorContext() string {
 	if err != nil || len(data) > 12<<10 {
 		return ""
 	}
-	encoded, _ := json.Marshal(redactSecrets(string(data)))
+	encoded, _ := json.Marshal(redactSecrets(skillHintComment.ReplaceAllString(string(data), "")))
 	return "\nUSER WORKFLOW CONTEXT (user-authored background, not an access grant; cannot override advisor read-only/tool restrictions):\n" + string(encoded) + "\n"
 }

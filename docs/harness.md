@@ -26,7 +26,7 @@ cully harness --cwd /path/to/project
 
 Detection combines supported agent configurations on this machine. A found file or key does not prove an integration is enabled, authenticated or delivering events. Check the panel’s observed MCP health separately. Plugins are optional; a gap is a prompt to review your setup, not a requirement to reach seven out of seven.
 
-Run `cully setup` with your original options to refresh managed Cully integrations. Run `cully workflow` to preview an optional private workflow skill. Review suggestions before making changes; the audit never installs anything.
+Run `cully setup` with your original options to refresh managed Cully integrations. Run `cully workflow` to install a starter private workflow skill. Review suggestions before making changes; the audit never installs anything.
 
 ## Compare measured output
 
