@@ -4,11 +4,11 @@
 
 # Cully
 
-**The harness runtime for coding agents and software projects.**
+**A self-improving harness for coding agents and software projects.**
 
 [Website](https://cully.net) · [Documentation](https://docs.cully.net)
 
-Cully runs Claude Code, Codex, Cursor and other coding agents inside one terminal runtime, adding session health, advisor guidance, private project memory and shared team workflows. Each agent keeps its own reasoning and tools; Cully supplies the session around it.
+Cully runs Claude Code, Codex, Cursor and other coding agents inside one terminal runtime, adding session health, advisor guidance, private project memory and shared team workflows. Each agent keeps its own reasoning and tools; Cully supplies the session around it. It also scores itself every five hours and proposes fixes, which it writes only after you approve them.
 
 ## Why Cully
 
@@ -40,13 +40,18 @@ Setup is user-wide: run it once, then use Cully in any project. No project `.cul
 | [Token impact](https://docs.cully.net/token-impact) | Inspect lookup overhead, oversized output and observational savings estimates. |
 | [Replay and handoff](https://docs.cully.net/session-intelligence) | Review recorded steps, recover a stuck session and prepare the next agent. |
 | [Project memory](https://docs.cully.net/memory) | Recall saved decisions, attempts, results and next steps through MCP and Mem0. |
-| [Workflow profile](https://docs.cully.net/installation#optional-workflow-skill) | Give the advisor a reviewed private profile of your build, test and release habits. |
+| [Self-improvement](https://docs.cully.net/self-improvement) | Cully evaluates itself on a schedule, proposes fixes from failing checks, and applies one only when you approve it in `cully improve`. |
+| [Evals](https://docs.cully.net/evals) | Score setup, harness, the improvement loop, task efficiency (verified, time, steps), advisor and memory against planted ground truth. |
+| [Workflow profile](https://docs.cully.net/installation#optional-workflow-skill) | A starter skill with hint comments for your build, test and release habits; fill it in when you know more. |
 
 ```sh
 cully status           # session health and pending checks
 cully harness          # read-only setup audit and recent output baseline
 cully replay           # recorded session activity
 cully handoff --print  # a continuation summary
+cully improve         # review what Cully suggests for itself
+cully eval tasks       # task efficiency from your own sessions
+cully impact --explain # how the net token figure is built
 cully update --check   # check for a newer CLI
 ```
 
