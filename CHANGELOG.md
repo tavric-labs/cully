@@ -4,6 +4,8 @@
 
 ## 0.22.0
 
+- Make measurements follow the agent you use. The panel's Waste row read only Claude transcripts, so Codex showed "no recent Claude sessions". The Harness column and `cully harness` now read the running agent's own sessions (Claude Code, or Codex from `~/.codex/sessions`), name it, and say "not measured for Cursor yet" where Cully cannot read the history. `cully harness --agent` and automatic detection choose the agent. `cully improve` plans with the running agent, or any installed one, instead of only Claude.
+
 - Count each tool call and result once when measuring transcripts. Some Claude transcripts repeat entries, which made the harness waste, whole-file read and Bash estimates, delegation counts and `cully savings` cost figures up to about twice too high. On one project the oversized-output estimate fell from 149,504 to 127,151 tokens and Cully's measured injected cost from 82,640 to 63,087.
 - `cully impact --explain` now shows what Cully's own calls injected in your Claude transcripts, which the net figure does not subtract, so it no longer reads as more favorable than `cully savings`.
 

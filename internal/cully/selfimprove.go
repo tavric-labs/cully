@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -380,7 +381,44 @@ Rules:
 
 // improvePlanner turns evidence into a plan. It is a variable so tests do not
 // call a model.
-var improvePlanner = func(prompt string) (string, error) { return runClaude("", prompt) }
+var improvePlanner = func(prompt string) (string, error) {
+	agent := plannerAgent()
+	switch agent {
+	case "":
+		return "", errors.New("no coding agent CLI found: install claude, codex or cursor-agent")
+	case "claude":
+		return runClaude("", prompt)
+	}
+	home, _ := os.UserHomeDir()
+	return runAdvisorAgentContext(context.Background(), agent, home, false, prompt)
+}
+
+// plannerAgent picks the coding agent that plans an improvement: the one
+// running Cully (CULLY_AGENT) when its CLI is installed, otherwise the first
+// installed of Claude, Codex and Cursor. It returns "" when none is installed.
+func plannerAgent() string {
+	installed := func(id string) bool {
+		spec, ok := lookupAgentSpec(id)
+		if !ok || spec.Binary == "" {
+			return false
+		}
+		binary := spec.Binary
+		if id == "claude" {
+			binary = claudeExecutable()
+		}
+		_, err := exec.LookPath(binary)
+		return err == nil
+	}
+	if id := normalizeAgentID(os.Getenv("CULLY_AGENT")); id != "" && installed(id) {
+		return id
+	}
+	for _, id := range []string{"claude", "codex", "cursor"} {
+		if installed(id) {
+			return id
+		}
+	}
+	return ""
+}
 
 var skillNamePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,63}$`)
 

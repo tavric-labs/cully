@@ -201,3 +201,31 @@ func TestRunImproveListsAndDismisses(t *testing.T) {
 		t.Fatal("dismiss kept the proposal pending")
 	}
 }
+
+func TestPlannerAgentFollowsTheRunningAgentThenWhatIsInstalled(t *testing.T) {
+	bin := t.TempDir()
+	for _, name := range []string{"codex", "cursor-agent"} {
+		if err := os.WriteFile(filepath.Join(bin, name), []byte("#!/bin/sh\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("PATH", bin)
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("CLAUDE_CONFIG_DIR", t.TempDir())
+	t.Setenv("CULLY_AGENT", "")
+	if got := plannerAgent(); got != "codex" {
+		t.Fatalf("without claude the first installed agent should plan: %q", got)
+	}
+	t.Setenv("CULLY_AGENT", "cursor")
+	if got := plannerAgent(); got != "cursor" {
+		t.Fatalf("the running agent should plan when installed: %q", got)
+	}
+	t.Setenv("CULLY_AGENT", "claude") // not installed here
+	if got := plannerAgent(); got != "codex" {
+		t.Fatalf("an agent that is not installed must not be chosen: %q", got)
+	}
+	t.Setenv("PATH", t.TempDir())
+	if got := plannerAgent(); got != "" {
+		t.Fatalf("no agent installed: %q", got)
+	}
+}

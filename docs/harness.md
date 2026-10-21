@@ -20,7 +20,7 @@ cully harness --cwd /path/to/project
 | Guardrails | Claude permission keys or Codex approval/sandbox keys |
 | Memory | A Cully reference in supported Claude, Codex, Cursor or project MCP configuration |
 | Skills | Agent skill directories, including project `.claude`, `.codex`, `.cursor`, `.agents` and `.cully` locations |
-| Subagents | Agent definitions, or actual delegations measured in recent Claude sessions |
+| Subagents | Agent definitions, or actual delegations measured in the agent's recent sessions |
 | Hooks and scripts | Supported Claude, Codex or Cursor hook configuration keys |
 | Plugins | Claude plugin configuration or installed plugin directories |
 
@@ -30,7 +30,7 @@ Run `cully setup` with your original options to refresh managed Cully integratio
 
 ## Compare measured output
 
-Cully also streams recent local Claude transcripts for the exact project folder. It counts oversized tool results, their Bash and whole-file-read portions, and actual subagent calls. Results of roughly 2,000 estimated tokens or more count as oversized. Tokens are estimates based on output size, not billed usage.
+Cully also streams the recent local transcripts of the agent you use for the exact project: Claude Code (`~/.claude/projects`) or Codex (`~/.codex/sessions`, matched by the project directory). Cursor's CLI history is not read yet. It counts oversized tool results, their Bash and whole-file-read portions, and actual subagent calls. Results of roughly 2,000 estimated tokens or more count as oversized. Tokens are estimates based on output size, not billed usage.
 
 ```sh
 cully harness --days 7 --max 20
@@ -43,7 +43,8 @@ cully harness --all --only personal
 | `--cwd DIR` | Current directory | Project to audit; relative paths are resolved |
 | `--days N` | `30` | Recent-file window; must be positive |
 | `--max N` | `40` | Maximum newest transcript files per project; must be positive |
-| `--dir DIR` | Claude configuration’s `projects` directory | Alternate local Claude transcript root |
+| `--agent AGENT` | `auto` | `claude` or `codex`. `auto` follows `CULLY_AGENT` (set inside the Cully terminal), then the agent with the newest transcripts for this project |
+| `--dir DIR` | The agent's own transcript folder | Alternate local transcript root for that agent |
 | `--all` | Off | Measure all project folders and rank the top ten by oversized output |
 | `--only TEXT` | No filter | With `--all`, include folder names containing this text |
 
@@ -55,6 +56,6 @@ Use tokens per session as a baseline: change one setup component, do a comparabl
 
 The leftmost **Harness** column shows setup readiness, named gaps, recent output estimates, the model and pending verification. Active loops and nonzero errors also appear. Wide terminals place **Project & usage** and **Cully impact** beside it; narrow terminals stack them and shorten long gap lists to keep the panel bounded. Use the CLI for the complete audit and the advisor’s Tab view for full session instruments.
 
-Setup checks refresh every 30 seconds. A background measurement samples up to 20 recent Claude sessions over 30 days, refreshed every five minutes. “Measuring…” means the first measurement is pending; “no recent sessions” means no eligible sample was found. These historical figures can appear while you run Codex or Cursor; they are not usage for the current agent session.
+Setup checks refresh every 30 seconds. A background measurement samples up to 20 recent sessions of the running agent over 30 days, refreshed every five minutes, and names that agent: “no recent Codex sessions” in Codex, “not measured for Cursor yet” in Cursor. “Measuring…” means the first measurement is pending. These historical figures are not usage for the current session. Codex sessions are often much larger than Claude's because Codex reads files through the shell, so all its oversized output counts as Bash.
 
 Transcript text stays local and is processed one line at a time. The panel keeps aggregate counts in memory, without saving or uploading source text. See [privacy](/privacy#harness-measurements), [the terminal](/terminal) and [the advisor](/advisor).

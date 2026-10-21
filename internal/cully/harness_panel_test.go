@@ -8,7 +8,7 @@ import (
 )
 
 func TestHarnessPanelRowsShowSetupGapsAndMeasuredWaste(t *testing.T) {
-	d := harnessPanelData{Ready: 5, Total: 7, Missing: []string{"Guardrails", "Plugins"}, Measured: true,
+	d := harnessPanelData{Ready: 5, Total: 7, Missing: []string{"Guardrails", "Plugins"}, Measured: true, Agent: "claude",
 		Evidence: harnessEvidence{Sessions: 10, BigTokens: 23000, BashTokens: 15000}}
 	got := ansi.Strip(strings.Join(harnessPanelRows(d), "\n"))
 	for _, want := range []string{"Setup 5/7 ready", "Gaps Guardrails, Plugins", "Waste 2.3k tok/session · Bash 1.5k", "10 Claude sessions"} {
@@ -19,7 +19,14 @@ func TestHarnessPanelRowsShowSetupGapsAndMeasuredWaste(t *testing.T) {
 	if pending := ansi.Strip(strings.Join(harnessPanelRows(harnessPanelData{Ready: 7, Total: 7}), "\n")); !strings.Contains(pending, "measuring") || strings.Contains(pending, "Gaps") {
 		t.Errorf("unmeasured, complete setup: %s", pending)
 	}
-	if none := ansi.Strip(strings.Join(harnessPanelRows(harnessPanelData{Ready: 7, Total: 7, Measured: true}), "\n")); !strings.Contains(none, "no recent Claude sessions") {
+	// The measurement follows the running agent, and says so for each.
+	for agent, want := range map[string]string{"codex": "no recent Codex sessions", "cursor": "not measured for Cursor yet"} {
+		rows := ansi.Strip(strings.Join(harnessPanelRows(summarizeHarnessPanel(nil, harnessEvidence{}, true, agent)), "\n"))
+		if !strings.Contains(rows, want) || strings.Contains(rows, "Claude") {
+			t.Errorf("%s rows: %s", agent, rows)
+		}
+	}
+	if none := ansi.Strip(strings.Join(harnessPanelRows(harnessPanelData{Ready: 7, Total: 7, Measured: true, Agent: "claude"}), "\n")); !strings.Contains(none, "no recent Claude sessions") {
 		t.Errorf("no sessions: %s", none)
 	}
 }

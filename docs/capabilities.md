@@ -14,7 +14,7 @@ This page separates what ships today from what is planned. Cully's other pages d
 | Capability | Status | Notes |
 | --- | --- | --- |
 | [Cully terminal](/terminal) for Claude Code, Codex, Cursor CLI and any executable | Shipped | macOS and Linux. Not available on Windows. |
-| [Harness column and CLI audit](/harness) | Shipped | Setup detection across supported configurations; historical estimates sample local Claude transcripts only. Presence does not prove a working connection. |
+| [Harness column and CLI audit](/harness) | Shipped | Setup detection across supported configurations; historical estimates read the running agent's local transcripts (Claude Code or Codex; Cursor is not read yet). Presence does not prove a working connection. |
 | Resizable panel divider | Shipped | Drag to resize; Warp uses `Ctrl+\`. Hover requests a resize cursor where supported. |
 | Agent health bar | Shipped | Agent, project and branch, time, context, loops, unchecked edits. Segments with no data are omitted. |
 | Tool events from hooks | Shipped | Claude Code and Codex hooks, and Cursor shell, file-edit and MCP hooks. Hooks do nothing outside the Cully terminal. |
@@ -103,6 +103,6 @@ See [team workflows](/team-workflows) for inputs, limits and roles.
 ## What Cully does not claim
 
 - Token costs and observed differences are estimates, not causal proof of savings or a productivity benchmark. A controlled benchmark remains on the [roadmap](/product-direction#next).
-- The harness, savings and evaluation tools read local Claude transcripts. Raw transcript text is not persisted or uploaded by those measurements; an explicitly requested live advisor evaluation sends signal summaries to the configured adapter.
+- The harness audit reads Claude Code or Codex transcripts; `cully savings` and the advisor replay evaluation read Claude transcripts only, because Cully's Codex transcripts have not been checked against them. Raw transcript text is not persisted or uploaded by those measurements; an explicitly requested live advisor evaluation sends signal summaries to the configured adapter.
 - It does not see inside an agent's reasoning. It sees tool calls and results.
 - A missing signal is shown as missing, never guessed.

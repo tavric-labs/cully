@@ -652,7 +652,7 @@ func compactInstrumentRows(cols int, stats toolStats, view sessionView) ([]strin
 		verification = yellow + fmt.Sprintf("%d edits need check", stats.EditsSinceCheck) + rst
 	}
 	activity := []string{cyan + bold + "Harness" + rst, "", "Model " + model}
-	activity = append(activity, harnessPanelRows(harnessPanel(view.Project))...)
+	activity = append(activity, harnessPanelRows(harnessPanel(view.Project, view.Agent))...)
 	activity = append(activity, "Verification "+verification)
 	if coverage := panelCoverage(stats, view); coverage != "" {
 		activity = append(activity, "Signals "+yellow+coverage+rst)

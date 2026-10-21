@@ -70,7 +70,7 @@ func TestHarnessReportsMeasuredWasteAndStatesItIsNotProof(t *testing.T) {
 	if err := RunHarness(&out, []string{"--cwd", project}); err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"MEASURED in 1 recent sessions", "oversized tool results", "subagent delegations    0", "not proof"} {
+	for _, want := range []string{"MEASURED in 1 recent Claude sessions", "oversized tool results", "subagent delegations    0", "not proof"} {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("report lacks %q:\n%s", want, out.String())
 		}
@@ -100,7 +100,7 @@ func TestHarnessAllProjectsRanksByOversizedOutput(t *testing.T) {
 	if err := RunHarness(&out, []string{"--all"}); err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"MEASURED in 2 recent sessions", "TOP PROJECTS BY OVERSIZED OUTPUT", "-a-one", "-b-two"} {
+	for _, want := range []string{"MEASURED in 2 recent Claude sessions", "TOP PROJECTS BY OVERSIZED OUTPUT", "-a-one", "-b-two"} {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("report lacks %q:\n%s", want, out.String())
 		}

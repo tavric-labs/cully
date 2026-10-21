@@ -155,7 +155,7 @@ func (m *improveModel) press(r rune) {
 			m.move(-1)
 		case 'a':
 			if _, ok := m.selected(); ok {
-				m.Busy, m.Message = "plan", "Asking your model for a plan…"
+				m.Busy, m.Message = "plan", "Asking "+agentDisplayName(plannerAgent())+" for a plan…"
 			}
 		case 'd':
 			if _, ok := m.selected(); ok {

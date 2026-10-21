@@ -34,7 +34,7 @@ Looking at a suggestion, cancelling an apply, a failed plan and quitting never d
 1. The advisor daemon runs `cully eval` for the setup, harness, improve, tasks and advisor suites every five hours, twice each so a flaky check is reported. Set `CULLY_EVAL_INTERVAL` (for example `12h`, never below 30 minutes) to change the interval, or `off` to disable it. The last run is remembered across restarts. The memory suite needs a server and is not scheduled.
 2. Each run is saved to `eval-history.jsonl` with counts and the names of failing checks, never contents. `cully improve` shows the trend in failing checks over recent runs.
 3. A failing suite becomes one **pending proposal**. The same failure is not proposed twice. A failure that goes away resolves its proposal, and an applied change that did not hold reopens it. A dismissed proposal stays dismissed. `cully suggestions` mentions pending proposals.
-4. When you run `cully improve --apply N`, Cully asks your configured agent model to plan a change from the failing checks. It shows the plan, and writes it only after you confirm (or pass `--yes`).
+4. When you press Apply (or run `cully improve --apply N`), Cully asks a coding agent to plan a change from the failing checks: the agent running Cully (`CULLY_AGENT`) when its CLI is installed, otherwise the first installed of Claude Code, Codex and Cursor. It shows the plan, and writes it only after you confirm (or pass `--yes`).
 
 ## What a change may write
 
