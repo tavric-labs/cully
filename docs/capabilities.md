@@ -50,7 +50,7 @@ This page separates what ships today from what is planned. Cully's other pages d
 | Model-backed advisor analysis | Partial | Uses the agent's own CLI in a headless run. Needs that CLI and its Cully MCP connection. |
 | Clickable advisor in the terminal | Shipped | Click the panel, or `Ctrl+]` / `F6`. |
 | Project workflow hint | Shipped | After three earlier sessions with edits where checks usually followed, it warns when the current session has unchecked edits. |
-| Private workflow profile | Shipped | Optional reviewed `dev-workflow-rules` skill; bounded redacted context goes to the configured advisor model. |
+| Private workflow profile | Shipped | Optional `dev-workflow-rules` skill. The installer adds a starter with hint comments and example reference files; bounded redacted context (hint comments removed) goes to the configured advisor model. |
 | Token-spend evidence rule | Shipped | Advisor prompt requires measured figures; generated advice still needs review. |
 | Guardrails that block or approve actions | Planned | |
 
@@ -88,6 +88,9 @@ See [team workflows](/team-workflows) for inputs, limits and roles.
 | [Impact ledger and savings report](/token-impact) | Shipped | Observed events and estimated costs; benefit comparisons are observational and Claude transcript based. |
 | Advisor replay evaluation | Shipped | Hindsight precision/recall proxies on selected Claude sessions; optional live model/research pass consumes tokens. |
 | Verified CLI updater | Shipped | `cully update`; preserves agent links and restarts an active local advisor. Services upgrade separately. |
+| [Scheduled self-evaluation and suggestions](/self-improvement) | Partial | The daemon runs `cully eval` every five hours and turns failing checks into suggestions. `cully improve` opens a window to read, apply or drop each one; an approved change writes only rules and one skill under `~/.cully`. Not yet observed over a long-lived daemon, and no suggestion writes hooks. |
+| [Task efficiency evaluation](/evals#task-rules-did-the-work-finish-and-what-did-it-cost) | Partial | Scores sessions as tasks (verified, time, steps, orientation, rework, loops) against hand-worked sessions, and compares tasks before and after an applied change in the same project. The comparison is uncontrolled; matching similar tasks by semantic similarity is not built. |
+| `cully impact --explain` | Shipped | Itemizes how the net token figure is built and labels each part estimated, observed or measured. |
 | Learned team workflow | Planned | |
 | Agent performance comparison | Planned | Needs measured outcomes first. See [product direction](/product-direction#later). |
 
