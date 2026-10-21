@@ -30,6 +30,21 @@ func TestDividerDragShrinksExpandsAndSurvivesRefresh(t *testing.T) {
 	}
 }
 
+func TestDividerDragFollowsMotionReportedWithoutAButton(t *testing.T) {
+	var d paneDivider
+	top := d.top(40, 10)
+	if !d.handle(&panelMouse{Button: 0, Y: top + 1}, 40, top) {
+		t.Fatal("divider press missed")
+	}
+	// Some terminals send held-button motion as 35, the button-less code.
+	if motion, _ := d.hover(&panelMouse{Button: 35, Y: 16}, 40, top); motion {
+		t.Fatal("hover swallowed drag motion")
+	}
+	if !d.handle(&panelMouse{Button: 35, Y: 16}, 40, top) || d.top(40, 10) != 15 {
+		t.Fatalf("drag ignored button-less motion: top=%d", d.top(40, 10))
+	}
+}
+
 func TestDividerCollapseAndBounds(t *testing.T) {
 	for _, tc := range []struct{ y, want int }{{1, 12}, {40, 39}, {400, 39}} {
 		var d paneDivider

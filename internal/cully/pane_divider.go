@@ -32,7 +32,10 @@ func (d *paneDivider) grip() gripState {
 // hover tracks a button-less pointer move and reports whether the highlight
 // changed. Such motion never reaches the agent, which did not ask for it.
 func (d *paneDivider) hover(mouse *panelMouse, rows, top int) (motion, changed bool) {
-	if mouse.Release || mouse.Button&32 == 0 || mouse.Button&3 != 3 {
+	// Once a drag has begun, every motion belongs to it. Some terminals report
+	// held-button motion with the button-less code, which would otherwise be
+	// swallowed here as a hover and never move the divider.
+	if d.Dragging || mouse.Release || mouse.Button&32 == 0 || mouse.Button&3 != 3 {
 		return false, false
 	}
 	over := !d.Dragging && rows >= 12 && top < rows && mouse.Y == top+1
@@ -59,7 +62,7 @@ func (d *paneDivider) top(rows, contentRows int) int {
 // motion and release remain owned by the divider even outside the panel.
 func (d *paneDivider) handle(mouse *panelMouse, rows, top int) bool {
 	if d.Dragging {
-		if mouse.Release || mouse.Button&32 != 0 && mouse.Button&3 == 0 {
+		if mouse.Release || mouse.Button&32 != 0 {
 			d.Height = rows - mouse.Y + 1
 			d.Manual = true
 			if mouse.Release {
