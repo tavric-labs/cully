@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.22.0
+
 - Count each tool call and result once when measuring transcripts. Some Claude transcripts repeat entries, which made the harness waste, whole-file read and Bash estimates, delegation counts and `cully savings` cost figures up to about twice too high. On one project the oversized-output estimate fell from 149,504 to 127,151 tokens and Cully's measured injected cost from 82,640 to 63,087.
 - `cully impact --explain` now shows what Cully's own calls injected in your Claude transcripts, which the net figure does not subtract, so it no longer reads as more favorable than `cully savings`.
 
