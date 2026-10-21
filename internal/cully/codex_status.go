@@ -202,12 +202,12 @@ func sessionStatusContent(cols int, advice []string, stats toolStats, view sessi
 		*target = append(*target, metricRows(label, value, cellWidth)...)
 	}
 	metric(&left, "Tokens", "Input "+instrument(view.Input)+"  ·  Output "+instrument(view.Output))
-	metric(&left, "5h limit", instrument(strings.TrimPrefix(view.FiveHour, "5h ")))
+	metric(&left, "5h limit", quotaColor(strings.TrimPrefix(view.FiveHour, "5h ")))
 	weekly := view.Weekly
 	for _, prefix := range []string{"Weekly ", "Week ", "7d "} {
 		weekly = strings.TrimPrefix(weekly, prefix)
 	}
-	metric(&left, "Weekly", instrument(weekly))
+	metric(&left, "Weekly", quotaColor(weekly))
 	if view.Agent == "" || view.Agent == "codex" {
 		metric(&left, "Fast", instrument(strings.TrimPrefix(view.Fast, "Fast ")))
 	}
@@ -432,6 +432,36 @@ func metricRows(label, value string, width int) []string {
 	return rows
 }
 
+var quotaPercent = regexp.MustCompile(`(\d+(?:\.\d+)?)\s*%\s*(left|used)?`)
+
+// quotaColor colors a usage limit by what remains: green above half, yellow
+// from a fifth to half, red below a fifth. A value with no percentage stays plain.
+func quotaColor(value string) string {
+	if value == "" {
+		return instrument(value)
+	}
+	m := quotaPercent.FindStringSubmatch(value)
+	if m == nil {
+		return value
+	}
+	n, err := strconv.ParseFloat(m[1], 64)
+	if err != nil {
+		return value
+	}
+	left := n
+	if m[2] == "used" {
+		left = 100 - n
+	}
+	color := green
+	switch {
+	case left < 20:
+		color = red
+	case left < 50:
+		color = yellow
+	}
+	return color + value + rst
+}
+
 func instrument(value string) string {
 	if value == "" {
 		return dim + "unavailable" + rst
@@ -621,7 +651,7 @@ func compactInstrumentRows(cols int, stats toolStats, view sessionView) ([]strin
 	if stats.EditsSinceCheck > 0 {
 		verification = yellow + fmt.Sprintf("%d edits need check", stats.EditsSinceCheck) + rst
 	}
-	activity := []string{bold + "Harness" + rst, "", "Model " + model}
+	activity := []string{cyan + bold + "Harness" + rst, "", "Model " + model}
 	activity = append(activity, harnessPanelRows(harnessPanel(view.Project))...)
 	activity = append(activity, "Verification "+verification)
 	if coverage := panelCoverage(stats, view); coverage != "" {
@@ -650,18 +680,18 @@ func compactInstrumentRows(cols int, stats toolStats, view sessionView) ([]strin
 	}
 	tokens := "Tokens " + dim + "unavailable" + rst
 	if view.Input != "" || view.Output != "" {
-		tokens = "Tokens in " + instrument(view.Input) + " / out " + instrument(view.Output)
+		tokens = "Tokens in " + cyan + instrument(view.Input) + rst + " / out " + cyan + instrument(view.Output) + rst
 	}
 	var quotas []string
 	if view.FiveHour != "" {
-		quotas = append(quotas, "5h "+instrument(strings.TrimPrefix(view.FiveHour, "5h ")))
+		quotas = append(quotas, "5h "+quotaColor(strings.TrimPrefix(view.FiveHour, "5h ")))
 	}
 	if view.Weekly != "" {
 		weekly := view.Weekly
 		for _, prefix := range []string{"Weekly ", "Week ", "7d "} {
 			weekly = strings.TrimPrefix(weekly, prefix)
 		}
-		quotas = append(quotas, "Week "+instrument(weekly))
+		quotas = append(quotas, "Week "+quotaColor(weekly))
 	}
 	quota := strings.Join(quotas, " · ")
 	showFast := view.Agent == "" || view.Agent == "codex"
@@ -674,7 +704,7 @@ func compactInstrumentRows(cols int, stats toolStats, view sessionView) ([]strin
 		workParts = append(workParts, "Git "+changes)
 	}
 	work := strings.Join(workParts, " · ")
-	usage := []string{bold + "Project & usage" + rst, "", location, "Context " + context, tokens, quota, work}
+	usage := []string{blue + bold + "Project & usage" + rst, "", location, "Context " + context, tokens, quota, work}
 	cully := cullyInstrumentRows(stats, width)
 	groups := [][]string{activity, usage, cully}
 	if cols >= 120 {
@@ -744,7 +774,7 @@ func cullyInstrumentRows(stats toolStats, width int) []string {
 	} else if c.Health == "unhealthy" {
 		health = red + "● Unhealthy" + rst
 	}
-	rows := []string{bold + "Cully impact" + rst + " · " + health, ""}
+	rows := []string{magenta + bold + "Cully impact" + rst + " · " + health, ""}
 	for _, line := range stats.Impact.Lines() {
 		switch {
 		case strings.HasPrefix(line, "Net -"):
@@ -760,7 +790,7 @@ func cullyInstrumentRows(stats toolStats, width int) []string {
 		}
 		rows = append(rows, line)
 	}
-	row := fmt.Sprintf("MCP %d calls · Auth %s", c.Calls, observedState(c.Auth, true))
+	row := fmt.Sprintf("MCP %s%d%s calls · Auth %s", cyan, c.Calls, rst, observedState(c.Auth, true))
 	if c.Probed {
 		row += dim + " (connection check)" + rst
 	}
@@ -771,7 +801,7 @@ func cullyInstrumentRows(stats toolStats, width int) []string {
 	}
 	rows = append(rows, row)
 	if c.Foreground+c.Advisor+c.Startup > 0 {
-		rows = append(rows, fmt.Sprintf("Foreground %d · Advisor %d · Startup %d", c.Foreground, c.Advisor, c.Startup))
+		rows = append(rows, fmt.Sprintf("Foreground %s%d%s · Advisor %s%d%s · Startup %s%d%s", cyan, c.Foreground, rst, cyan, c.Advisor, rst, cyan, c.Startup, rst))
 	}
 	if c.SemanticRecall > 0 {
 		rows = append(rows, fmt.Sprintf("Semantic recall %d", c.SemanticRecall))

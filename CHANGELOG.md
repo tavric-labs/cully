@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Color the panel: the 5h and weekly limits turn green, yellow or red by what remains; the Harness, Project & usage and Cully impact columns get their own header colors, with colored token counts, waste and MCP call counts.
+- Strip terminal escape sequences and control characters from model-written plan text and evaluation details before the improve window or `cully improve` prints them, and from rules and skills before they are written.
+
 - Open `cully improve` as a window: select a suggestion, read its failing checks, then Apply (the plan is shown first and written only on `y`) or Drop (confirmed, and the only way a suggestion is dropped). Cancelling, a failed plan and quitting keep it pending. `--list` prints instead.
 - Count lines in new, untracked files in the panel's Git row, so `+N` reflects uncommitted work and not only tracked changes.
 - Show the Cully MCP connection and authentication in the panel from `claude mcp list`, checked every ten minutes without a model call, whenever tool responses have not established them. The row notes "(connection check)". Hook-observed values still win.

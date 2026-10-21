@@ -194,7 +194,7 @@ func (m *improveModel) Finish() {
 	m.Mode = improveDetail
 	switch {
 	case err != nil:
-		m.Message = "Could not plan a change: " + err.Error() + ". The suggestion is still pending."
+		m.Message = "Could not plan a change: " + terminalSafe(err.Error()) + ". The suggestion is still pending."
 	case !planWritesAnything(plan):
 		m.Plan, m.Dropped = plan, dropped
 		m.Message = "Nothing to write: this needs a change to Cully's code or a person. The suggestion is still pending."
@@ -244,6 +244,7 @@ func (m *improveModel) style(code, s string) string {
 }
 
 func (m *improveModel) wrap(prefix, text string) []string {
+	text = terminalSafe(text)
 	width := max(10, m.Width-2-ansi.StringWidth(prefix))
 	var out []string
 	for i, line := range strings.Split(ansi.Wrap(text, width, ""), "\n") {
@@ -280,7 +281,7 @@ func (m *improveModel) body() []string {
 		}
 		for i, it := range m.Items {
 			row := fmt.Sprintf(" %s %s", map[bool]string{true: "▸", false: " "}[i == m.Cursor], fitTo(improvementTitle(it), max(10, m.Width-24)))
-			row += fmt.Sprintf("  %s · %d failing", it.Suite, len(it.Evidence))
+			row += fmt.Sprintf("  %s · %d failing", terminalSafe(it.Suite), len(it.Evidence))
 			if i == m.Cursor {
 				row = m.style("7", fitTo(row, m.Width))
 			}
@@ -290,7 +291,7 @@ func (m *improveModel) body() []string {
 		if !ok {
 			break
 		}
-		lines = append(lines, m.style("1", " "+improvementTitle(p)), m.style("2", fmt.Sprintf(" %s · first seen %s · last seen %s", p.Status, p.Created.Local().Format("Jan 02 15:04"), p.Updated.Local().Format("Jan 02 15:04"))), "", m.style("1", " Failing checks"))
+		lines = append(lines, m.style("1", " "+improvementTitle(p)), m.style("2", fmt.Sprintf(" %s · first seen %s · last seen %s", terminalSafe(p.Status), p.Created.Local().Format("Jan 02 15:04"), p.Updated.Local().Format("Jan 02 15:04"))), "", m.style("1", " Failing checks"))
 		for _, f := range p.Evidence {
 			text := f.Check
 			if f.Detail != "" {
@@ -325,7 +326,7 @@ func (m *improveModel) body() []string {
 func (m *improveModel) Render() []string {
 	lines := m.body()
 	if m.Message != "" {
-		lines = append(lines, "", m.style("33", " "+m.Message))
+		lines = append(lines, "", m.style("33", " "+terminalSafe(m.Message)))
 	}
 	out := make([]string, m.Height)
 	for i := range out {

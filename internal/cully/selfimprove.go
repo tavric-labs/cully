@@ -18,6 +18,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/x/ansi"
 	"golang.org/x/term"
 )
 
@@ -73,8 +74,38 @@ type improvement struct {
 	Summary  string        `json:"summary,omitempty"`
 }
 
+// terminalSafe removes escape sequences and control characters from text that a
+// model or an evaluation produced before it reaches a terminal, so it cannot
+// move the cursor, rewrite the screen or set the clipboard. Line breaks and
+// tabs become spaces.
+func terminalSafe(s string) string {
+	return strings.Map(func(r rune) rune {
+		switch {
+		case r == '\n' || r == '\r' || r == '\t':
+			return ' '
+		case r < 0x20 || r == 0x7f || (r >= 0x80 && r <= 0x9f):
+			return -1
+		}
+		return r
+	}, ansi.Strip(s))
+}
+
+// stripControls cleans text written to a file: escape sequences and control
+// characters go, line breaks and tabs stay.
+func stripControls(s string) string {
+	return strings.Map(func(r rune) rune {
+		if r == '\n' || r == '\t' {
+			return r
+		}
+		if r == '\r' || r < 0x20 || r == 0x7f || (r >= 0x80 && r <= 0x9f) {
+			return -1
+		}
+		return r
+	}, ansi.Strip(s))
+}
+
 func clipText(s string, n int) string {
-	s = strings.Join(strings.Fields(redactSecrets(s)), " ")
+	s = strings.Join(strings.Fields(redactSecrets(terminalSafe(s))), " ")
 	if len(s) > n {
 		s = s[:n]
 	}
@@ -378,6 +409,10 @@ func sanitizeImprovePlan(plan applyPlan) (applyPlan, []string, error) {
 		dropped = append(dropped, "shell commands")
 	}
 	plan.MCPServers, plan.ShellCommands = nil, nil
+	// The summary and notes are printed and the rules and skill are written;
+	// none may carry escape sequences.
+	plan.Summary, plan.Notes = terminalSafe(plan.Summary), terminalSafe(plan.Notes)
+	plan.ClaudeMDSection, plan.SkillContent = stripControls(plan.ClaudeMDSection), stripControls(plan.SkillContent)
 	if plan.SkillName != "" && !skillNamePattern.MatchString(plan.SkillName) {
 		return plan, dropped, fmt.Errorf("refusing skill name %q", plan.SkillName)
 	}
@@ -613,7 +648,7 @@ func improvementTitle(p improvement) string {
 	if len(p.Evidence) == 0 {
 		return suite
 	}
-	title := fmt.Sprintf("%s: %s", suite, p.Evidence[0].Check)
+	title := fmt.Sprintf("%s: %s", terminalSafe(suite), terminalSafe(p.Evidence[0].Check))
 	if n := len(p.Evidence) - 1; n > 0 {
 		title += fmt.Sprintf(" (+%d more)", n)
 	}

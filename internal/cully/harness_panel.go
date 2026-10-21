@@ -111,7 +111,15 @@ func harnessPanelRows(d harnessPanelData) []string {
 	case d.Evidence.Sessions == 0:
 		rows = append(rows, "Waste "+dim+"no recent Claude sessions"+rst)
 	default:
-		line := fmt.Sprintf("Waste %s tok/session · Bash %s", panelTokens(d.Evidence.perSession(d.Evidence.BigTokens)), panelTokens(d.Evidence.perSession(d.Evidence.BashTokens)))
+		waste := d.Evidence.perSession(d.Evidence.BigTokens)
+		color := green
+		switch {
+		case waste >= 20000:
+			color = red
+		case waste >= 8000:
+			color = yellow
+		}
+		line := fmt.Sprintf("Waste %s%s tok/session%s · Bash %s", color, panelTokens(waste), rst, panelTokens(d.Evidence.perSession(d.Evidence.BashTokens)))
 		rows = append(rows, line+dim+fmt.Sprintf(" (%d Claude sessions, %dd)", d.Evidence.Sessions, harnessPanelDays)+rst)
 	}
 	return rows

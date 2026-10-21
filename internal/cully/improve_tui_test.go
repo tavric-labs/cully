@@ -192,3 +192,42 @@ func TestImproveRenderFitsTheTerminal(t *testing.T) {
 		}
 	}
 }
+
+func TestImproveNeverRendersEscapeSequencesFromModelOrEvalText(t *testing.T) {
+	hostile := "\x1b[2J\x1b]52;c;ZXZpbA==\x07\x1b[31mAPPLIED\x1b[0m\rreal\u009b31m"
+	f := &improveFake{plan: applyPlan{Summary: "ok " + hostile, ClaudeMDSection: "x", Notes: hostile}}
+	items := improveItems()
+	items[0].Evidence = []evalFailure{{Check: "check " + hostile, Detail: "detail " + hostile}}
+	m := newImproveModel(items, f.actions(), 80, 24, false)
+	for _, step := range []func(){
+		func() { m.Render() },
+		func() { m.Update(replayKey{Kind: "enter"}) },
+		func() { m.Update(rune_('a')); m.Finish() },
+		func() { m.Update(rune_('n')); m.Message = "failed: " + hostile },
+	} {
+		step()
+		for _, line := range m.Render() {
+			if strings.ContainsAny(line, "\x1b\x07\r\u009b") {
+				t.Fatalf("control sequence reached the terminal in mode %s: %q", m.Mode, line)
+			}
+		}
+	}
+}
+
+func TestSanitizeImprovePlanStripsEscapesFromTextAndFiles(t *testing.T) {
+	plan, _, err := sanitizeImprovePlan(applyPlan{
+		Summary: "s\x1b[2J", Notes: "n\x1b]52;c;x\x07",
+		ClaudeMDSection: "rule\x1b[31m one\nrule two", SkillName: "ok", SkillContent: "# Skill\x1b[0m\n\tbody",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, text := range []string{plan.Summary, plan.Notes, plan.ClaudeMDSection, plan.SkillContent} {
+		if strings.ContainsAny(text, "\x1b\x07") {
+			t.Fatalf("escape kept: %q", text)
+		}
+	}
+	if plan.ClaudeMDSection != "rule one\nrule two" || plan.SkillContent != "# Skill\n\tbody" {
+		t.Fatalf("file text mangled: %q %q", plan.ClaudeMDSection, plan.SkillContent)
+	}
+}
