@@ -93,5 +93,8 @@ func combinedAdvice(session string, stats toolStats, view sessionView) []string 
 	if !snap.AdvisorOK {
 		mode = "unavailable (" + fallback(snap.AdvisorFailure, "launch or analysis failed") + "); local warnings active"
 	}
+	if snap.AdvisorDiscoveryAt != "" {
+		local = append(local, fmt.Sprintf("MEMO|🌐 Public discovery %s · last attempt %s (agent-reported)", snap.AdvisorDiscovery, snap.AdvisorDiscoveryAt))
+	}
 	return append(local, fmt.Sprintf("MEMO|🔎 %s advisor %s · %s · memory %s · research %s (agent-reported)", snap.AdvisorAgent, mode, age, fallback(snap.AdvisorMemory, "unconfirmed"), fallback(snap.AdvisorResearch, "unconfirmed")))
 }

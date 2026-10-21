@@ -715,6 +715,9 @@ func RunCleanup(r io.Reader) {
 		filepath.Join(cullyDir(), ".sa-count-"+sessionKey(in.SessionID)),
 	}
 	paths = append(paths, legacyGlobalFiles()...)
+	for _, agent := range []string{"claude", "codex", "cursor"} {
+		paths = append(paths, discoveryFile(in.SessionID, agent))
+	}
 	for _, p := range paths {
 		_ = os.Remove(p)
 	}

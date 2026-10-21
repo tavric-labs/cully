@@ -58,7 +58,7 @@
             <div class="mock-body term-mock">
               <div class="term-agent"><span class="term-dim">&gt;</span> fix the resource validation test<br><span class="term-dim">● ran</span> go test ./auth/...<br><span class="term-bad">✕ FAIL</span> <span class="term-dim">TestValidateResource</span><br><span class="term-dim">● edited</span> auth/resource.go<br><span class="term-dim">● ran</span> go test ./auth/...<br><span class="term-bad">✕ FAIL</span> <span class="term-dim">TestValidateResource</span></div>
               <div class="term-hud"><span>── <b>Codex</b></span><span>oauth:main</span><span>27m</span><span>Context 63%</span><span class="term-warn">⚠ Loop 3x</span><span>● 2 unchecked</span><span class="term-dim">── Ctrl+] advisor ──</span></div>
-              <div class="term-instruments" aria-label="Illustrative panel values"><div><strong>Harness</strong><span>Setup 5/7 ready</span><span>Gaps Skills, Plugins</span></div><div><strong>Project &amp; usage</strong><span>Context 63% used</span><span>2 edits need check</span></div><div><strong>Cully impact</strong><span>Memory used 1×</span><span>MCP healthy</span></div></div>
+              <div class="term-instruments" aria-label="Illustrative panel values"><div><strong>Harness</strong><span>Setup 5/7 ready</span><span>Gaps Skills, Plugins</span></div><div><strong>Session</strong><span>Context 63% used</span><span>Memory used 1×</span><span>MCP healthy</span></div></div>
               <div class="term-example">Example session · values are illustrative</div>
               <div class="term-advice"><span class="term-badge">CAUTION</span> Cully noticed something: the same command failed 3 times after edits. Inspect the first failure before editing again.</div>
               <div class="mock-command">$ <span>cully harness</span><span class="cursor-block"></span></div>
@@ -128,7 +128,7 @@
         <div class="optimization-panel">
           <div class="optimization-grid">
             <article><span>01</span><h4>Same wrapper everywhere</h4><p><code>cully run claude</code>, <code>codex</code>, <code>cursor</code> or any executable on your PATH gets the same health bar and advisor panel.</p></article>
-            <article><span>02</span><h4>Setup, usage and impact together</h4><p>The Harness column shows readiness and gaps. Project &amp; usage keeps context close, while Cully impact shows observed memory use, analyses avoided and estimated net tokens.</p></article>
+            <article><span>02</span><h4>Harness and session together</h4><p>The Harness column shows readiness and gaps. Session keeps context, tokens, quota and Git changes beside observed memory use, analyses avoided and estimated net tokens.</p></article>
             <article><span>03</span><h4>An advisor you can click</h4><p>Click the panel or press Ctrl+] to open every suggestion. Press Enter to put a setup request in your prompt; nothing runs until you send it.</p></article>
           </div>
           <p class="optimization-caveat">Supported on macOS and Linux. Cursor support wraps the <code>cursor-agent</code> CLI. Cully's tool events come from each agent's hooks, so an agent without hooks gets the health bar and Git state but not loop detection or replay.</p>

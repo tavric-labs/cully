@@ -35,11 +35,11 @@ Automatic advisor dispatches share a local budget per Cully session key:
 
 - At most **six accepted automatic requests per rolling hour**.
 - At least **two minutes between accepted requests**.
-- Identical signal snapshots are suppressed until evidence changes.
+- Identical signal snapshots are suppressed within the hour. With discovery enabled, an active session can refresh public research after an hour even if the signals are unchanged.
 
 The budget persists across daemon restarts and uses a file lock for concurrent hooks. It stores timestamps and a hash of the evidence, not the signal text. Unreadable accounting or a backwards clock defers optional model work. The panel and `cully status` explain the deferral; local warnings and the coding task continue. Skipped analyses appear in the impact ledger as estimated prompt overhead avoided.
 
-This limits automatic dispatches, not total model tokens or billing. One analysis can include a separate research phase. Different session keys have separate budgets, and explicit rescue/live evaluation calls are outside this automatic budget. The existing worker deadline and bounded scheduler also apply.
+This limits automatic dispatches, not total model tokens or billing. One job can include periodic public discovery, private analysis and evidence-triggered tool-gap research. Discovery allows one attempt per hour per session and agent, one to three searches, and a 45-second deadline; failed attempts also count toward its cooldown. Set `CULLY_DISCOVERY=off` to disable that optional discovery phase. Different session keys have separate budgets, and explicit rescue/live evaluation calls are outside this automatic budget. The existing worker deadline and bounded scheduler also apply.
 
 Respect explicit user-supplied spend, time, token or iteration limits separately. An agent should ask whether to stop, narrow the work or extend that budget as it approaches the limit. Cully must not claim a measured token total for a host that does not expose one.
 

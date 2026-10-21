@@ -54,7 +54,7 @@ Use tokens per session as a baseline: change one setup component, do a comparabl
 
 ## In the terminal panel
 
-The leftmost **Harness** column shows setup readiness, named gaps, recent output estimates, the model and pending verification. Active loops and nonzero errors also appear. Wide terminals place **Project & usage** and **Cully impact** beside it; narrow terminals stack them and shorten long gap lists to keep the panel bounded. Use the CLI for the complete audit and the advisor’s Tab view for full session instruments.
+The leftmost **Harness** column shows setup readiness, named gaps, recent output estimates, the model and pending verification. Active loops and nonzero errors also appear. Wide terminals place **Session** beside it, combining project, context, token counts, quota, Fast mode, Git changes and observed Cully activity; narrow terminals stack the two sections and shorten long gap lists to keep the panel bounded. Use the CLI for the complete audit and the advisor’s Tab view for full session instruments.
 
 Setup checks refresh every 30 seconds. A background measurement samples up to 20 recent sessions of the running agent over 30 days, refreshed every five minutes, and names that agent: “no recent Codex sessions” in Codex, “not measured for Cursor yet” in Cursor. “Measuring…” means the first measurement is pending. These historical figures are not usage for the current session. Codex sessions are often much larger than Claude's because Codex reads files through the shell, so all its oversized output counts as Bash.
 

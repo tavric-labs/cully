@@ -13,6 +13,7 @@ import (
 
 func TestAdvisorBudgetLimitsDuplicateRapidAndHourlyRequests(t *testing.T) {
 	journalTestEnv(t)
+	t.Setenv("CULLY_DISCOVERY", "")
 	now := time.Now().UTC()
 	if got := admitAdvisorRequest("one", "first", now); got != "" {
 		t.Fatal(got)
@@ -36,6 +37,9 @@ func TestAdvisorBudgetLimitsDuplicateRapidAndHourlyRequests(t *testing.T) {
 	}
 	if got := admitAdvisorRequest("one", "later", now.Add(time.Hour)); got != "" {
 		t.Fatal(got)
+	}
+	if got := admitAdvisorRequest("two", "independent", now.Add(80*time.Minute)); got != "" {
+		t.Fatalf("idle hourly discovery could not refresh unchanged evidence: %s", got)
 	}
 	data, err := os.ReadFile(advisorBudgetFile("one"))
 	if err != nil {

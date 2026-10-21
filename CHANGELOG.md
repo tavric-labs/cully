@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Add periodic advisor discovery of recent coding-agent releases, model updates, articles, workflows, skills and hooks through the active agent's web tools. Filter dated public findings against the accepted task, bound searches to one attempt per hour, and turn selected workflow ideas into prompts that continue the agreed work. Keep private task context out of the public scout and allow opting out with `CULLY_DISCOVERY=off`.
+
+- Simplify the terminal panel to two sections, Harness and Session. Combine project, context, tokens, quota, Fast mode, Git changes and observed Cully activity in the right Session column; keep Harness unchanged and rename the expanded Cully impact heading to Cully activity.
+
 ## 0.24.0
 
 - Replace the docs homepage's narrow handoff-workflow tagline with session intelligence, private memory, recovery, evaluation and harness improvement; describe Solo and IC as private usage patterns and distinguish existing Team workflows from future enhancements.
