@@ -31,4 +31,4 @@ jobs:
           go-version-file: go.mod
           cache: true
       - name: PostgreSQL and OAuth MCP integration tests
-        run: go test ./internal/store/postgres -race -count=1 -v
+        run: go test ./internal/store/postgres ./migrations -race -count=1 -v

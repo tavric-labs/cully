@@ -790,11 +790,23 @@ func cullyInstrumentRows(stats toolStats, width int) []string {
 		}
 		rows = append(rows, line)
 	}
-	row := fmt.Sprintf("MCP %s%d%s calls · Auth %s", cyan, c.Calls, rst, observedState(c.Auth, true))
-	if c.Probed {
-		row += dim + " (connection check)" + rst
+	auth := observedState(c.Auth, true)
+	if c.Probed && (c.Auth == "" || c.Auth == "unknown") {
+		auth = dim + "not verified" + rst
 	}
-	if c.Calls == 0 && c.Auth == "" {
+	row := fmt.Sprintf("MCP %s%d%s calls · Auth %s", cyan, c.Calls, rst, auth)
+	if c.Probed {
+		if c.Health == "unknown" {
+			row += dim + " (connection check inconclusive)" + rst
+		} else if c.Health == "unhealthy" && (c.Auth == "" || c.Auth == "unknown") {
+			row += dim + " (connection check failed)" + rst
+		} else if c.Auth == "unauthenticated" {
+			row += dim + " (connection check: sign-in required)" + rst
+		} else {
+			row += dim + " (connection check)" + rst
+		}
+	}
+	if c.Calls == 0 && c.Auth == "" && !c.Probed {
 		// Health and auth are read from Cully tool responses, so nothing is
 		// known before the first call; say why instead of leaving a bare unknown.
 		row += dim + " (set by first call)" + rst
@@ -816,7 +828,7 @@ func cullyToolRows(stats cullyStats, width int) []string {
 		counts = map[string]int{"cully_log": stats.Log, "cully_context": stats.Context, "cully_recall": stats.Recall, "cully_search": stats.Search, "cully_get": stats.Get, "earlier_other": stats.Other}
 	}
 	names := map[string]bool{}
-	for _, name := range []string{"cully_log", "cully_context", "cully_search", "cully_recall", "cully_get", "cully_update", "cully_delete", "cully_recent", "cully_projects", "cully_session", "cully_session_get"} {
+	for _, name := range []string{"cully_log", "cully_context", "cully_search", "cully_recall", "cully_get", "cully_update", "cully_delete", "cully_recent", "cully_session", "cully_session_get"} {
 		names[name] = true
 	}
 	for name := range counts {

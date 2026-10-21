@@ -46,8 +46,9 @@ func TestSetupCheckOAuthRequiresSignIn(t *testing.T) {
 	if !strings.Contains(output.String(), "pending") || strings.Contains(output.String(), "connection verified") {
 		t.Fatalf("misreported authentication: %s", &output)
 	}
-	if err := checkSetupMCP(&output, server.URL, false); err == nil {
-		t.Fatal("accepted unauthorized server without --oauth")
+	output.Reset()
+	if err := checkSetupMCP(&output, server.URL, false); err != nil || !strings.Contains(output.String(), "automatically") || !strings.Contains(output.String(), "pending") || strings.Contains(output.String(), "connection verified") {
+		t.Fatalf("OAuth challenge was not discovered without a mode flag: %v %s", err, &output)
 	}
 }
 

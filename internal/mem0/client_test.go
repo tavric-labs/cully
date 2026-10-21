@@ -32,12 +32,21 @@ func TestProjectionLifecycleAndScope(t *testing.T) {
 			if in["infer"] != false || in["user_id"] != UserID("owner-a") || in["run_id"] != "entry-a" {
 				t.Error("incorrect projection identity or inference")
 			}
+			meta := in["metadata"].(map[string]any)
+			if meta["session_ref"] != "codex-0123456789abcdef" || meta["agent_session_id"] != "native-session-123" || meta["assistant"] != "codex" {
+				t.Error("factual session provenance missing from projection")
+			}
+			for _, key := range []string{"project", "project_url", "section", "theme", "category", "tags"} {
+				if _, exists := meta[key]; exists {
+					t.Errorf("obsolete metadata %s projected", key)
+				}
+			}
 			_, _ = w.Write([]byte(`{}`))
 		case "POST /search":
 			var in map[string]any
 			_ = json.NewDecoder(r.Body).Decode(&in)
 			f := in["filters"].(map[string]any)
-			if f["user_id"] != UserID("owner-a") || f["section"] != "company" {
+			if f["user_id"] != UserID("owner-a") || f["session_ref"] != "codex-0123456789abcdef" {
 				t.Error("unscoped search")
 			}
 			_, _ = w.Write([]byte(`{"results":[]}`))
@@ -50,7 +59,8 @@ func TestProjectionLifecycleAndScope(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	e := &memory.Entry{ID: "entry-a", Summary: "Fixed OAuth", Section: "company", UpdatedAt: time.Now()}
+	projectionRef, nativeID := "codex-0123456789abcdef", "native-session-123"
+	e := &memory.Entry{ID: "entry-a", Summary: "Fixed OAuth", Assistant: "codex", SessionRef: &projectionRef, AgentSessionID: &nativeID, UpdatedAt: time.Now()}
 	if err = c.Reconcile(context.Background(), "owner-a", "entry-a", e); err != nil {
 		t.Fatal(err)
 	}
@@ -64,8 +74,8 @@ func TestProjectionLifecycleAndScope(t *testing.T) {
 	if len(calls) != 2 {
 		t.Fatal("deletion recreated a projection")
 	}
-	section := "company"
-	if _, err = c.Search(context.Background(), "owner-a", memory.SearchInput{Query: "oauth", Section: &section, Limit: 5}); err != nil {
+	ref := "codex-0123456789abcdef"
+	if _, err = c.Search(context.Background(), "owner-a", memory.SearchInput{Query: "oauth", SessionRef: &ref, Limit: 5}); err != nil {
 		t.Fatal(err)
 	}
 	if UserID("owner-a") == UserID("owner-b") {

@@ -1,54 +1,47 @@
 ---
 title: Use Cully memory
-description: Save useful notes and find them later from connected coding agents.
+description: Private work notes and session links for Solo and individual contributors.
 ---
 
 # Use Cully memory
 
-These tools remain owner-scoped. Team tasks and published project lessons use the separate [workspace workflow](/team-workflows); a `company` section or repository URL does not grant shared access. Workspace lessons currently use live project lookup, not Mem0 recall.
+Solo keeps records for one local owner. IC (individual contributor) lets people within a company or team use the same Cully, PostgreSQL, Mem0 and embedding services, with private records for each signed-in contributor. Shared infrastructure does not share notes. Team project management and sharing are deferred.
 
-After [starting Cully on your laptop](/hosting) or [connecting to a team server](/agents), your agent uses Cully MCP tools to save and find useful work across sessions.
+Start with `cully setup --all` for a local owner, or `cully setup --mcp-url URL` for an existing deployment. Setup detects an OAuth challenge and directs you to sign in; contributors do not need to select IC. The server infers IC from OAuth and assigns each request's owner from verified sign-in. Solo and IC describe how the deployment is used; there is no mode flag. To enable sign-in on a new shared deployment, use `cully setup --all --oauth`; see [authentication](/oauth) for provider configuration.
 
-The installed Cully skill and session hooks ask Claude Code, Codex and Cursor to find relevant notes when substantive work starts and save a concise note when that work ends. A record can capture the project and task, approach, outcome, checks, blocker or missed step, and next step. When a client supplies a hook session ID, Cully gives the agent an opaque `session_ref` and the native `agent_session_id` to save with the note. The reference groups notes; the native ID lets you reopen the coding agent's conversation. Neither the hook nor the note stores a transcript. The connected agent decides what is useful and calls `cully_log` with its own MCP identity. Codex asks you to trust newly installed hooks in `/hooks` before they run. The local advisor analyzes session signals for suggestions; it does not hold an OAuth token or upload session transcripts. You can still ask the agent to save, find or correct a note explicitly.
+## Save useful facts
 
-## What you can save
+`cully_log` requires only `summary` and `assistant`. Optional content includes `approach`, `outcome`, `issue`, `learning` and `next_steps`. Save the task, what was tried, the result, any blocker and a useful next action. Text fields allow up to 8,000 characters. Keep credentials and transcripts out of notes.
 
-A record has a summary, the assistant that wrote it and a `personal` or `company` section. Work records can include a GitHub project URL, what changed, the result, a lesson and next steps. Personal records can cover goals or routines without a project URL. Avoid putting credentials or full transcripts in notes.
+Use the exact `session_ref` and `agent_session_id` supplied by the installed hook when available. The opaque reference groups related notes; the native ID lets you reopen the agent conversation, for example with `codex resume ID`. Both remain private. `cully_session` accepts these IDs, an optional branch and a short task name. Repeating the task name keeps or relinks one task record; omitting it preserves the current link and `clear_task` unlinks it without deleting the record.
 
-Both sections belong to the same owner. `company` is a label for organizing your notes; it does not share them with coworkers. On a default private server, the fixed owner configured by setup owns every record. With OAuth, each signed-in user's verified identity is the owner.
+There are no project, repository URL, section, category, theme or tag fields in private memory. Cully does not guess them from `.git`, a submodule, a folder or a company name. Search by the task's words, session reference or time instead. Measured tool activity and counters belong to the local harness journal; a saved summary is not a measurement.
+
+Ownership is assigned by the server: a fixed configured owner in Solo, or the verified OAuth subject in IC. Public tool inputs cannot supply an owner. Every source read/write, session and projection job is owner-scoped. Mem0 uses a hashed owner namespace, and candidate results are checked against live records belonging to that owner before being returned.
 
 ## Find and change notes
 
-| Tool | Use it to |
+| Tool | Purpose |
 | --- | --- |
-| `cully_log` | Save a structured note. |
-| `cully_context` | Get a few short, task-oriented previews before opening full records. |
-| `cully_recent` | See recent notes. |
-| `cully_search` | Find text in saved notes. |
-| `cully_recall` | Find semantically related notes through Mem0. |
-| `cully_get` | Read one note by ID. |
-| `cully_update` | Correct a note. |
-| `cully_delete` | Remove a note. |
-| `cully_projects` | List projects with recent activity. |
-| `cully_session` | Start or update the current agent session with its project, branch and an optional task name. A new task name saves one `task` record linked to the session; the same name again keeps or relinks that record without adding a duplicate. Omitting the task keeps the current link; `clear_task` unlinks it while keeping the task record. |
-| `cully_session_get` | Get one session by its `session_ref`, including its task. |
+| `cully_log` | Save a structured private note. |
+| `cully_context` | Get three concise previews by default, at most five. |
+| `cully_search` | Search PostgreSQL source text. |
+| `cully_recall` | Recall semantic candidates through Mem0, verified against source records. |
+| `cully_recent` | List recent owned records. |
+| `cully_get` | Read an owned note by ID. |
+| `cully_update` | Change supplied content fields; empty optional text clears a field. |
+| `cully_delete` | Delete an owned note and queue removal of its semantic projection. |
+| `cully_session` | Link a session to a task or explicitly clear that link. |
+| `cully_session_get` | Read an owned session and its current task. |
 
-Tool results contain `entry`, `entries`, `projects` or `deleted`, depending on the operation. Read tools require `tools:read` and mutations require `tools:write` when OAuth is enabled. Tasks are saved through `cully_session`; `cully_log` rejects `entry_type: task` and points at it instead.
+Start substantive work with `cully_context` and a focused query. Use semantic mode if text lookup misses, then fetch only needed details with `cully_get`. Save one concise note before finishing. If MCP is unavailable, continue the task and report that the note was not saved.
 
-PostgreSQL holds the source notes. `cully_search` and `cully_recent` read those records directly. Mem0 is part of the standard Cully stack and provides semantic candidates for `cully_recall`; Cully checks them against live, owned records before returning them. A new or edited note may take a little time to appear in recall, while text search remains available.
+Search and recall require query text and accept an optional `session_ref`, entry type and `since`. Recent records also accept `until`; time windows are inclusive at `since` and exclusive at `until`. Limits are capped at 50. `cully_context` accepts text, semantic or recent mode, with time windows in recent mode. Times use RFC3339; omitted `occurred_at` uses the current time. Stored instants use PostgreSQL `timestamptz`, returned in Asia/Kolkata (`+05:30`).
 
-For a normal task, the agent starts with `cully_context`. It uses PostgreSQL text search when you provide a query, recent records when you do not, and Mem0 when `mode: semantic` is requested. The result is a bounded preview, with `cully_get` available for the full note. See [how Cully keeps sessions focused](/session-optimization).
+Entry types are `work`, `issue`, `learning` and `decision`; `work` is the default. `task` records are created only by `cully_session`. Missing or differently owned IDs return no entry, and deletion reports whether an owned record was removed. Read tools require `tools:read`; mutations require `tools:write` in IC.
 
-You do not have to ask for every handoff: the installed hooks and skill prompt the connected agent during substantive work. To check a particular decision, ask the agent, for example, “What did we decide about OAuth for this repository, and which note supports it?” It should search the owned records and cite a date or record ID. If it cannot reach MCP, it should say that the note was not saved or found, rather than claiming continuity succeeded.
+## Upgrade the private schema
 
-## Record details
+Schema version 8 removes the obsolete classification columns and `cully_projects` tool, while preserving note IDs, authenticated owners, content, timestamps and session/task links. It adds a native agent session ID to session records. Back up the database, stop old data-service writers, run the new `cully-data migrate`, then start matching data/MCP versions and refresh agent integrations with `cully setup` using your existing options. Old clients that send removed fields must be refreshed. Migration is explicit; normal startup refuses an outdated database.
 
-`cully_log` requires a summary, assistant and section. Entry types are `work`, `issue`, `learning` and `decision`; `work` is the default. Optional fields include project URL, opaque session reference, native agent session ID, category, approach, outcome, issue, learning, next steps and tags. GitHub project URLs normalize to `https://github.com/owner/repo`.
-
-Text fields allow up to 8,000 characters and records allow up to 20 tags of 64 characters. Search and recent lookup can filter by project or `session_ref`; search also supports section, category, entry type and time. The `session_ref` groups Cully notes, while `agent_session_id` is the value to pass to the originating agent's resume command, for example `codex resume ID`. Both are visible only to the note's owner. Changes through `cully_update` affect only supplied fields, except that a task entry linked to a session keeps its session's section. See [Mem0 recall](/mem0) for its indexing behavior.
-
-GitHub HTTPS and SSH remotes are accepted for `project_url` and normalize to the same URL. Personal notes need no project URL. Available categories are `career`, `fitness`, `relationship`, `finance`, `food`, `water`, `reading`, `mood`, `check-in` and `other`. `occurred_at` accepts an RFC3339 timestamp with an offset; Cully uses the current time when it is omitted and returns times in Asia/Kolkata (`+05:30`). The source database stores instants as `timestamptz`.
-
-`cully_search` and `cully_recall` require query text. Search and recent limits are capped at 50 records; `cully_projects` is capped at 100. `cully_context` returns three short previews by default and at most five. An empty optional text value in `cully_update` clears that field; an empty summary is rejected. Reading or updating a missing or differently owned record returns no entry, and deletion reports whether an owned record was removed.
-
-Shared notes are written by `cully_log`. The advisor's local counters and diagnostic snapshots support session guidance; they are not additional shared memory records. Cully rejects recognized secret patterns in note text, but you should still keep credentials out of notes. Embeddings are managed by Mem0 rather than supplied as tool inputs.
+The migration queues a rebuild of each owner's Mem0 metadata. PostgreSQL text lookup remains available while the worker catches up; semantic recall may lag. Mem0 owns embeddings, and no extraction model is used (`infer=false`). The advisor only recalls notes; the foreground agent owns durable writes. See [Mem0](/mem0) and [privacy](/privacy).

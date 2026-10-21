@@ -1,9 +1,38 @@
 package cully
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
+
+func TestTokenWasteAdviceRequiresRecentUniqueOutput(t *testing.T) {
+	w := newTokenWaste()
+	for i := 0; i < 3; i++ {
+		id := fmt.Sprint("big-", i)
+		w.useCall(id, "Read", true)
+		w.result(id, strings.Repeat("x", 16000))
+	}
+	w.finish(40000)
+	if !w.Significant() {
+		t.Fatal("recent significant output was ignored")
+	}
+	// Repeated transcript entries do not make old waste seem current.
+	for i := 0; i < 15; i++ {
+		id := fmt.Sprint("small-", i)
+		w.useCall(id, "Read", false)
+		w.result(id, "small result")
+	}
+	w.result("big-2", strings.Repeat("x", 16000))
+	if w.Significant() {
+		t.Fatal("stale or duplicated output still produced current advice")
+	}
+	w.useCall("new-big", "Read", true)
+	w.result("new-big", strings.Repeat("x", 16000))
+	if !w.Significant() {
+		t.Fatal("new oversized output did not restore advice")
+	}
+}
 
 func TestTokenWasteSeparatesFullReadsBashAndCully(t *testing.T) {
 	w := newTokenWaste()

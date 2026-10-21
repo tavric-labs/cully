@@ -44,6 +44,13 @@ jobs:
           docker compose --env-file .env.example -f compose.yaml config --quiet
           CULLY_MCP_AUTH_MODE=oauth CULLY_MCP_OWNER='' docker compose --env-file .env.example -f compose.yaml --profile oauth config --quiet
           CULLY_MCP_AUTH_MODE=oauth CULLY_MCP_OWNER='' docker compose --env-file .env.example -f compose.yaml --profile oauth --profile mcp-auth config --quiet
+          CULLY_MCP_AUTH_IMAGE=example/mcp-auth:ci \
+          CULLY_MCP_AUTH_CONFIG_DIR="$PWD/../login-methods/config" \
+          CULLY_MCP_AUTH_ENV_FILE="$PWD/mcp-auth.env.example" \
+          CULLY_AUTH_ISSUER=https://auth.example.com \
+          CULLY_AUTH_RESOURCE=https://mcp.example.com/mcp \
+          CULLY_MCP_AUTH_MODE=oauth CULLY_MCP_OWNER='' \
+            docker compose --env-file .env.example -f compose.yaml -f compose.custom-auth.yaml --profile oauth config --quiet
       - name: Personal Compose configuration
         run: |
           cd deploy

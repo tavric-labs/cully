@@ -99,26 +99,23 @@ func (c *Client) Reconcile(ctx context.Context, owner, id string, e *memory.Entr
 			parts = append(parts, *v)
 		}
 	}
-	meta := map[string]any{"cully_entry_id": id, "cully_updated_at": e.UpdatedAt.Format(time.RFC3339Nano), "section": e.Section}
-	if e.ProjectURL != nil {
-		meta["project_url"] = *e.ProjectURL
+	meta := map[string]any{"cully_entry_id": id, "cully_updated_at": e.UpdatedAt.Format(time.RFC3339Nano), "assistant": e.Assistant, "entry_type": e.EntryType}
+	if e.SessionRef != nil {
+		meta["session_ref"] = *e.SessionRef
 	}
-	if e.Category != nil {
-		meta["category"] = *e.Category
+	if e.AgentSessionID != nil {
+		meta["agent_session_id"] = *e.AgentSessionID
 	}
 	body := map[string]any{"messages": []map[string]string{{"role": "user", "content": strings.Join(parts, "\n")}}, "user_id": uid, "run_id": id, "infer": false, "metadata": meta}
 	return c.request(ctx, "POST", "/memories", body, nil)
 }
 func (c *Client) Search(ctx context.Context, owner string, input memory.SearchInput) ([]Hit, error) {
 	filters := map[string]any{"user_id": UserID(owner)}
-	if input.Section != nil {
-		filters["section"] = *input.Section
+	if input.SessionRef != nil {
+		filters["session_ref"] = *input.SessionRef
 	}
-	if input.ProjectURL != nil {
-		filters["project_url"] = *input.ProjectURL
-	}
-	if input.Category != nil {
-		filters["category"] = *input.Category
+	if input.EntryType != nil {
+		filters["entry_type"] = *input.EntryType
 	}
 	var out hits
 	err := c.request(ctx, "POST", "/search", map[string]any{"query": input.Query, "filters": filters, "top_k": input.Limit}, &out)

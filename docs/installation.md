@@ -5,6 +5,8 @@ description: Choose an agent, set up PATH, pin a release or build Cully from sou
 
 # Installer options
 
+Use `cully setup --all` for one local owner or `cully setup --mcp-url URL` for an existing deployment. Shared deployments use OAuth for each contributor’s private identity. Solo and IC describe these uses; no mode flag is needed.
+
 Follow the [quickstart](/quickstart) to run the memory stack on your laptop, or [connect to a remote MCP server](#connect-to-a-remote-memory-stack) to keep only the agent integration and advisor on your machine. The installer accepts `--agent claude`, `--agent codex`, `--agent cursor` or `--agent all`; every agent uses the single binary at `~/.local/bin/cully`. Without `--mcp-url`, run `cully setup --all` after installation to start the local memory stack and advisor daemon.
 
 ## One setup across projects
@@ -19,6 +21,10 @@ Run setup once for your user account, from any directory. It configures selected
 | Cursor hooks, command, skill and MCP registration | `~/.cursor/` |
 
 Agent paths honor `CLAUDE_CONFIG_DIR`, `CODEX_HOME` and `CURSOR_CONFIG_DIR`. Existing user instructions outside Cully's marked section, unrelated settings, and commands or skills owned by the user are preserved. Setup detects installed agents from executables and user configuration, rather than files in the current repository. Codex's [global instruction discovery](https://learn.chatgpt.com/docs/agent-configuration/agents-md) applies its managed guidance across repositories.
+
+For self-hosted sign-in with LDAP, Google, OIDC or other provider files, pass
+`--mcp-auth-config-dir` and `--mcp-auth-env` to `cully setup --all --oauth`. See [plug in mcp-auth](/oauth#plug-in-your-mcp-auth-configuration)
+for automatic latest-release selection, file paths, examples and links to mcp-auth's provider configuration guides.
 
 ## macOS
 

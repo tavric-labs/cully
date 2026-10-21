@@ -1,0 +1,40 @@
+# The bundled mcp-auth service stays disabled (its profile is not enabled).
+services:
+  mcp-auth-custom:
+    image: ${CULLY_MCP_AUTH_IMAGE:?set mcp-auth image}
+    restart: unless-stopped
+    depends_on:
+      mcp-auth-state-init:
+        condition: service_completed_successfully
+    env_file: ["${CULLY_MCP_AUTH_ENV_FILE:?set mcp-auth environment file}"]
+    environment:
+      # Keep issued tokens aligned with Cully's configured issuer/resource.
+      MCP_AUTH_ISSUER: ${CULLY_AUTH_ISSUER:?set CULLY_AUTH_ISSUER}
+      MCP_AUTH_RESOURCES: ${CULLY_AUTH_RESOURCE:?set CULLY_AUTH_RESOURCE}
+      MCP_AUTH_RESOURCE_SCOPES: '{"${CULLY_AUTH_RESOURCE}":["tools:read","tools:write"]}'
+      MCP_AUTH_PRIVATE_KEY_FILE: /run/secrets/signing_key
+      MCP_AUTH_STORE: sqlite
+      MCP_AUTH_DATABASE_URL: /var/lib/mcp-auth/state.db
+      MCP_AUTH_REGISTRATION_ENABLED: "true"
+      MCP_AUTH_REQUIRE_HTTPS: "true"
+      MCP_AUTH_TRUST_PROXY_TLS: "true"
+    volumes:
+      - type: bind
+        source: ${CULLY_MCP_AUTH_CONFIG_DIR:?set mcp-auth config directory}
+        target: /etc/mcp-auth
+        read_only: true
+        bind:
+          create_host_path: false
+      - auth-state:/var/lib/mcp-auth
+    secrets: [signing_key]
+    expose: ["8080"]
+    networks:
+      edge:
+        aliases: [mcp-auth]
+  mcp-auth-state-init:
+    image: postgres:17
+    user: "0:0"
+    entrypoint: [/bin/sh, -c]
+    command: ['chown "$$1" /state && chmod 700 /state', 'cully-auth-state', '${CULLY_MCP_AUTH_STATE_OWNER:-65532:65532}']
+    volumes: [auth-state:/state]
+    network_mode: none

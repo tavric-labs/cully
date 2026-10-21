@@ -23,9 +23,9 @@ func (s *fakeStore) Execute(_ context.Context, owner string, r memory.Request) (
 	s.owner = owner
 	s.calls++
 	if r.Operation == "recent" {
-		return memory.Result{Entries: []memory.Entry{{ID: "00000000-0000-0000-0000-000000000002", Summary: "Previous project work", Section: "company", Assistant: "codex"}}}, nil
+		return memory.Result{Entries: []memory.Entry{{ID: "00000000-0000-0000-0000-000000000002", Summary: "Previous project work", Assistant: "codex"}}}, nil
 	}
-	return memory.Result{Entry: &memory.Entry{ID: "00000000-0000-0000-0000-000000000001", Summary: r.Log.Summary, Section: r.Log.Section}}, nil
+	return memory.Result{Entry: &memory.Entry{ID: "00000000-0000-0000-0000-000000000001", Summary: r.Log.Summary}}, nil
 }
 
 type bearerTransport struct{ token string }
@@ -64,10 +64,10 @@ func TestMCPToPrivateAPI(t *testing.T) {
 			t.Fatal(err)
 		}
 		tools, err := session.ListTools(ctx, nil)
-		if err != nil || len(tools.Tools) != len(toolRegistrations()) {
+		if err != nil || len(tools.Tools) != len(toolRegistrations())-2 {
 			t.Fatalf("tools=%v err=%v", tools, err)
 		}
-		result, err := session.CallTool(ctx, &sdk.CallToolParams{Name: "cully_log", Arguments: memory.LogInput{Summary: "Fixed OAuth", Assistant: "codex", Section: "company"}})
+		result, err := session.CallTool(ctx, &sdk.CallToolParams{Name: "cully_log", Arguments: memory.LogInput{Summary: "Fixed OAuth", Assistant: "codex"}})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -125,11 +125,11 @@ func TestNoOAuthUsesFixedOwner(t *testing.T) {
 			action = "team_create"
 		}
 		denied, err := session.CallTool(ctx, &sdk.CallToolParams{Name: name, Arguments: map[string]any{"action": action, "name": "Example"}})
-		if err != nil || !denied.IsError {
+		if err == nil && !denied.IsError {
 			t.Fatal("private no-OAuth mode enabled team identity")
 		}
 	}
-	result, err := session.CallTool(ctx, &sdk.CallToolParams{Name: "cully_log", Arguments: memory.LogInput{Summary: "No OAuth", Assistant: "codex", Section: "personal"}})
+	result, err := session.CallTool(ctx, &sdk.CallToolParams{Name: "cully_log", Arguments: memory.LogInput{Summary: "No OAuth", Assistant: "codex"}})
 	if err != nil || result.IsError {
 		t.Fatalf("tool result=%v error=%v", result, err)
 	}
@@ -149,11 +149,11 @@ func TestNoOAuthUsesFixedOwner(t *testing.T) {
 func TestWriteAcknowledgementDoesNotEchoRecordText(t *testing.T) {
 	secret := "approach text"
 	agent := "agent-1"
-	got := acknowledgeWrite(memory.Result{Entry: &memory.Entry{ID: "e1", Section: "personal", AgentSessionID: &agent, Summary: "s", Approach: &secret, Tags: []string{"x"}}})
-	if got.Entry.ID != "e1" || got.Entry.Section != "personal" || got.Entry.AgentSessionID == nil || *got.Entry.AgentSessionID != agent {
+	got := acknowledgeWrite(memory.Result{Entry: &memory.Entry{ID: "e1", AgentSessionID: &agent, Summary: "s", Approach: &secret}})
+	if got.Entry.ID != "e1" || got.Entry.AgentSessionID == nil || *got.Entry.AgentSessionID != agent {
 		t.Fatalf("lost identifiers: %+v", got.Entry)
 	}
-	if got.Entry.Summary != "" || got.Entry.Approach != nil || got.Entry.Tags != nil {
+	if got.Entry.Summary != "" || got.Entry.Approach != nil {
 		t.Fatalf("echoed content: %+v", got.Entry)
 	}
 	if empty := acknowledgeWrite(memory.Result{Deleted: true}); empty.Entry != nil || !empty.Deleted {

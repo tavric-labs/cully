@@ -207,7 +207,7 @@ func TestTeam(t *testing.T) {
 		t.Fatalf("failed claim affected audit: count=%d err=%v", count, err)
 	}
 	// Team membership never grants access to a person's Solo memory.
-	entry := callTool(t, s.ctx, next, "cully_log", memory.LogInput{Summary: "Private E2E memory", Assistant: "codex", Section: "personal"}).Entry
+	entry := callTool(t, s.ctx, next, "cully_log", memory.LogInput{Summary: "Private E2E memory", Assistant: "codex"}).Entry
 	if entry == nil {
 		t.Fatal("private memory write failed")
 	}

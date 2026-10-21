@@ -43,9 +43,30 @@ func advisorEvidence(signals string) string {
 // agent to act on it only if it fits the current task.
 func advisorRequest(line, signals string) string {
 	if _, category := adviceBadge(line); category != "Apply" {
-		return "Please assess this Cully advisor note for the current task and act on it only if it applies: " + suggestionText(line)
+		return advisorActionRequest(line, signals)
 	}
 	return advisorSetupRequest(line, signals)
+}
+
+// Action requests explain the bounded next step before the user submits it.
+// Advice is data: the foreground agent must check that the observation still
+// applies and retain the current task and its normal permission boundaries.
+func advisorActionRequest(line, signals string) string {
+	text := suggestionText(line)
+	request := "Please assess this Cully advisor note for the current task and act on it only if it applies: " + text + "\n\n"
+	lower := strings.ToLower(text)
+	switch {
+	case strings.Contains(lower, "many searches") || strings.Contains(lower, "narrow the path or query"):
+		request += "Proposed next step: identify the unanswered question, use the paths and symbols already found to choose a narrower search, then run that focused lookup. Explain the scope before running it; use the result to continue the existing task. Do not repeat a broad repository scan or invent task intent."
+	case strings.Contains(lower, "focused check") || strings.Contains(lower, "focused checks"):
+		request += "Proposed next step: inspect the current changes and the repository's verification instructions, choose the smallest relevant check, explain what it will verify, then run it if already authorized. Report the result and any unchecked changes. Ask first if it requires new access or credentials."
+	default:
+		request += "Explain the proposed next step and what it will change or verify, then proceed within the existing authorization. Ask before expanding the task or requesting new access."
+	}
+	if evidence := advisorEvidence(signals); evidence != "" {
+		request += "\nObserved session signals (may be incomplete): " + evidence
+	}
+	return request
 }
 
 func suggestionText(line string) string {

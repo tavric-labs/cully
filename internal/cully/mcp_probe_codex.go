@@ -42,6 +42,8 @@ func codexMCPStatusExchange(in io.Writer, out io.Reader) (string, string, bool) 
 	}
 	sc := bufio.NewScanner(out)
 	sc.Buffer(make([]byte, 64<<10), 8<<20)
+	var failedHealth, failedAuth string
+	seenPages := map[string]bool{}
 	for sc.Scan() {
 		var msg struct {
 			ID     int             `json:"id"`
@@ -61,14 +63,21 @@ func codexMCPStatusExchange(in io.Writer, out io.Reader) (string, string, bool) 
 			}
 		case 2:
 			if health, auth, found := parseCodexMCPStatus(msg.Result); found {
-				return health, auth, true
+				if health == "healthy" {
+					return health, auth, true
+				}
+				failedHealth = health
+				if failedAuth == "" || auth == "unauthenticated" {
+					failedAuth = auth
+				}
 			}
 			var page struct {
 				NextCursor string `json:"nextCursor"`
 			}
-			if json.Unmarshal(msg.Result, &page) != nil || page.NextCursor == "" || !list(page.NextCursor) {
-				return "", "", false
+			if json.Unmarshal(msg.Result, &page) != nil || page.NextCursor == "" || seenPages[page.NextCursor] || !list(page.NextCursor) {
+				return failedHealth, failedAuth, failedHealth != ""
 			}
+			seenPages[page.NextCursor] = true
 		}
 	}
 	return "", "", false

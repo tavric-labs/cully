@@ -80,10 +80,6 @@ servers:
         description: Delete a source record
         requiredTrust: high
         sideEffect: destructive
-      - name: cully_projects
-        description: List projects
-        requiredTrust: low
-        sideEffect: read
     auth:
       mode: none
     policy:

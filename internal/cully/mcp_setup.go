@@ -46,7 +46,7 @@ func AddMCP(w io.Writer, agent, endpoint string, oauth bool) error {
 		if oauth {
 			fmt.Fprintln(w, spec.SignInHint)
 		} else {
-			fmt.Fprintln(w, "Connect to Cully directly; this server does not require sign-in.")
+			fmt.Fprintln(w, "Your agent discovers whether this server requires sign-in; use its MCP settings to authenticate when prompted.")
 		}
 	}
 	fmt.Fprintf(w, "Remote MCP: %s\n", endpoint)

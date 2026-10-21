@@ -153,8 +153,8 @@ func TestAddMCPSingleAgentSelfHosted(t *testing.T) {
 			t.Fatalf("%s: %s %v", path, b, err)
 		}
 	}
-	if strings.Contains(out.String(), "codex mcp login cully") || !strings.Contains(out.String(), "does not require sign-in") {
-		t.Fatal("no-OAuth instructions are incorrect")
+	if strings.Contains(out.String(), "codex mcp login cully") || !strings.Contains(out.String(), "discovers whether") || strings.Contains(out.String(), "does not require sign-in") {
+		t.Fatal("unspecified authentication should defer to server discovery")
 	}
 	var oauthOut bytes.Buffer
 	if err := AddMCP(&oauthOut, "codex", endpoint, true); err != nil || !strings.Contains(oauthOut.String(), "codex mcp login cully") {

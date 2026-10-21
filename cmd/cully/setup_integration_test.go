@@ -27,6 +27,7 @@ func TestSetupLifecycle(t *testing.T) {
 		args                    []string
 		agents                  []string
 		prepare, oauth, remote  bool
+		customAuth              bool
 	}{
 		{name: "detect agents", args: []string{"--all"}, agents: []string{"codex", "cursor"}},
 		{name: "selected agent", args: []string{"--agent", "codex", "--all"}, agents: []string{"codex"}},
@@ -34,6 +35,7 @@ func TestSetupLifecycle(t *testing.T) {
 		{name: "OAuth", args: []string{"--agent", "codex", "--oauth", "--mcp-url", "mock"}, agents: []string{"codex"}, oauth: true, remote: true},
 		{name: "existing server", args: []string{"--agent", "codex", "--mcp-url", "https://mcp.example.test/mcp"}, agents: []string{"codex"}, remote: true, endpoint: "https://mcp.example.test/mcp"},
 		{name: "prepare only", args: []string{"--all", "--prepare"}, prepare: true},
+		{name: "prepare provider files", args: []string{"--all", "--oauth", "--prepare"}, prepare: true, oauth: true, customAuth: true},
 		{name: "Docker failure", args: []string{"--all"}, failure: "Docker"},
 		{name: "advisor failure", args: []string{"--all"}, failure: "advisor"},
 	} {
@@ -107,6 +109,17 @@ esac
 				write(filepath.Join(config, "connectors.json"), `{"org":{"client_secret_env":"MCP_AUTH_UPSTREAM_CLIENT_SECRET"}}`)
 				write(filepath.Join(config, ".secrets", "signing-key.pem"), "test-key")
 			}
+			if test.customAuth {
+				source := filepath.Join(root, "my provider files")
+				if err := os.Mkdir(source, 0o700); err != nil {
+					t.Fatal(err)
+				}
+				write(filepath.Join(source, "my-login.json"), `{"methods":[{"id":"custom","type":"ldap"}]}`)
+				provider := filepath.Join(root, "provider.env")
+				write(provider, "MCP_AUTH_LOGIN_METHODS_FILE=/etc/mcp-auth/my-login.json\nCUSTOM_SECRET=private-value\n")
+				// Exercise the actual CLI without querying an external release service.
+				args = append(args, "--mcp-auth-image", "example/auth:ci", "--mcp-auth-config-dir", source, "--mcp-auth-env", provider)
+			}
 			env := append(os.Environ(), "HOME="+root, "PATH="+bin,
 				"CLAUDE_CONFIG_DIR="+filepath.Join(root, ".claude"),
 				"CODEX_HOME="+filepath.Join(root, ".codex"),
@@ -155,6 +168,15 @@ esac
 				}
 				if _, err := os.Stat(filepath.Join(root, ".codex", "hooks.json")); !os.IsNotExist(err) {
 					t.Fatalf("prepare installed agent hooks: %v", err)
+				}
+				if test.customAuth {
+					saved, err := os.ReadFile(filepath.Join(root, ".cully", "self-hosted", "config", "mcp-auth.json"))
+					if err != nil || !strings.Contains(string(saved), "my provider files") || strings.Contains(string(saved), "private-value") {
+						t.Fatalf("provider inputs were not saved safely: %v", err)
+					}
+					if _, err := os.Stat(filepath.Join(setupDir, "compose.custom-auth.yaml")); err != nil {
+						t.Fatal("missing custom auth service wiring")
+					}
 				}
 				return
 			}
