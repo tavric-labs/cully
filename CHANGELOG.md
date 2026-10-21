@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Add a self-improvement loop. The advisor daemon runs `cully eval` every five hours (`CULLY_EVAL_INTERVAL` changes it, `off` disables it), keeps the history, and turns failing checks into proposals. `cully improve` shows the trend and proposals; `cully improve --apply N` writes an approved change, limited to rules and one skill under `~/.cully`, and never adds MCP servers or runs commands. Skill names that escape their folder are now rejected by `cully apply` too.
+- Add a `tasks` eval suite that scores sessions as tasks: verified or not, time, steps, orientation before the first edit, rework and loops, with rules checked against hand-worked sessions and your own history reported as measurements. Cully now records when `cully apply` and `cully improve --apply` change something, and `tasks` compares median time and steps for tasks before and after each change in the same project, without a verdict when the sample is thin.
+- Add an `improve` eval suite that scores the loop against planted failures, and `cully eval --repeat N`, which runs the deterministic suites N times and fails when their results differ.
+
 ## 0.21.0
 
 - Replace the workflow questionnaire with a starter `dev-workflow-rules` skill. The installer and first launch install `SKILL.md` with hint comments plus example `references/` files under `~/.cully/skills/dev-workflow-rules/`; Cully asks nothing, never replaces an existing skill, and strips hint comments before the advisor reads it.

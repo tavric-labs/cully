@@ -1,10 +1,13 @@
 package cully
 
 import (
+	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func failures(s EvalSuite) []string {
@@ -172,5 +175,160 @@ func TestEvalReplaysRealTranscriptFolders(t *testing.T) {
 	joined := strings.Join(s.Notes, "\n")
 	if !strings.Contains(joined, "replayed 1 sessions") || !strings.Contains(joined, "redundancy") || s.Failed() != 0 {
 		t.Fatalf("notes %q failures %v", joined, failures(s))
+	}
+}
+
+func TestEvalImprovePassesAndCatchesBrokenLoops(t *testing.T) {
+	if s := evalImprove(); s.Failed() != 0 {
+		t.Fatalf("real implementation failed: %v", failures(s))
+	}
+	for _, tc := range []struct {
+		name     string
+		update   func([]improvement, evalRun) []improvement
+		sanitize func(applyPlan) (applyPlan, []string, error)
+		want     string
+	}{
+		{"never proposes", func(l []improvement, _ evalRun) []improvement { return l }, sanitizeImprovePlan, "becomes one pending proposal"},
+		{"duplicates every failure", func(l []improvement, r evalRun) []improvement {
+			out := updateImprovements(l, r)
+			return append(out, out...)
+		}, sanitizeImprovePlan, "not proposed twice"},
+		{"never resolves", func(l []improvement, r evalRun) []improvement {
+			out := updateImprovements(l, r)
+			for i := range out {
+				if out[i].Status == "resolved" {
+					out[i].Status = "applied"
+				}
+			}
+			return out
+		}, sanitizeImprovePlan, "marks its proposal resolved"},
+		{"lets everything through", updateImprovements, func(p applyPlan) (applyPlan, []string, error) { return p, nil, nil }, "never kept"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := evalImproveWith(tc.update, tc.sanitize)
+			if !strings.Contains(strings.Join(failures(s), "\n"), tc.want) {
+				t.Fatalf("missed broken loop %q: %v", tc.name, failures(s))
+			}
+		})
+	}
+}
+
+func TestRepeatSuiteFlagsFlakyEvaluators(t *testing.T) {
+	stable := func() EvalSuite {
+		s := EvalSuite{Name: "stable"}
+		s.check("a", true, "")
+		return s
+	}
+	if s := repeatSuite(stable, 3); s.Failed() != 0 || len(s.Checks) != 2 {
+		t.Fatalf("stable suite: %+v", s)
+	}
+	calls := 0
+	flaky := func() EvalSuite {
+		calls++
+		s := EvalSuite{Name: "flaky"}
+		s.check("a", calls%2 == 1, "")
+		return s
+	}
+	if s := repeatSuite(flaky, 2); !strings.Contains(strings.Join(failures(s), "\n"), "identical across 2 runs") {
+		t.Fatalf("flaky suite passed: %+v", s)
+	}
+	skipped := func() EvalSuite { return EvalSuite{Name: "skipped", Skipped: "no server"} }
+	if s := repeatSuite(skipped, 3); len(s.Checks) != 0 {
+		t.Fatalf("skipped suite gained checks: %+v", s)
+	}
+	if _, err := parseEval([]string{"--repeat", "0"}); err == nil {
+		t.Fatal("repeat 0 accepted")
+	}
+}
+
+func TestEvalImproveSuiteIsStableAcrossRuns(t *testing.T) {
+	if s := repeatSuite(evalImprove, 6); s.Failed() != 0 {
+		t.Fatalf("improve suite is not deterministic: %v", failures(s))
+	}
+}
+
+func TestEvalTasksPassesAndCatchesBrokenScorers(t *testing.T) {
+	o := evalOptions{days: 30}
+	t.Setenv("CLAUDE_CONFIG_DIR", t.TempDir())
+	if s := evalTasks(o); s.Failed() != 0 {
+		t.Fatalf("real implementation failed: %v", failures(s))
+	}
+	if s := repeatSuite(func() EvalSuite { return evalTasks(o) }, 4); s.Failed() != 0 {
+		t.Fatalf("tasks suite is not deterministic: %v", failures(s))
+	}
+	allVerified := func(events []journalEvent) taskMetrics {
+		m := computeTaskMetrics(events)
+		m.Verified = m.Edits > 0
+		return m
+	}
+	noOrientation := func(events []journalEvent) taskMetrics {
+		m := computeTaskMetrics(events)
+		m.Orientation = 0
+		return m
+	}
+	alwaysCompares := func(sessions []sessionTask, at time.Time) (taskSummary, taskSummary, bool) {
+		return summarizeTasks(nil), summarizeTasks(nil), true
+	}
+	for _, tc := range []struct {
+		name    string
+		compute func([]journalEvent) taskMetrics
+		compare func([]sessionTask, time.Time) (taskSummary, taskSummary, bool)
+		want    string
+	}{
+		{"everything verified", allVerified, compareBeforeAfter, "edits never checked are unverified"},
+		{"no orientation counted", noOrientation, compareBeforeAfter, "twenty-one searches"},
+		{"always claims a comparison", computeTaskMetrics, alwaysCompares, "medians of similar work"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := evalTasksWith(o, tc.compute, tc.compare)
+			if !strings.Contains(strings.Join(failures(s), "\n"), tc.want) {
+				t.Fatalf("missed broken scorer %q: %v", tc.name, failures(s))
+			}
+		})
+	}
+}
+
+func TestAppliedChangesAreRecordedAndComparedPerProject(t *testing.T) {
+	t.Setenv("CLAUDE_CONFIG_DIR", t.TempDir())
+	recordAppliedChange("project", "abc", "Use a repo map")
+	changes := readAppliedChanges(time.Now().Add(-time.Hour))
+	if len(changes) != 1 || changes[0].Project != "abc" || changes[0].Kind != "project" {
+		t.Fatalf("%+v", changes)
+	}
+	if len(readAppliedChanges(time.Now().Add(time.Hour))) != 0 {
+		t.Fatal("age filter ignored")
+	}
+	// Journals for two projects around the change: only the changed project is compared.
+	dir := journalDir()
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	at := changes[0].At
+	for i, offset := range []time.Duration{-3 * time.Hour, -2 * time.Hour, -time.Hour, time.Hour, 2 * time.Hour, 3 * time.Hour} {
+		start := at.Add(offset)
+		var lines []string
+		for j, c := range []string{"E", "T"} {
+			ev := journalEvent{Time: start.Add(time.Duration(j+1) * time.Minute * time.Duration(10+i)), Class: c}
+			data, _ := json.Marshal(ev)
+			lines = append(lines, string(data))
+		}
+		path := filepath.Join(dir, fmt.Sprintf("abc-s%d.jsonl", i))
+		if err := os.WriteFile(path, []byte(strings.Join(lines, "\n")+"\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var scope []sessionTask
+	for _, task := range loadSessionTasks(time.Now().Add(-24 * time.Hour)) {
+		if task.Project == "abc" {
+			scope = append(scope, task)
+		}
+	}
+	if before, after, ok := compareBeforeAfter(scope, at); !ok || before.Tasks != 3 || after.Tasks != 3 {
+		t.Fatalf("journals not compared: %v %+v %+v", ok, before, after)
+	}
+	var s EvalSuite
+	replayTasks(&s, evalOptions{days: 30})
+	if !strings.Contains(strings.Join(s.Notes, "\n"), "project change") {
+		t.Fatalf("no before/after note: %v", s.Notes)
 	}
 }

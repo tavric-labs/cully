@@ -57,10 +57,11 @@ func (s EvalSuite) Failed() int {
 	return n
 }
 
-var evalSuites = []string{"setup", "harness", "advisor", "memory"}
+var evalSuites = []string{"setup", "harness", "improve", "tasks", "advisor", "memory"}
 
 type evalOptions struct {
 	days, max, live     int
+	repeat              int
 	project, agent, dir string
 	mcpURL              string
 	semanticMin         float64
@@ -75,6 +76,7 @@ func parseEval(args []string) (evalOptions, error) {
 		o.suites, args = append(o.suites, args[0]), args[1:]
 	}
 	fs := flag.NewFlagSet("eval", flag.ContinueOnError)
+	fs.IntVar(&o.repeat, "repeat", 1, "setup, harness and improve: run N times and fail if the results differ")
 	fs.IntVar(&o.days, "days", 30, "advisor: look back this many days")
 	fs.StringVar(&o.project, "project", "personal", "advisor: only transcript folders containing this text")
 	fs.IntVar(&o.max, "max", 40, "advisor: most sessions to replay")
@@ -88,6 +90,9 @@ func parseEval(args []string) (evalOptions, error) {
 		return o, err
 	}
 	o.suites = append(o.suites, fs.Args()...)
+	if o.repeat < 1 || o.repeat > 10 {
+		return o, fmt.Errorf("--repeat must be between 1 and 10")
+	}
 	o.explicit = len(o.suites) > 0
 	if !o.explicit {
 		o.suites = evalSuites
@@ -130,9 +135,13 @@ func RunEval(w io.Writer, args []string) error {
 		var s EvalSuite
 		switch name {
 		case "setup":
-			s = evalSetup()
+			s = repeatSuite(evalSetup, o.repeat)
 		case "harness":
-			s = evalHarness()
+			s = repeatSuite(evalHarness, o.repeat)
+		case "improve":
+			s = repeatSuite(evalImprove, o.repeat)
+		case "tasks":
+			s = repeatSuite(func() EvalSuite { return evalTasks(o) }, o.repeat)
 		case "advisor":
 			s = evalAdvisor(o)
 		case "memory":

@@ -68,6 +68,7 @@ export default withMermaid(defineConfig({
           { text: 'Audit your harness', link: '/harness' },
           { text: 'Measure token impact', link: '/token-impact' },
           { text: 'Evaluate Cully', link: '/evals' },
+          { text: 'Let Cully improve itself', link: '/self-improvement' },
           { text: 'Harness review and next steps', link: '/harness-review' },
           { text: 'Mobile Self preview', link: '/mobile' },
           { text: 'Privacy', link: '/privacy' },

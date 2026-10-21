@@ -143,6 +143,7 @@ func RunDaemon() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go acquisitionLoop(ctx)
+	go selfImproveLoop(ctx)
 	advisorDone := make(chan struct{})
 	go func() { defer close(advisorDone); advisorLoop(ctx) }()
 
