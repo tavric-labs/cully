@@ -19,6 +19,7 @@ Cully’s own lookups and advisor calls consume tokens. These tools help you ins
 ```sh
 cully impact
 cully impact --days 7 --log
+cully impact --explain
 cully impact --days 30 --json
 ```
 

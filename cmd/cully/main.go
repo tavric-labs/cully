@@ -31,7 +31,8 @@ Usage:
   cully rescue [--cwd DIR] [--agent claude|codex|cursor] [--no-ai]
                                           Diagnose a stuck session from recorded evidence
   cully suggestions [--request N]         Review suggested improvements; --request prints a setup request for your agent
-  cully impact [--days N] [--log]         What Cully saved and cost: memory used, analyses avoided, loops caught
+  cully impact [--days N] [--log] [--explain]
+                                          What Cully saved and cost; --explain shows how Net tokens are built
   cully eval [setup|harness|advisor|memory] Score Cully as an agent against planted ground truth; see docs/evals.md
   cully savings [--days N]                Measure token cost against exploration avoided, from transcripts
   cully task [NAME]                       Show or set the session task (--clear removes it)
