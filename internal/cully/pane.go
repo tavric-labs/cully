@@ -101,9 +101,14 @@ func RunPane(agentName string, args []string, input, output *os.File) error {
 	}
 	refreshSession()
 	readGitChanges(&view)
+	var prober mcpProber
+	go runMCPProbe(reviewContext, agent.Name, &prober)
 	loadStats := func() toolStats {
 		s := readToolStats(session)
 		s.Impact = ImpactSince(view.Started)
+		if res, ok := prober.get(); ok {
+			overlayMCPProbe(&s.Cully, res)
+		}
 		return s
 	}
 	stats := loadStats()
@@ -252,9 +257,14 @@ func RunPane(agentName string, args []string, input, output *os.File) error {
 		_, _ = io.WriteString(output, "\x1b]22;"+shape+"\x1b\\")
 	}
 	defer func() { setPointer(false) }()
+	var scroll paneScroll
 	paint := func() string {
 		if drawer.Open {
 			return drawer.render(cols, rows, stats, view)
+		}
+		scroll.anchor(emulator.ScrollbackLen())
+		if emulator.IsAltScreen() {
+			scroll.reset() // an agent on the alternate screen scrolls itself
 		}
 		hud := paneHUD(cols, stats, view, time.Now())
 		hint := " drag ↕ · Ctrl+] advisor "
@@ -263,7 +273,10 @@ func RunPane(agentName string, args []string, input, output *os.File) error {
 		} else if resizeMode {
 			hint = " drag ↕ · Esc ends resize "
 		}
-		return renderTerminalPaneGrip(emulator, cols, rows, content, agent.NativeFooter, hud, divider.grip(), hint)
+		if scroll.active() {
+			hint = fmt.Sprintf(" ↑ %d lines back · type or scroll down to return ", scroll.Offset)
+		}
+		return renderTerminalPaneView(emulator, scroll.Offset, cols, rows, content, agent.NativeFooter, hud, divider.grip(), hint)
 	}
 	// Enter pastes a request into the agent's input instead of submitting it, so
 	// the user keeps their draft, reads the request and decides whether to send.
@@ -337,6 +350,14 @@ func RunPane(agentName string, args []string, input, output *os.File) error {
 					continue
 				}
 				if !drawer.Open && mouse.Y <= top {
+					// Off the alternate screen the agent has no scrolling of its
+					// own, so the wheel reads the lines that scrolled away.
+					if (mouse.Button == 64 || mouse.Button == 65) && !mouse.Release && !emulator.IsAltScreen() {
+						if scroll.wheel(mouse.Button == 64, emulator.ScrollbackLen()) {
+							dirty = true
+						}
+						continue
+					}
 					emulator.SendMouse(mouse.event())
 					continue
 				}
@@ -396,6 +417,9 @@ func RunPane(agentName string, args []string, input, output *os.File) error {
 				}
 				dirty = true
 				continue
+			}
+			if scroll.reset() {
+				dirty = true // typing returns to the live screen
 			}
 			_, _ = child.Write(key.Data)
 		}
@@ -555,11 +579,32 @@ func renderTerminalPane(emulator *vt.Emulator, cols, rows int, content []string,
 }
 
 func renderTerminalPaneGrip(emulator *vt.Emulator, cols, rows int, content []string, nativeFooter bool, hud string, grip gripState, hints ...string) string {
+	return renderTerminalPaneView(emulator, 0, cols, rows, content, nativeFooter, hud, grip, hints...)
+}
+
+// renderTerminalPaneView draws the agent's screen, or, when offset is above 0,
+// the same window that many lines further back in the emulator's scrollback.
+func renderTerminalPaneView(emulator *vt.Emulator, offset, cols, rows int, content []string, nativeFooter bool, hud string, grip gripState, hints ...string) string {
 	var out strings.Builder
 	limit := max(0, cols-1) // avoid triggering automatic terminal wrap
 	top := min(emulator.Height(), rows)
+	scrollbackLen := emulator.ScrollbackLen()
+	offset = min(max(offset, 0), scrollbackLen)
+	cellAt := func(x, y int) *uv.Cell {
+		if offset == 0 {
+			return emulator.CellAt(x, y)
+		}
+		index := scrollbackLen - offset + y
+		switch {
+		case index < 0:
+			return nil
+		case index < scrollbackLen:
+			return emulator.ScrollbackCellAt(x, index)
+		}
+		return emulator.CellAt(x, index-scrollbackLen)
+	}
 	footerRow := -1
-	if nativeFooter {
+	if nativeFooter && offset == 0 {
 		rows, base := footerRows(emulator)
 		_, match := parseFooterRows(rows, base)
 		footerRow = match.Row
@@ -572,7 +617,7 @@ func renderTerminalPaneGrip(emulator *vt.Emulator, cols, rows int, content []str
 		}
 		line := uv.NewLine(limit)
 		for x := 0; x < limit; x++ {
-			if cell := emulator.CellAt(x, y); cell != nil {
+			if cell := cellAt(x, y); cell != nil {
 				line.Set(x, cell)
 			}
 		}
@@ -585,6 +630,10 @@ func renderTerminalPaneGrip(emulator *vt.Emulator, cols, rows int, content []str
 		}
 	}
 	cursor := emulator.CursorPosition()
-	fmt.Fprintf(&out, "\x1b[%d;%dH\x1b[?25h", min(max(cursor.Y+1, 1), top), min(max(cursor.X+1, 1), cols))
+	show := "\x1b[?25h"
+	if offset > 0 {
+		show = "" // the cursor belongs to the live screen
+	}
+	fmt.Fprintf(&out, "\x1b[%d;%dH%s", min(max(cursor.Y+1, 1), top), min(max(cursor.X+1, 1), cols), show)
 	return out.String()
 }

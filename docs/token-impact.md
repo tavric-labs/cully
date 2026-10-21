@@ -11,7 +11,7 @@ Cully’s own lookups and advisor calls consume tokens. These tools help you ins
 | --- | --- | --- |
 | What did Cully observe or avoid? | `cully impact` | Local impact events from hooks and advisor activity |
 | How much did Cully inject, compared with early exploration? | `cully savings` | Local Claude transcripts from sessions that edited code |
-| Where are large tool results coming from? | `cully harness` | Recent Claude sessions; see [harness](/harness) |
+| Where are large tool results coming from? | `cully harness` | Recent sessions of the agent you use (Claude Code or Codex); see [harness](/harness) |
 | Would the advisor flag later oversized output? | `cully eval advisor` | Planted sessions, plus replayed Claude transcript checkpoints |
 
 ## Read the impact ledger

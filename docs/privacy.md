@@ -69,7 +69,7 @@ The optional `dev-workflow-rules` skill is a private file under `~/.cully/skills
 
 ## Harness measurements
 
-`cully harness` checks instruction and skill file names and selected agent configuration keys without printing their contents. It also streams recent local Claude transcripts to count oversized tool output and actual subagent calls. The terminal’s Harness column does this automatically for up to 20 sessions from the exact project’s folder, over the last 30 days, refreshed every five minutes. The CLI defaults to 40 sessions per project; `--all` explicitly measures all project folders, optionally filtered with `--only`.
+`cully harness` checks instruction and skill file names and selected agent configuration keys without printing their contents. It also streams recent local transcripts of the running agent (Claude Code or Codex) to count oversized tool output and actual subagent calls. The terminal’s Harness column does this automatically for up to 20 sessions from the exact project’s folder, over the last 30 days, refreshed every five minutes. The CLI defaults to 40 sessions per project; `--all` explicitly measures all project folders, optionally filtered with `--only`.
 
 These measurements retain aggregate counts and token estimates, not transcript text, prompts, credentials or output. The background panel cache is in memory only. Nothing from these measurements is uploaded or saved to project memory automatically. Codex and Cursor transcripts are not measured. See [the harness guide](/harness) for limitations.
 

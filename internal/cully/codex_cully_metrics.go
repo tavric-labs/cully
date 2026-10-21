@@ -17,6 +17,7 @@ import (
 type cullyStats struct {
 	Calls, Log, Context, Recall, Search, Get, Other int
 	Health, Auth                                    string
+	Probed                                          bool // health or auth came from a connection check, not a tool response
 	CheckedAt                                       string
 	Foreground, Advisor, Startup, SemanticRecall    int
 	ByTool                                          map[string]int

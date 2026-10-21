@@ -54,6 +54,7 @@ func RunList(w io.Writer) {
 	lines := readSuggestionsLimit(session, maxReportLines)
 	if len(lines) == 0 {
 		fmt.Fprintln(w, "No cully suggestions for this session.")
+		writeSelfImproveHint(w)
 		return
 	}
 	fmt.Fprintf(w, "Session %s\n\n", shortSession(session))
@@ -69,6 +70,15 @@ func RunList(w io.Writer) {
 	}
 	if len(fixes) > 0 {
 		fmt.Fprintln(w, "\nWire up a fix: cully apply <n>  ·  ask your agent to do it: cully suggestions --request <n>")
+	}
+	writeSelfImproveHint(w)
+}
+
+// writeSelfImproveHint points at proposals from Cully's own scheduled eval,
+// which are separate from this session's suggestions.
+func writeSelfImproveHint(w io.Writer) {
+	if n := len(pendingImprovements()); n > 0 {
+		fmt.Fprintf(w, "\nCully's own eval proposes %d improvement(s) to Cully itself: cully improve\n", n)
 	}
 }
 
@@ -249,6 +259,7 @@ func RunApply(n int, cwd string, yes, dryRun bool) error {
 	if err := executePlan(cwd, suggestion, plan); err != nil {
 		return err
 	}
+	recordAppliedChange("project", projectKey(cwd), plan.Summary)
 	if err := removeSuggestion(session, reportIdx); err != nil {
 		debugLog("apply: remove suggestion %d: %v", reportIdx, err)
 	}
@@ -388,6 +399,9 @@ func writeSkill(cwd, name, content string) error {
 	name = strings.Trim(name, "/")
 	if name == "" {
 		return fmt.Errorf("empty skill name")
+	}
+	if name == "." || name == ".." || name != filepath.Base(name) {
+		return fmt.Errorf("invalid skill name %q", name)
 	}
 	dir := filepath.Dir(sharedSkillPath(cwd, name))
 	if err := os.MkdirAll(dir, 0o755); err != nil {

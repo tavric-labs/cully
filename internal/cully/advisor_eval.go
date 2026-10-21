@@ -119,7 +119,7 @@ func scanWasteLine(w *TokenWaste, line []byte) int {
 		switch it.Type {
 		case "tool_use":
 			w.useCall(it.ID, it.Name, it.Input.Offset == 0 && it.Input.Limit == 0)
-			if it.Name == "Task" || it.Name == "Agent" {
+			if (it.Name == "Task" || it.Name == "Agent") && w.firstUse(it.ID) {
 				delegations++
 			}
 		case "tool_result":

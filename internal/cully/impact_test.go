@@ -192,3 +192,18 @@ func TestImpactExplainShowsFormulaAndLimits(t *testing.T) {
 		t.Fatalf("empty ledger: %s", empty.String())
 	}
 }
+
+func TestImpactExplainShowsTranscriptCostItDoesNotSubtract(t *testing.T) {
+	var out strings.Builder
+	writeInjectedCost(&out, Savings{Calls: 10, ResultTokens: 20000, ArgTokens: 5000, SchemaTokens: 1000, NetTokens: -9000, Confidence: "low"})
+	for _, want := range []string{"≈26k tokens across 10 calls", "does not subtract this", "Net -9.0k", "Confidence: low"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("missing %q:\n%s", want, out.String())
+		}
+	}
+	var none strings.Builder
+	writeInjectedCost(&none, Savings{})
+	if none.Len() != 0 {
+		t.Fatalf("printed a cost with no calls: %q", none.String())
+	}
+}

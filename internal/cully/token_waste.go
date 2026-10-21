@@ -19,10 +19,24 @@ type TokenWaste struct {
 	byTool                     map[string]int64
 	pendingRead                map[string]bool
 	toolOf                     map[string]string
+	usedIDs, resultIDs         map[string]bool // a transcript can repeat an entry; count each tool id once
 }
 
 func newTokenWaste() *TokenWaste {
-	return &TokenWaste{byTool: map[string]int64{}, pendingRead: map[string]bool{}, toolOf: map[string]string{}}
+	return &TokenWaste{byTool: map[string]int64{}, pendingRead: map[string]bool{}, toolOf: map[string]string{}, usedIDs: map[string]bool{}, resultIDs: map[string]bool{}}
+}
+
+// firstUse reports whether this is the first time a tool call id is seen.
+// Claude Code transcripts can contain the same tool call more than once.
+func (w *TokenWaste) firstUse(id string) bool {
+	if id == "" {
+		return true // nothing to dedupe on
+	}
+	if w.usedIDs[id] {
+		return false
+	}
+	w.usedIDs[id] = true
+	return true
 }
 
 // useCall records a tool call so its result can be attributed. wholeFile marks
@@ -43,6 +57,10 @@ func (w *TokenWaste) result(id, text string) {
 	if name == "" {
 		return
 	}
+	if w.resultIDs[id] {
+		return // the same result repeated in the transcript
+	}
+	w.resultIDs[id] = true
 	tokens := approxTokens(len(text))
 	w.ResultTokens += tokens
 	w.byTool[name] += tokens

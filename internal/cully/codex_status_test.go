@@ -551,3 +551,23 @@ func TestCodexCullyHealthAndAuthAreIndependentAndUnknownByDefault(t *testing.T) 
 		t.Fatal("expanded instruments should retain MCP metrics and omit unsupported cost")
 	}
 }
+
+func TestQuotaColorFollowsWhatRemains(t *testing.T) {
+	for _, tc := range []struct {
+		value string
+		color string
+	}{
+		{"82% left", green}, {"50% left", green}, {"49% left", yellow}, {"20% left", yellow},
+		{"19% left", red}, {"0% left", red}, {"30% used", green}, {"60% used", yellow}, {"85% used", red},
+	} {
+		if got := quotaColor(tc.value); got != tc.color+tc.value+rst {
+			t.Errorf("%q = %q, want color %q", tc.value, got, tc.color)
+		}
+	}
+	if got := quotaColor("resets soon"); got != "resets soon" {
+		t.Errorf("a value without a percentage was changed: %q", got)
+	}
+	if got := quotaColor(""); !strings.Contains(got, "unavailable") {
+		t.Errorf("empty quota: %q", got)
+	}
+}

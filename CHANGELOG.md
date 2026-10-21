@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+## 0.22.0
+
+- Make measurements follow the agent you use. The panel's Waste row read only Claude transcripts, so Codex showed "no recent Claude sessions". The Harness column and `cully harness` now read the running agent's own sessions (Claude Code, or Codex from `~/.codex/sessions`), name it, and say "not measured for Cursor yet" where Cully cannot read the history. `cully harness --agent` and automatic detection choose the agent. `cully improve` plans with the running agent, or any installed one, instead of only Claude.
+
+- Count each tool call and result once when measuring transcripts. Some Claude transcripts repeat entries, which made the harness waste, whole-file read and Bash estimates, delegation counts and `cully savings` cost figures up to about twice too high. On one project the oversized-output estimate fell from 149,504 to 127,151 tokens and Cully's measured injected cost from 82,640 to 63,087.
+- `cully impact --explain` now shows what Cully's own calls injected in your Claude transcripts, which the net figure does not subtract, so it no longer reads as more favorable than `cully savings`.
+
+- Scroll back through the agent's output with the mouse wheel. Cully draws the agent from its own emulator, so the host terminal had no scrollback of it and the wheel did nothing. The emulator's 10,000 lines are now readable: the wheel moves three lines a notch, the panel says how far back you are, new output does not move what you are reading, and typing returns to the live screen. An agent on the alternate screen still receives the wheel.
+
+- Color the panel: the 5h and weekly limits turn green, yellow or red by what remains; the Harness, Project & usage and Cully impact columns get their own header colors, with colored token counts, waste and MCP call counts.
+- Strip terminal escape sequences and control characters from model-written plan text and evaluation details before the improve window or `cully improve` prints them, and from rules and skills before they are written.
+
+- Open `cully improve` as a window: select a suggestion, read its failing checks, then Apply (the plan is shown first and written only on `y`) or Drop (confirmed, and the only way a suggestion is dropped). Cancelling, a failed plan and quitting keep it pending. `--list` prints instead.
+- Count lines in new, untracked files in the panel's Git row, so `+N` reflects uncommitted work and not only tracked changes.
+- Show the Cully MCP connection and authentication in the panel from `claude mcp list`, checked every ten minutes without a model call, whenever tool responses have not established them. The row notes "(connection check)". Hook-observed values still win.
+
+- Add a self-improvement loop. The advisor daemon runs `cully eval` every five hours (`CULLY_EVAL_INTERVAL` changes it, `off` disables it), keeps the history, and turns failing checks into proposals. `cully improve` shows the trend and proposals; `cully improve --apply N` writes an approved change, limited to rules and one skill under `~/.cully`, and never adds MCP servers or runs commands. Skill names that escape their folder are now rejected by `cully apply` too.
+- Add a `tasks` eval suite that scores sessions as tasks: verified or not, time, steps, orientation before the first edit, rework and loops, with rules checked against hand-worked sessions and your own history reported as measurements. Cully now records when `cully apply` and `cully improve --apply` change something, and `tasks` compares median time and steps for tasks before and after each change in the same project, without a verdict when the sample is thin.
+- Add an `improve` eval suite that scores the loop against planted failures, and `cully eval --repeat N`, which runs the deterministic suites N times and fails when their results differ.
+
 ## 0.21.0
 
 - Replace the workflow questionnaire with a starter `dev-workflow-rules` skill. The installer and first launch install `SKILL.md` with hint comments plus example `references/` files under `~/.cully/skills/dev-workflow-rules/`; Cully asks nothing, never replaces an existing skill, and strips hint comments before the advisor reads it.

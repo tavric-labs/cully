@@ -316,6 +316,20 @@ func (im Impact) WriteExplain(w io.Writer) {
 	fmt.Fprintf(w, "  does run are not subtracted. Use cully savings to compare token use from transcripts.\n")
 }
 
+// writeInjectedCost shows what Cully's own calls added to the conversations in
+// Claude transcripts, which the Net above does not subtract. Without it the
+// ledger's estimate and `cully savings` can disagree in sign.
+func writeInjectedCost(w io.Writer, s Savings) {
+	if s.Calls == 0 {
+		return
+	}
+	cost := s.ResultTokens + s.ArgTokens + s.SchemaTokens
+	fmt.Fprintf(w, "\n  Seen in your Claude transcripts (cully savings)\n")
+	fmt.Fprintf(w, "    Cully's calls injected ≈%s tokens across %d calls: results %s, arguments %s, schemas %s.\n",
+		compactCount(cost), s.Calls, compactCount(s.ResultTokens), compactCount(s.ArgTokens), compactCount(s.SchemaTokens))
+	fmt.Fprintf(w, "    The Net above does not subtract this. cully savings weighs it against exploration avoided and reports Net %s. Confidence: %s.\n", signedCount(s.NetTokens), s.Confidence)
+}
+
 func tokenText(n int64) string {
 	if n == 0 {
 		return ""
@@ -357,6 +371,11 @@ func RunImpact(w io.Writer, args []string) error {
 	im.Write(w, *showLog)
 	if *explain {
 		im.WriteExplain(w)
+		if home, err := os.UserHomeDir(); err == nil {
+			if s, err := ComputeSavings(filepath.Join(home, ".claude", "projects"), "", since); err == nil {
+				writeInjectedCost(w, s)
+			}
+		}
 	}
 	return nil
 }
