@@ -172,3 +172,23 @@ func TestImpactReportDoesNotClaimSavingsWhenNothingWasRecorded(t *testing.T) {
 		t.Fatalf("an empty ledger must not read as a win:\n%s", out.String())
 	}
 }
+
+func TestImpactExplainShowsFormulaAndLimits(t *testing.T) {
+	events := []impactEvent{
+		{Kind: impactAnalysisSkipped, Tokens: 1000, At: time.Now()},
+		{Kind: impactAnalysisSkipped, Tokens: 3000, At: time.Now()},
+		{Kind: impactWasteFlagged, Session: "s1", Tokens: 9000, At: time.Now()},
+	}
+	var out strings.Builder
+	SummarizeImpact(events, 14, 0).WriteExplain(&out)
+	for _, want := range []string{"Net +4.0k = saved 4.0k - cost 0", "2 × ≈2.0k tokens", "(estimated)", "no saving claimed", "Cost is 0 because no Cully memory lookup", "not a saving", "not subtracted"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("explanation lacks %q:\n%s", want, out.String())
+		}
+	}
+	var empty strings.Builder
+	SummarizeImpact(nil, 14, 0).WriteExplain(&empty)
+	if !strings.Contains(empty.String(), "none recorded") {
+		t.Fatalf("empty ledger: %s", empty.String())
+	}
+}

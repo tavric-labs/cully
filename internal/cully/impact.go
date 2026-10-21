@@ -284,6 +284,38 @@ func (im Impact) Write(w io.Writer, showLog bool) {
 	}
 }
 
+// WriteExplain justifies the Net figure: where each saved and spent token
+// comes from, how it was obtained, and what is deliberately not counted.
+func (im Impact) WriteExplain(w io.Writer) {
+	fmt.Fprintf(w, "\nHOW THE NET FIGURE IS BUILT  (last %d days)\n\n", im.Days)
+	fmt.Fprintf(w, "  Net %s = saved %s - cost %s\n\n", signedCount(im.Net), compactCount(im.TotalSaved), compactCount(im.TotalCost))
+	fmt.Fprintf(w, "  Saved\n")
+	if im.AnalysesSkipped > 0 {
+		fmt.Fprintf(w, "    Advisor analyses skipped   %d × ≈%s tokens = ≈%s   (estimated)\n", im.AnalysesSkipped, compactCount(im.AnalysisTokensAvoided/int64(im.AnalysesSkipped)), compactCount(im.AnalysisTokensAvoided))
+		fmt.Fprintf(w, "      Each skip avoided re-sending the advisor instructions and the session signals to the model.\n")
+		fmt.Fprintf(w, "      Size is the length of that prompt at about 4 characters per token, not billed usage.\n")
+	} else {
+		fmt.Fprintf(w, "    Advisor analyses skipped   none recorded\n")
+	}
+	if im.MemoryTokensSaved > 0 {
+		fmt.Fprintf(w, "    Memory hits                %d × ≈%s tokens = ≈%s   (observed)\n", im.MemoryHits, compactCount(im.PerHitSavedTokens), compactCount(im.MemoryTokensSaved))
+		fmt.Fprintf(w, "      Per-hit saving is the observed gap in exploration tokens between sessions with and without a hit.\n")
+	} else {
+		fmt.Fprintf(w, "    Memory hits                %d, no saving claimed: %s\n", im.MemoryHits, im.SavedBasis)
+	}
+	fmt.Fprintf(w, "\n  Cost\n")
+	fmt.Fprintf(w, "    Memory lookups             %d hits %s + %d empty %s   (measured from response size)\n", im.MemoryHits, compactCount(im.HitTokens), im.MemoryEmpty, compactCount(im.EmptyTokens))
+	if im.MemoryHits+im.MemoryEmpty == 0 {
+		fmt.Fprintf(w, "      Cost is 0 because no Cully memory lookup was observed. Lookups are seen only through Cully hooks, so\n")
+		fmt.Fprintf(w, "      sessions outside the Cully terminal or without MCP calls record none.\n")
+	}
+	fmt.Fprintf(w, "\n  Shown but not counted in Net\n")
+	fmt.Fprintf(w, "    Oversized output flagged   %d sessions · %s tokens   (measured; advice, not a saving)\n", im.WasteSessions, compactCount(im.WasteTokensFlagged))
+	fmt.Fprintf(w, "    Loops caught               %d   (no token value is assigned)\n", im.LoopsCaught)
+	fmt.Fprintf(w, "\n  Limits: estimated figures are not billing data, and the tokens the advisor spends on the analyses it\n")
+	fmt.Fprintf(w, "  does run are not subtracted. Use cully savings to compare token use from transcripts.\n")
+}
+
 func tokenText(n int64) string {
 	if n == 0 {
 		return ""
@@ -307,6 +339,7 @@ func RunImpact(w io.Writer, args []string) error {
 	days := fs.Int("days", 14, "look back this many days")
 	asJSON := fs.Bool("json", false, "print JSON")
 	showLog := fs.Bool("log", false, "also list recent events")
+	explain := fs.Bool("explain", false, "show how the Net token figure is built and what it does not count")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -322,6 +355,9 @@ func RunImpact(w io.Writer, args []string) error {
 		return enc.Encode(im)
 	}
 	im.Write(w, *showLog)
+	if *explain {
+		im.WriteExplain(w)
+	}
 	return nil
 }
 

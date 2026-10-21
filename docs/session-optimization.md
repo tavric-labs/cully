@@ -47,7 +47,7 @@ These can reduce repeated work and material in the model's input. They are not a
 
 Start with `cully harness` to find setup gaps and oversized-output estimates for recent Claude sessions. `cully impact` shows recorded lookup hits, analyses avoided and loops; `cully savings` compares estimated lookup overhead with pre-edit exploration. `cully eval advisor` tests the advisor on planted sessions and replays historical checkpoints to investigate token-waste advice. Read [measure token impact](/token-impact) before treating these different samples as evidence of savings.
 
-Use `cully workflow` to preview a private profile of project habits the advisor can read. A profile records your preferences; it grants no tool access. Token-spend advice must cite measured signal figures and should remain quiet without them.
+Use `cully workflow` to install a starter private profile of project habits the advisor can read. A profile records your preferences; it grants no tool access. Token-spend advice must cite measured signal figures and should remain quiet without them.
 
 ## Move from task to checked result
 

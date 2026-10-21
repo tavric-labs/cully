@@ -15,7 +15,7 @@ import (
 // or filenames are retained in the status view.
 func readGitChanges(view *sessionView) {
 	view.ChangesKnown = false
-	view.LinesAdded, view.LinesRemoved, view.ChangedFiles = 0, 0, 0
+	view.LinesAdded, view.LinesRemoved, view.ChangedFiles, view.UntrackedFiles = 0, 0, 0, 0
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
 	output, err := exec.CommandContext(ctx, "git", "-C", view.Project,
@@ -44,4 +44,9 @@ func readGitChanges(view *sessionView) {
 		view.LinesRemoved += removed
 	}
 	view.ChangesKnown = true
+	// New files are invisible to a diff against HEAD, so an agent that mostly
+	// creates files looks idle. Count them without reading names or contents.
+	if others, err := exec.CommandContext(ctx, "git", "-C", view.Project, "ls-files", "--others", "--exclude-standard", "-z").Output(); err == nil {
+		view.UntrackedFiles = strings.Count(string(others), "\x00")
+	}
 }

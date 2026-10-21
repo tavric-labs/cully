@@ -85,7 +85,7 @@ explains the explicit data deletion option.
 
 ```sh
 cully harness         # read-only setup audit and recent output baseline
-cully workflow        # optional private profile; preview before saving
+cully workflow        # optional private profile; installs a starter to fill in
 cully update --check  # check for a newer CLI without changing it
 ```
 

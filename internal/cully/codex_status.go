@@ -26,7 +26,7 @@ type sessionView struct {
 	Daemon                                                        bool
 	LinesAdded, LinesRemoved                                      int64
 	ChangesKnown                                                  bool
-	ChangedFiles                                                  int
+	ChangedFiles, UntrackedFiles                                  int
 	AdvisorScroll                                                 int
 	AdvisorFocused                                                bool
 	Terminal                                                      terminalProfile
@@ -213,7 +213,7 @@ func sessionStatusContent(cols int, advice []string, stats toolStats, view sessi
 	}
 	changes := instrument("")
 	if view.ChangesKnown {
-		changes = green + fmt.Sprintf("+%d", view.LinesAdded) + rst + " / " + red + fmt.Sprintf("-%d", view.LinesRemoved) + rst + fmt.Sprintf("  ·  %d tracked files", view.ChangedFiles)
+		changes = green + fmt.Sprintf("+%d", view.LinesAdded) + rst + " / " + red + fmt.Sprintf("-%d", view.LinesRemoved) + rst + fmt.Sprintf("  ·  %d tracked files", view.ChangedFiles) + untrackedNote(view.UntrackedFiles, " · ")
 	}
 	metric(&left, "Working tree", changes)
 	for _, counter := range []struct {
@@ -670,7 +670,7 @@ func compactInstrumentRows(cols int, stats toolStats, view sessionView) ([]strin
 		workParts = append(workParts, "Fast "+instrument(strings.TrimPrefix(view.Fast, "Fast ")))
 	}
 	if view.ChangesKnown {
-		changes := green + fmt.Sprintf("+%d", view.LinesAdded) + rst + "/" + red + fmt.Sprintf("-%d", view.LinesRemoved) + rst + fmt.Sprintf(" (%d tracked)", view.ChangedFiles)
+		changes := green + fmt.Sprintf("+%d", view.LinesAdded) + rst + "/" + red + fmt.Sprintf("-%d", view.LinesRemoved) + rst + fmt.Sprintf(" (%d tracked%s)", view.ChangedFiles, untrackedNote(view.UntrackedFiles, ", "))
 		workParts = append(workParts, "Git "+changes)
 	}
 	work := strings.Join(workParts, " · ")
@@ -760,7 +760,13 @@ func cullyInstrumentRows(stats toolStats, width int) []string {
 		}
 		rows = append(rows, line)
 	}
-	rows = append(rows, fmt.Sprintf("MCP %d calls · Auth %s", c.Calls, observedState(c.Auth, true)))
+	row := fmt.Sprintf("MCP %d calls · Auth %s", c.Calls, observedState(c.Auth, true))
+	if c.Calls == 0 && c.Auth == "" {
+		// Health and auth are read from Cully tool responses, so nothing is
+		// known before the first call; say why instead of leaving a bare unknown.
+		row += dim + " (set by first call)" + rst
+	}
+	rows = append(rows, row)
 	if c.Foreground+c.Advisor+c.Startup > 0 {
 		rows = append(rows, fmt.Sprintf("Foreground %d · Advisor %d · Startup %d", c.Foreground, c.Advisor, c.Startup))
 	}
@@ -795,6 +801,15 @@ func cullyToolRows(stats cullyStats, width int) []string {
 		rows = append(rows, strings.Split(ansi.Wrap(fmt.Sprintf("%s  %d", name, counts[name]), max(1, width), ""), "\n")...)
 	}
 	return rows
+}
+
+// untrackedNote reports new files that Git does not track yet, which the
+// tracked diff against HEAD cannot see.
+func untrackedNote(n int, separator string) string {
+	if n <= 0 {
+		return ""
+	}
+	return fmt.Sprintf("%s%d new", separator, n)
 }
 
 func observedState(state string, auth bool) string {

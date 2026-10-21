@@ -25,13 +25,14 @@ Usage:
   cully uninstall [--purge-data]           Stop local stack and remove managed agent setup
   cully uninstall [claude|codex|cursor|all] Remove one or all agent integrations
   cully update [--check] [--version TAG]   Update this machine's CLI and running advisor
-  cully workflow [--skip]                Create optional dev-workflow-rules skill
+  cully workflow [--skip]                Install starter dev-workflow-rules skill
   cully harness [--cwd DIR]               Audit instructions, guardrails, memory, skills and hooks
   cully status [directory]                Show session and agent status
   cully rescue [--cwd DIR] [--agent claude|codex|cursor] [--no-ai]
                                           Diagnose a stuck session from recorded evidence
   cully suggestions [--request N]         Review suggested improvements; --request prints a setup request for your agent
-  cully impact [--days N] [--log]         What Cully saved and cost: memory used, analyses avoided, loops caught
+  cully impact [--days N] [--log] [--explain]
+                                          What Cully saved and cost; --explain shows how Net tokens are built
   cully eval [setup|harness|advisor|memory] Score Cully as an agent against planted ground truth; see docs/evals.md
   cully savings [--days N]                Measure token cost against exploration avoided, from transcripts
   cully task [NAME]                       Show or set the session task (--clear removes it)

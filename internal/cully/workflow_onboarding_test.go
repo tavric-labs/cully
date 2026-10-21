@@ -17,66 +17,66 @@ func isolateWorkflow(t *testing.T) {
 	t.Setenv("CURSOR_CONFIG_DIR", filepath.Join(home, "cursor"))
 }
 
-func TestWorkflowOnboardingConsentPrivacyAndAdvisorContext(t *testing.T) {
+func TestWorkflowOnboardingInstallsStarterWithoutAsking(t *testing.T) {
 	isolateWorkflow(t)
 	if err := os.MkdirAll(CodexConfigDir(), 0700); err != nil {
 		t.Fatal(err)
 	}
-	answers := "yes\nBackend and ops\n3: api, web, cli\ngo test; PR review\nstaging-vm and prod-cluster\nstaging: read via ssh alias; prod: read only; writes need approval\nKeep advice concise\ny\n"
 	var out bytes.Buffer
-	if err := RunWorkflowOnboarding(strings.NewReader(answers), &out, nil); err != nil {
+	if err := RunWorkflowOnboarding(strings.NewReader("never read"), &out, nil); err != nil {
 		t.Fatal(err)
+	}
+	if strings.Contains(out.String(), "[y/N]") || strings.Contains(out.String(), "?") {
+		t.Fatalf("onboarding must not ask questions: %q", out.String())
 	}
 	data, err := os.ReadFile(workflowSkillPath())
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"name: dev-workflow-rules", "3: api, web, cli", "prod: read only", "grants no access"} {
-		if !strings.Contains(string(data)+out.String(), want) {
-			t.Fatalf("missing %s", want)
+	for _, want := range []string{"name: dev-workflow-rules", "do not grant tool access", "## Infrastructure", "<!--"} {
+		if !strings.Contains(string(data), want) {
+			t.Fatalf("starter missing %q", want)
 		}
 	}
-	info, _ := os.Stat(workflowSkillPath())
-	if info.Mode().Perm() != 0600 {
-		t.Fatalf("skill permissions %v", info.Mode())
+	for _, ref := range []string{"codebases.md", "workflow.md", "infrastructure.md"} {
+		info, err := os.Stat(filepath.Join(filepath.Dir(workflowSkillPath()), "references", ref))
+		if err != nil || info.Mode().Perm() != 0600 {
+			t.Fatalf("reference %s: %v", ref, err)
+		}
 	}
-	linked, err := os.ReadFile(filepath.Join(CodexConfigDir(), "skills", "dev-workflow-rules", "SKILL.md"))
-	if err != nil || string(linked) != string(data) {
-		t.Fatalf("agent skill: %v", err)
+	if _, err := os.ReadFile(filepath.Join(CodexConfigDir(), "skills", "dev-workflow-rules", "SKILL.md")); err != nil {
+		t.Fatalf("agent link: %v", err)
 	}
-	if !strings.Contains(workflowAdvisorContext(), "staging-vm") {
-		t.Fatal("advisor missed workflow")
+	if state, _ := os.ReadFile(workflowOnboardingState()); string(state) != "created\n" {
+		t.Fatalf("state = %q", state)
 	}
-	if err := RunWorkflowOnboarding(strings.NewReader("yes\nreplacement"), &out, nil); err != nil {
+	context := workflowAdvisorContext()
+	if strings.Contains(context, "HOW TO USE") || strings.Contains(context, "Example:") || !strings.Contains(context, "Work and responsibilities") {
+		t.Fatalf("hint comments must not reach the advisor: %q", context)
+	}
+	// Running again, or after the user edits, never overwrites their skill.
+	edited := []byte("---\nname: dev-workflow-rules\n---\nstaging-vm is read only\n")
+	if err := os.WriteFile(workflowSkillPath(), edited, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := RunWorkflowOnboarding(strings.NewReader(""), &out, nil); err != nil {
 		t.Fatal(err)
 	}
 	again, _ := os.ReadFile(workflowSkillPath())
-	if string(again) != string(data) {
+	if string(again) != string(edited) || !strings.Contains(workflowAdvisorContext(), "staging-vm") {
 		t.Fatal("overwrote user skill")
 	}
-	// An integration configured after onboarding must also discover the skill.
+	// An integration configured later also discovers the skill.
 	if err := installMemorySkill("cursor"); err != nil {
 		t.Fatal(err)
 	}
 	late, err := os.ReadFile(filepath.Join(CursorConfigDir(), "skills", "dev-workflow-rules", "SKILL.md"))
-	if err != nil || string(late) != string(data) {
+	if err != nil || string(late) != string(edited) {
 		t.Fatalf("late agent integration missed workflow skill: %v", err)
 	}
 }
 
-func TestWorkflowSkipCancelAndNonInteractive(t *testing.T) {
-	for _, input := range []string{"n\n", "y\nrole\n", "y\nrole\nrepos\ntests\nnone\nread only\nquiet\nn\n", ""} {
-		t.Run(input, func(t *testing.T) {
-			isolateWorkflow(t)
-			var out bytes.Buffer
-			if err := RunWorkflowOnboarding(strings.NewReader(input), &out, nil); err != nil {
-				t.Fatal(err)
-			}
-			if _, err := os.Stat(workflowSkillPath()); !os.IsNotExist(err) {
-				t.Fatal("saved without confirmation")
-			}
-		})
-	}
+func TestWorkflowSkipAndNonInteractive(t *testing.T) {
 	isolateWorkflow(t)
 	input, _ := os.CreateTemp(t.TempDir(), "input")
 	defer input.Close()
@@ -122,28 +122,5 @@ func TestWorkflowExistingSkillAndBoundedRedactedContext(t *testing.T) {
 	}
 	if workflowAdvisorContext() != "" {
 		t.Fatal("unbounded context")
-	}
-}
-
-func TestWorkflowRefusesLikelyCredentialsBeforeSaving(t *testing.T) {
-	isolateWorkflow(t)
-	var out bytes.Buffer
-	if err := RunWorkflowOnboarding(strings.NewReader("y\ntoken=secret12345678901234567890\n"), &out, nil); err == nil {
-		t.Fatal("accepted credential")
-	}
-	if _, err := os.Stat(workflowSkillPath()); !os.IsNotExist(err) {
-		t.Fatal("saved credential")
-	}
-}
-
-func TestWorkflowRejectsOversizedAnswerWithoutSaving(t *testing.T) {
-	isolateWorkflow(t)
-	var out bytes.Buffer
-	err := RunWorkflowOnboarding(strings.NewReader("y\n"+strings.Repeat("a", 13<<10)+"\n"), &out, nil)
-	if err == nil || !strings.Contains(err.Error(), "too long") {
-		t.Fatalf("err = %v, want too long", err)
-	}
-	if _, err := os.Stat(workflowSkillPath()); !os.IsNotExist(err) {
-		t.Fatal("saved oversized answer")
 	}
 }

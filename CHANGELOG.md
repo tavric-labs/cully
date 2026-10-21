@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 0.21.0
+
+- Replace the workflow questionnaire with a starter `dev-workflow-rules` skill. The installer and first launch install `SKILL.md` with hint comments plus example `references/` files under `~/.cully/skills/dev-workflow-rules/`; Cully asks nothing, never replaces an existing skill, and strips hint comments before the advisor reads it.
+- Recognize instruction files used by other coding agents in the harness audit: `GEMINI.md`, Aider `CONVENTIONS.md`, `.windsurfrules`, `.github/copilot-instructions.md` and `.openhands/microagents`, so a project that serves several agents no longer looks uninstructed. Print a feature table after installation.
+- Show new files in the panel's Git row (for example `3 tracked, 5 new`), since a diff against HEAD cannot see files Git does not track yet. Explain that MCP health and authentication stay unknown until the first Cully tool call. Let divider drag follow motion that a terminal reports without a button code, which stopped the drag in Warp even though the divider highlighted.
+- Add `cully impact --explain`, which itemizes how the Net token figure is built (skipped analyses × estimated tokens each, memory hits, lookup cost), marks each figure as estimated, observed or measured, and lists what is not counted.
+
 ## 0.20.0
 
 - Add evidence-based “are we still on track?” checkpoints for failure loops, prolonged exploration and unchecked edits, with deduplicated pre-tool nudges and task boundaries. Warn before redundant full reads of unchanged files. Limit automatic advisor requests to six per rolling hour per Cully session, with a two-minute cooldown and unchanged-evidence suppression; explain deferrals while keeping local warnings available. Extend the canonical skill with scope, verification and user-budget guardrails.

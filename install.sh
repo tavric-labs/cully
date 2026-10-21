@@ -238,7 +238,9 @@ say 'Then verify: command -v cully; cully version'
 say 'If a different version still appears, run type -a cully to check other paths, aliases, or functions.'
 say "Expected binary: $BIN_DIR/cully; expected version: $new_ver"
 say 'Only ~/.local/bin/cully contains the installed binary; agent symlinks use that same version on every upgrade.'
-say 'Your first interactive Cully launch offers an optional dev-workflow-rules skill for your codebases, workflow and infrastructure boundaries. You can skip it or run cully workflow later.'
+# Install a starter dev-workflow-rules skill with hint comments for you to fill
+# in. An existing skill is never replaced; this asks nothing and is best effort.
+"$BIN_DIR/cully" workflow </dev/null || say 'Could not install the starter dev-workflow-rules skill; run cully workflow later.'
 if [ -n "$mcp_url" ]; then
   set -- setup --mcp-url "$mcp_url"
   [ -z "$agent" ] || set -- "$@" --agent "$agent"
@@ -254,3 +256,28 @@ else
     say 'For a deployed stack, run: cully setup --mcp-url URL'
   fi
 fi
+
+# Summarize what Cully offers so a new user knows where to start.
+feature_row() { printf '  | %-17s | %-37s | %-52s |\n' "$1" "$2" "$3"; }
+feature_rule() { printf '  +-%s-+-%s-+-%s-+\n' "-----------------" "-------------------------------------" "----------------------------------------------------"; }
+printf '\n'
+say 'What you can do with Cully:'
+feature_rule
+feature_row 'Feature' 'Command' 'What it does'
+feature_rule
+feature_row 'Agent terminal' 'cully claude | codex | cursor' 'Run an agent with a health bar and advisor panel'
+feature_row 'Advisor' 'cully suggestions' 'Warns on loops, unchecked edits; suggests fixes'
+feature_row 'Harness audit' 'cully harness' 'Audits rules, guardrails, memory, skills and hooks'
+feature_row 'Agent evals' 'cully eval [setup|harness|...]' 'Scores Cully as an agent on planted ground truth'
+feature_row 'Rescue' 'cully rescue' 'Diagnoses a stuck session from recorded evidence'
+feature_row 'Timeline, replay' 'cully timeline | replay' 'Shows what the agent did: steps, files, checks'
+feature_row 'Handoff' 'cully handoff [AGENT]' 'Hands the session to another coding agent'
+feature_row 'Impact, savings' 'cully impact | savings' 'Shows what Cully saved and what it cost in tokens'
+feature_row 'Memory' 'cully setup' 'Private project memory for your agents over MCP'
+feature_row 'Workflow skill' 'cully workflow' 'Starter skill describing your work, for you to edit'
+feature_row 'Team workspace' 'cully workspace' 'Shared tasks, handoffs, review and lessons'
+feature_row 'Update' 'cully update [--check]' 'Updates this machine to the latest release'
+feature_rule
+say 'Run cully help for every command; docs: https://docs.cully.net'
+
+say "Next: fill in your dev-workflow-rules skill so Cully and your agents understand your work: $HOME/.cully/skills/dev-workflow-rules/SKILL.md (linked into your agents' skills directories; hint comments inside explain each section)."
