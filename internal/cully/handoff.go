@@ -24,7 +24,6 @@ const handoffMaxFiles = 30
 // handoffInput is everything buildHandoff renders. Empty fields mean "no data"
 // and the matching section is omitted.
 type handoffInput struct {
-	ProjectURL string
 	Branch     string
 	DiffStat   string
 	Files      []string // changed file names read live from git
@@ -89,11 +88,7 @@ func buildHandoff(in handoffInput) string {
 	b.WriteString("# Handoff from a previous coding session\n")
 
 	task := []string{"The task is not recorded here; see Cully memory."}
-	if in.ProjectURL != "" {
-		task = append(task, fmt.Sprintf("Run cully_context with project_url=%q and a short query, then cully_get for any record whose details matter.", in.ProjectURL))
-	} else {
-		task = append(task, "Run cully_context for this project with a short query, then cully_get for any record whose details matter.")
-	}
+	task = append(task, "Run cully_context with a focused task query and the session_ref when known, then cully_get for any record whose details matter.")
 	section("Task", task...)
 	h := measureHealth(in.Events)
 	var coverage []string
@@ -284,7 +279,7 @@ func RunHandoff(args []string, input, output *os.File) error {
 	if _, ev, ok := latestJournal(cwd); ok {
 		events = ev
 	}
-	in := handoffInput{ProjectURL: advisorProjectURL(cwd), Events: events}
+	in := handoffInput{Events: events}
 	in.Branch, in.DiffStat, in.Files, in.TotalFiles = gitLive(cwd)
 	text := buildHandoff(in)
 	if agent == "" || printOnly || !term.IsTerminal(int(input.Fd())) || !term.IsTerminal(int(output.Fd())) {

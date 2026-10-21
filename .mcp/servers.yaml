@@ -75,10 +75,6 @@ servers:
           description: cully_delete tool
           requiredTrust: high
           sideEffect: destructive
-        - name: cully_projects
-          description: cully_projects tool
-          requiredTrust: low
-          sideEffect: read
       auth:
         mode: oauth
         tokenHeader: Authorization

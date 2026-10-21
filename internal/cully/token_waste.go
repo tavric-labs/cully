@@ -16,6 +16,8 @@ type TokenWaste struct {
 	TopTool                    string
 	TopToolTokens, CullyTokens int64
 	ctxTokens                  int64
+	lastBigAt                  int64
+	resultN, lastBigN          int
 	byTool                     map[string]int64
 	pendingRead                map[string]bool
 	toolOf                     map[string]string
@@ -61,6 +63,7 @@ func (w *TokenWaste) result(id, text string) {
 		return // the same result repeated in the transcript
 	}
 	w.resultIDs[id] = true
+	w.resultN++
 	tokens := approxTokens(len(text))
 	w.ResultTokens += tokens
 	w.byTool[name] += tokens
@@ -71,6 +74,8 @@ func (w *TokenWaste) result(id, text string) {
 		return
 	}
 	w.BigResults++
+	w.lastBigAt = w.ResultTokens
+	w.lastBigN = w.resultN
 	w.BigTokens += int(tokens)
 	switch {
 	case name == "Read" && w.pendingRead[id]:
@@ -93,9 +98,10 @@ func (w *TokenWaste) finish(ctxTokens int64) {
 
 // Significant is true only when the waste is large enough to be worth the
 // user's attention: several big results, and a real share of the context or a
-// large absolute amount. The advisor stays quiet otherwise.
+// large absolute amount. It also requires oversized output in the last 15
+// results and the newer half of output tokens; old waste is not current advice.
 func (w *TokenWaste) Significant() bool {
-	if w.BigResults < 3 {
+	if w.BigResults < 3 || w.resultN-w.lastBigN >= 15 || w.lastBigAt*2 < w.ResultTokens {
 		return false
 	}
 	return w.BigTokens >= 10000 || (w.ctxTokens > 0 && int64(w.BigTokens)*100 >= w.ctxTokens*15)

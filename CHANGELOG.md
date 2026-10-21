@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+## 0.24.0
+
+- Replace the docs homepage's narrow handoff-workflow tagline with session intelligence, private memory, recovery, evaluation and harness improvement; describe Solo and IC as private usage patterns and distinguish existing Team workflows from future enhancements.
+
+- Color the terminal health bar and remove lower-panel duplicates only when those metrics are visible in the bar. Retain clipped metrics on narrow terminals and all instruments in the expanded view. Recognize Cursor's native MCP sign-in request and explicitly label agents without connection-check support.
+
+- Name missing setup components beside the readiness count, for example `Setup 6/7 ready · missing: Skills`, and color incomplete setup yellow. Keep configuration gaps distinct from live MCP service health.
+
+- Keep Solo and IC memory private on local or shared infrastructure. Setup discovers an existing deployment's OAuth challenge without a client mode flag; verified sign-in assigns contributor ownership. Solo and IC are high-level descriptions, with no mode flag. Source notes, sessions and Mem0 projections stay owner-scoped, and existing Team workflows retain their separate project authorization and explicit sharing controls.
+
+- Simplify private memory in schema version 8: remove project/repository identity, section, category, theme and tags; retain authenticated ownership, authoring agent, session IDs, task links, timestamps and useful task notes. Add native agent session IDs to session records, scope retrieval evaluations by session, refresh mobile clients and bundled skills, and queue owner-scoped Mem0 metadata rebuilds. Upgrade matching MCP/data services and agent integrations together after a database backup; an image-only rollback cannot restore the removed columns.
+
+- Turn advisor workflow warnings into concrete prompts for the active agent: narrow searches using known paths and symbols, or inspect changes and run a focused check. The user reviews and sends the prompt. Suppress current token-waste advice after newer output moves on, without letting duplicate transcript entries refresh it.
+
+- Clarify Google-only sign-in and how to add LDAP only when another login option is wanted.
+
+- Refocus the homepage on catching stalled work, evaluating and improving the harness, and carrying private context across agents. Replace repeated replay and Team marketing sections with concrete workflows, and update history measurement coverage for Codex.
+
+- Check all Codex Cully registrations before reporting MCP failure, including across status pages, so an expired registration cannot hide another working connection. Distinguish a failed check from authentication that needs sign-in, and remove the first-call hint after a connection check has already supplied status.
+
+- Let `cully setup --all --oauth` accept provider config files and a private environment file, automatically selecting the latest stable mcp-auth release. Mount the config directory read-only, remember input paths for reruns, and keep image overrides limited to the current testing invocation. Document the setup with links to mcp-auth's LDAP, Google and OIDC guides.
+
 ## 0.23.0
 
 - Run the test suite in a clean Cully environment. Two statusline tests failed for anyone running them from inside a Cully terminal, because `CULLY_PANE_SESSION` and related variables made the statusline correctly print nothing; the suite now clears them.

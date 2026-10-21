@@ -5,8 +5,8 @@
   "profile": "references/mobile-self.md",
   "source": "skills/cully/SKILL.md",
   "sha256": {
-    "SKILL.md": "a9949ac7b0fbbff603ed7c1048eaf2746a2b6208b7a35ae17b179570ce218867",
-    "references/mobile-self.md": "06b56c1f054076bd9e8daa4593c6473aa36e3905de005db60ef15bab7428513d",
+    "SKILL.md": "85886d21a148057b4b076a5a253ea3e6a342885d440d411f96a30587515ddc42",
+    "references/mobile-self.md": "8eac1ad484da1b20ce64de89dd91d949250d441dc3e6debb5b6909cd331e0ab0",
     "references/mobile-workflows.md": "fdd145ee3e728f88ef2c7bf4b1b61e9eb03d32fecc378faf1af15b0e5c486b25"
   }
 }

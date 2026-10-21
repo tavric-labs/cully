@@ -21,20 +21,20 @@ func paneHUD(cols int, stats toolStats, view sessionView, now time.Time) string 
 	}
 	var parts []string
 	if view.Agent != "" {
-		parts = append(parts, bold+journalAgentName(view.Agent)+rst)
+		parts = append(parts, cyan+bold+journalAgentName(view.Agent)+rst)
 	}
 	if project := filepath.Base(view.Project); project != "" && project != "." && project != string(filepath.Separator) {
 		if view.Branch != "" {
-			project += ":" + view.Branch
+			project += ":" + magenta + view.Branch + rst + blue
 		}
-		parts = append(parts, project)
+		parts = append(parts, blue+project+rst)
 	}
 	if !view.Started.IsZero() {
-		parts = append(parts, healthDuration(now.Sub(view.Started)))
+		parts = append(parts, dim+healthDuration(now.Sub(view.Started))+rst)
 	}
 	if view.ContextKnown {
 		used := min(100, max(0, 100-view.ContextLeft))
-		color := ""
+		color := green
 		switch {
 		case used >= 90:
 			color = red
@@ -47,7 +47,7 @@ func paneHUD(cols int, stats toolStats, view sessionView, now time.Time) string 
 		parts = append(parts, yellow+"⚠ Loop "+strconv.Itoa(view.Loops.Loops[0].Attempts)+"x"+rst)
 	}
 	if stats.EditsSinceCheck > 0 {
-		parts = append(parts, "● "+strconv.Itoa(stats.EditsSinceCheck)+" unchecked")
+		parts = append(parts, yellow+"● "+strconv.Itoa(stats.EditsSinceCheck)+" unchecked"+rst)
 	}
 	if len(parts) == 0 {
 		return ""
@@ -102,4 +102,15 @@ func hudRuleGrip(width int, hud string, grip gripState, hints ...string) string 
 		}
 	}
 	return tone + strings.Repeat(rule, max(0, width)) + rst
+}
+
+// Only omit lower-panel metrics that fit in the actual HUD. On narrow
+// terminals a long branch can hide later values, which must remain below.
+func hudShows(cols int, stats toolStats, view sessionView, value string) bool {
+	if !view.HealthBar || value == "" {
+		return false
+	}
+	hud := paneHUD(cols, stats, view, time.Now())
+	line := hudRule(cols, hud, " Ctrl+\\ resize · Ctrl+] advisor ")
+	return strings.Contains(ansi.Strip(line), value)
 }

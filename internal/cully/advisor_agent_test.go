@@ -276,7 +276,7 @@ func TestLiveAdvisorRecall(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	prompt := sharedAdvisorInstructions + "\nACTIVE AGENT: " + host + "\nSIGNALS:\nagent=" + host + "\nproject_url=https://github.com/mcp-runtime/cully\nsection=personal\nsearches=14 edits=3 checks=0 tool_errors=2\ntask_intent=advisor workflow verification\nDo not emit TOOLGAP in this smoke check. Use one memory query about advisor workflow verification."
+	prompt := sharedAdvisorInstructions + "\nACTIVE AGENT: " + host + "\nSIGNALS:\nagent=" + host + "\nsession_ref=codex-0123456789abcdef\nsearches=14 edits=3 checks=0 tool_errors=2\ntask_intent=advisor workflow verification\nDo not emit TOOLGAP in this smoke check. Use one memory query about advisor workflow verification."
 	out, err := runAdvisorAgent(host, cwd, false, prompt)
 	if err != nil {
 		t.Fatalf("%s adapter failed: %v", host, err)

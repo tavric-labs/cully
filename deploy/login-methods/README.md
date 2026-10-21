@@ -6,15 +6,18 @@ every method. The authoritative provider fields and examples live in
 [MCP Auth's login-method guide](https://github.com/tavric-labs/mcp-auth/blob/main/docs/login-methods.md)
 and [OIDC connector guide](https://github.com/tavric-labs/mcp-auth/blob/main/docs/auth-server.md#oidc-or-plain-oauth-20).
 
+For CLI-managed setup that automatically selects the latest auth release
+with your config directory and provider environment file, use [`cully setup`'s mcp-auth options](../../docs/oauth.md#plug-in-your-mcp-auth-configuration).
+This directory is for deployments managed with your own Compose tooling.
+
 This example starts a separate deployment of Cully and MCP Auth, with its own
 Compose project, databases, signing key and authorization state. An existing
 deployment keeps its configuration and data.
 
-**Release prerequisite:** merge [mcp-auth PR #32](https://github.com/tavric-labs/mcp-auth/pull/32),
-publish its auth-server image, then set `MCP_AUTH_IMAGE` to that exact released
-image. At preparation time, the latest mcp-auth release is v0.5.1 and the PR is
-still open. Do not assume v0.5.1 or Cully's bundled 0.4.4 image supports login
-methods. This example deliberately has no default auth image. Updating or
+**Release prerequisite:** select a published auth-server image containing
+[mcp-auth PR #32](https://github.com/tavric-labs/mcp-auth/pull/32), then set
+`MCP_AUTH_IMAGE` to that exact released image. Cully's bundled 0.4.4 image does
+not provide the login-method registry. This example deliberately has no default auth image. Updating or
 deploying the existing Keycloak service is not part of these instructions.
 
 The agent still uses OAuth with Cully. With LDAP, the browser shows a login form
@@ -115,6 +118,7 @@ Use `config/login-methods.google.example.json` instead of the LDAP example for
 Google. Register `<CULLY_AUTH_ISSUER>/identity/callback` with Google and put the
 client ID and secret in `provider.env`. Set `allowed_domains` to your Google
 Workspace domain; omit it deliberately only if any Google account may sign in.
+For Google-only login, keep only the `google` entry in `methods`; add LDAP only when a directory login is needed.
 
 The same `methods` array can offer Google, GitHub, LDAP and generic OIDC
 together. For an `oidc` entry, add `config/connectors.json` and reference the

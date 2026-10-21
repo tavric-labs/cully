@@ -5,7 +5,6 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"encoding/json"
-	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -83,7 +82,7 @@ func TestEndToEndMCPDatabase(t *testing.T) {
 	a := connect("owner-a", "tools:read tools:write")
 	b := connect("owner-b", "tools:read tools:write")
 	agentID := uuid.NewString()
-	entry := call(a, "cully_log", memory.LogInput{Summary: "Port memory services to Go", Assistant: "codex", Section: "company", AgentSessionID: &agentID}).Entry
+	entry := call(a, "cully_log", memory.LogInput{Summary: "Port memory services to Go", Assistant: "codex", AgentSessionID: &agentID}).Entry
 	if entry == nil || entry.AgentSessionID == nil || *entry.AgentSessionID != agentID {
 		t.Fatal("resumable agent session ID missing from saved entry")
 	}
@@ -162,15 +161,11 @@ func execute(t *testing.T, s *Store, owner string, r memory.Request) memory.Resu
 }
 func TestDatabaseMemoryLifecycle(t *testing.T) {
 	s := testStore(t)
-	project := "git@github.com:MCP-Runtime/Cully.git"
 	ref := "codex-0123456789abcdef"
-	input := memory.LogInput{Summary: "OAuth audience validation", Assistant: "Codex", Section: "company", ProjectURL: &project, SessionRef: &ref, OccurredAt: "2026-10-06T15:00:00+05:30", Tags: []string{"Auth"}}
+	input := memory.LogInput{Summary: "OAuth audience validation", Assistant: "Codex", SessionRef: &ref, OccurredAt: "2026-10-06T15:00:00+05:30"}
 	logged := execute(t, s, "owner-a", memory.Request{Operation: "log", Log: &input}).Entry
 	if logged == nil || logged.ID == "" || logged.OccurredAt.Format(time.RFC3339) != "2026-10-06T15:00:00+05:30" {
 		t.Fatalf("bad entry %+v", logged)
-	}
-	if logged.ProjectURL == nil || *logged.ProjectURL != "https://github.com/mcp-runtime/cully" {
-		t.Fatal("project not normalized")
 	}
 	if logged.SessionRef == nil || *logged.SessionRef != ref {
 		t.Fatal("session reference lost")
@@ -212,17 +207,6 @@ func TestDatabaseMemoryLifecycle(t *testing.T) {
 	updated = execute(t, s, "owner-a", memory.Request{Operation: "update", Update: &memory.UpdateInput{EntryID: logged.ID, Learning: &empty}}).Entry
 	if updated.Learning != nil {
 		t.Fatal("field was not cleared")
-	}
-	category := "reading"
-	execute(t, s, "owner-a", memory.Request{Operation: "log", Log: &memory.LogInput{Summary: "Read a book", Assistant: "chatgpt", Section: "personal", Category: &category}})
-	personal := "personal"
-	r := execute(t, s, "owner-a", memory.Request{Operation: "recent", Recent: &memory.RecentInput{Section: &personal}})
-	if len(r.Entries) != 1 || r.Entries[0].ProjectURL != nil {
-		t.Fatal("personal section lost")
-	}
-	projects := execute(t, s, "owner-a", memory.Request{Operation: "projects", Projects: &memory.ProjectsInput{}})
-	if len(projects.Projects) != 1 || projects.Projects[0].EntryCount != 1 {
-		t.Fatal("project summary failed")
 	}
 	// Reapplying the fresh schema must preserve authoritative records.
 	if err := migrations.Apply(context.Background(), s.Pool); err != nil {
@@ -271,7 +255,7 @@ func TestDurableMem0Projection(t *testing.T) {
 	defer server.Close()
 	s.Mem0, _ = mem0.New(server.URL, "test-key")
 	s.Mem0Enabled = true
-	e := execute(t, s, "owner-a", memory.Request{Operation: "log", Log: &memory.LogInput{Summary: "Remember OAuth", Assistant: "codex", Section: "company"}}).Entry
+	e := execute(t, s, "owner-a", memory.Request{Operation: "log", Log: &memory.LogInput{Summary: "Remember OAuth", Assistant: "codex"}}).Entry
 	outage = true
 	if err := s.processMem0Job(context.Background()); err != nil {
 		t.Fatal(err)
@@ -308,12 +292,12 @@ func TestDurableMem0Projection(t *testing.T) {
 
 func TestDatabaseSessionsAndTasks(t *testing.T) {
 	s := testStore(t)
-	project := "https://github.com/mcp-runtime/cully"
 	branch := "feat/oauth-validation"
 	task := "Oauth validation"
 	ref := "claude-0123456789abcdef"
+	nativeID := "native-agent-session-123"
 	start := func(owner string, task *string) memory.Result {
-		in := memory.SessionInput{SessionRef: ref, Assistant: "claude", Section: "company", ProjectURL: &project, Branch: &branch, Task: task}
+		in := memory.SessionInput{SessionRef: ref, AgentSessionID: &nativeID, Assistant: "claude", Branch: &branch, Task: task}
 		return execute(t, s, owner, memory.Request{Operation: "session", Session: &in})
 	}
 	first := start("owner-a", &task)
@@ -323,17 +307,12 @@ func TestDatabaseSessionsAndTasks(t *testing.T) {
 	if first.Session.TaskID == nil || *first.Session.TaskID != first.Entry.ID {
 		t.Fatal("session not linked to its task entry")
 	}
+	if first.Session.AgentSessionID == nil || *first.Session.AgentSessionID != nativeID || first.Entry.AgentSessionID == nil || *first.Entry.AgentSessionID != nativeID {
+		t.Fatal("native conversation link lost from session or task record")
+	}
 	again := start("owner-a", &task)
 	if again.Entry != nil || again.Session.TaskID == nil || *again.Session.TaskID != *first.Session.TaskID {
 		t.Fatal("same task name must not create a second entry")
-	}
-	personalTask := "Private work"
-	wrongSection := memory.SessionInput{SessionRef: ref, Assistant: "claude", Section: "personal", Task: &personalTask}
-	if _, err := (memory.Service{Store: s}).Execute(context.Background(), "owner-a", memory.Request{Operation: "session", Session: &wrongSection}); !errors.Is(err, memory.ErrInvalid) {
-		t.Fatalf("section change must be rejected as invalid: %v", err)
-	}
-	if got := start("owner-a", nil); got.Session.TaskID == nil || *got.Session.TaskID != *first.Session.TaskID {
-		t.Fatal("rejected section change altered the session task")
 	}
 	kind := "task"
 	tasks := execute(t, s, "owner-a", memory.Request{Operation: "recent", Recent: &memory.RecentInput{EntryType: &kind, Limit: 10}})
@@ -366,13 +345,11 @@ func TestDatabaseSessionsAndTasks(t *testing.T) {
 
 func TestDatabaseSessionTaskClearAndScope(t *testing.T) {
 	s := testStore(t)
-	project := "https://github.com/mcp-runtime/cully"
 	task := "Oauth validation"
 	ref := "claude-fedcba9876543210"
 	clear := true
-	personal := "personal"
 	session := func(owner string, task *string, clear *bool) memory.Result {
-		in := memory.SessionInput{SessionRef: ref, Assistant: "claude", Section: "company", ProjectURL: &project, Task: task, ClearTask: clear}
+		in := memory.SessionInput{SessionRef: ref, Assistant: "claude", Task: task, ClearTask: clear}
 		return execute(t, s, owner, memory.Request{Operation: "session", Session: &in})
 	}
 	linked := session("owner-a", &task, nil)
@@ -380,11 +357,6 @@ func TestDatabaseSessionTaskClearAndScope(t *testing.T) {
 		t.Fatal("task not linked")
 	}
 	taskID := *linked.Session.TaskID
-	// A linked task keeps its session's section.
-	update := memory.UpdateInput{EntryID: taskID, Section: &personal}
-	if _, err := (memory.Service{Store: s}).Execute(context.Background(), "owner-a", memory.Request{Operation: "update", Update: &update}); !errors.Is(err, memory.ErrInvalid) {
-		t.Fatalf("linked task section change must be rejected as invalid: %v", err)
-	}
 	// Explicit clear unlinks the session but keeps the task record.
 	cleared := session("owner-a", nil, &clear)
 	if cleared.Session.TaskID != nil || cleared.Session.Task != nil {
@@ -412,11 +384,10 @@ func TestDatabaseSessionTaskClearAndScope(t *testing.T) {
 
 func TestDatabaseSessionTaskRepeatAfterClearRelinks(t *testing.T) {
 	s := testStore(t)
-	project := "https://github.com/mcp-runtime/cully"
 	task := "Oauth validation"
 	clear := true
 	session := func(task *string, clear *bool) memory.Result {
-		in := memory.SessionInput{SessionRef: "claude-0123456789abcdef", Assistant: "claude", Section: "company", ProjectURL: &project, Task: task, ClearTask: clear}
+		in := memory.SessionInput{SessionRef: "claude-0123456789abcdef", Assistant: "claude", Task: task, ClearTask: clear}
 		return execute(t, s, "owner-a", memory.Request{Operation: "session", Session: &in})
 	}
 	taskID := *session(&task, nil).Session.TaskID
@@ -435,17 +406,16 @@ func TestDatabaseSessionTaskRepeatAfterClearRelinks(t *testing.T) {
 
 func TestDatabaseRecentTimeWindowAndOwner(t *testing.T) {
 	s := testStore(t)
-	personal, company := "personal", "company"
+	personal := "personal"
 	for _, row := range []struct{ owner, section, when string }{
 		{"window-owner-a", personal, "2026-10-18T09:00:00+05:30"},
 		{"window-owner-a", personal, "2026-10-19T09:00:00+05:30"},
 		{"window-owner-a", personal, "2026-10-18T08:59:59+05:30"},
 		{"window-owner-b", personal, "2026-10-18T09:00:00+05:30"},
-		{"window-owner-a", company, "2026-10-18T09:00:00+05:30"},
 	} {
-		execute(t, s, row.owner, memory.Request{Operation: "log", Log: &memory.LogInput{Summary: "Window boundary evidence", Assistant: "codex", Section: row.section, OccurredAt: row.when}})
+		execute(t, s, row.owner, memory.Request{Operation: "log", Log: &memory.LogInput{Summary: "Window boundary evidence", Assistant: "codex", OccurredAt: row.when}})
 	}
-	result := execute(t, s, "window-owner-a", memory.Request{Operation: "recent", Recent: &memory.RecentInput{Section: &personal, Since: "2026-10-18T03:30:00Z", Until: "2026-10-19T03:30:00Z", Limit: 3}})
+	result := execute(t, s, "window-owner-a", memory.Request{Operation: "recent", Recent: &memory.RecentInput{Since: "2026-10-18T03:30:00Z", Until: "2026-10-19T03:30:00Z", Limit: 3}})
 	if result.Since != "2026-10-18T03:30:00Z" || result.Until != "2026-10-19T03:30:00Z" || len(result.Entries) != 1 || result.Entries[0].OccurredAt.Format(time.RFC3339) != "2026-10-18T09:00:00+05:30" {
 		t.Fatalf("half-open time window or owner/section scoping failed: %+v", result.Entries)
 	}

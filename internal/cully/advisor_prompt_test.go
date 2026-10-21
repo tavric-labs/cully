@@ -68,6 +68,23 @@ func TestAdvisorSourceTrimsPunctuation(t *testing.T) {
 	}
 }
 
+func TestWorkflowAdviceExplainsBoundedNextStep(t *testing.T) {
+	for _, tc := range []struct{ note, action string }{
+		{"ADV|Many searches this session. Narrow the path or query before continuing.", "choose a narrower search"},
+		{"ADV|Files changed. Run a focused check before finishing.", "choose the smallest relevant check"},
+	} {
+		got := advisorRequest(tc.note, "agent=codex edits=3 searches=20")
+		for _, want := range []string{"Proposed next step:", tc.action, "agent=codex"} {
+			if !strings.Contains(got, want) {
+				t.Errorf("request lacks %q: %s", want, got)
+			}
+		}
+		if strings.Contains(got, "set this up in this repository") {
+			t.Fatal("workflow action became a setup change")
+		}
+	}
+}
+
 func TestSuggestionsRequestPrintsGuardedRequestForNumberedFix(t *testing.T) {
 	t.Setenv("CLAUDE_CONFIG_DIR", t.TempDir())
 	t.Setenv("CULLY_SESSION", "")

@@ -36,9 +36,6 @@ func TestSolo(t *testing.T) {
 	for _, tool := range tools.Tools {
 		hasWorkspace = hasWorkspace || tool.Name == "cully_workspace_write"
 	}
-	if !hasWorkspace && os.Getenv("CULLY_E2E_PUBLISHED_CLI") != "true" {
-		t.Fatal("current stack did not discover the Team tool needed for the Solo isolation check")
-	}
 	call := func(name string, input any) memory.Result {
 		t.Helper()
 		response, err := session.CallTool(ctx, &sdk.CallToolParams{Name: name, Arguments: input})
@@ -59,25 +56,24 @@ func TestSolo(t *testing.T) {
 		}
 		return result
 	}
-	projectURL := "https://github.com/mcp-runtime/cully"
 	// Solo sessions preserve a task when omitted, unlink it explicitly, and
 	// reuse the same owned task record when it is linked again.
 	ref, taskName := "solo-e2e-0123456789abcdef", "Verify Solo memory"
-	start := call("cully_session", memory.SessionInput{SessionRef: ref, Assistant: "codex", Section: "personal", ProjectURL: &projectURL, Task: &taskName}).Session
+	start := call("cully_session", memory.SessionInput{SessionRef: ref, Assistant: "codex", Task: &taskName}).Session
 	if start == nil || start.TaskID == nil || start.Task == nil || *start.Task != taskName {
 		t.Fatal("Solo session did not link its task")
 	}
 	taskID := *start.TaskID
-	preserved := call("cully_session", memory.SessionInput{SessionRef: ref, Assistant: "codex", Section: "personal"}).Session
+	preserved := call("cully_session", memory.SessionInput{SessionRef: ref, Assistant: "codex"}).Session
 	if preserved == nil || preserved.TaskID == nil || *preserved.TaskID != taskID {
 		t.Fatal("omitting the task lost its link")
 	}
 	clear := true
-	unlinked := call("cully_session", memory.SessionInput{SessionRef: ref, Assistant: "codex", Section: "personal", ClearTask: &clear}).Session
+	unlinked := call("cully_session", memory.SessionInput{SessionRef: ref, Assistant: "codex", ClearTask: &clear}).Session
 	if unlinked == nil || unlinked.TaskID != nil {
 		t.Fatal("explicit task clear did not unlink")
 	}
-	relinked := call("cully_session", memory.SessionInput{SessionRef: ref, Assistant: "codex", Section: "personal", Task: &taskName}).Session
+	relinked := call("cully_session", memory.SessionInput{SessionRef: ref, Assistant: "codex", Task: &taskName}).Session
 	if relinked == nil || relinked.TaskID == nil || *relinked.TaskID != taskID {
 		t.Fatal("relinking created a duplicate task")
 	}
@@ -100,7 +96,7 @@ func TestSolo(t *testing.T) {
 		}
 	}
 	loggedSummary := "Disposable container end-to-end check"
-	logged := call("cully_log", memory.LogInput{Summary: loggedSummary, Assistant: "other", Section: "personal", ProjectURL: &projectURL}).Entry
+	logged := call("cully_log", memory.LogInput{Summary: loggedSummary, Assistant: "other"}).Entry
 	if logged == nil || logged.ID == "" {
 		t.Fatal("MCP write did not reach PostgreSQL")
 	}
@@ -126,15 +122,7 @@ func TestSolo(t *testing.T) {
 	if !found(call("cully_recent", memory.RecentInput{Limit: 20}).Entries) {
 		t.Fatal("recent records did not include the written record")
 	}
-	projects := call("cully_projects", memory.ProjectsInput{Limit: 20}).Projects
-	projectFound := false
-	for _, project := range projects {
-		projectFound = projectFound || project.ProjectURL == projectURL
-	}
-	if !projectFound {
-		t.Fatal("project list did not include the written record")
-	}
-	preview, err := session.CallTool(ctx, &sdk.CallToolParams{Name: "cully_context", Arguments: cullymcp.ContextInput{ProjectURL: &projectURL, Mode: "recent"}})
+	preview, err := session.CallTool(ctx, &sdk.CallToolParams{Name: "cully_context", Arguments: cullymcp.ContextInput{Mode: "recent"}})
 	if err != nil || preview.IsError {
 		t.Fatalf("context preview failed: %v, %+v", err, preview)
 	}

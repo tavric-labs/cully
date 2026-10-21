@@ -156,7 +156,11 @@ func stopSelfHostedStack(purgeData bool) error {
 	if envFile := filepath.Join(base, "config", ".env"); regularFile(envFile) {
 		args = append(args, "--env-file", envFile)
 	}
-	args = append(args, "-f", filepath.Join(setupDir, "compose.yaml"), "--profile", "oauth", "--profile", "mcp-auth", "down")
+	args = append(args, "-f", filepath.Join(setupDir, "compose.yaml"))
+	if custom := filepath.Join(setupDir, "compose.custom-auth.yaml"); regularFile(custom) {
+		args = append(args, "-f", custom)
+	}
+	args = append(args, "--profile", "oauth", "--profile", "mcp-auth", "down")
 	if purgeData {
 		args = append(args, "--volumes")
 	}
@@ -171,6 +175,9 @@ func stopSelfHostedStack(purgeData bool) error {
 		"CULLY_DB_NAME=unused", "CULLY_DB_USER=unused", "CULLY_DB_PASSWORD=unused",
 		"CULLY_DATABASE_URL=unused", "CULLY_DATA_API_TOKEN=unused",
 		"CULLY_MEM0_DB_PASSWORD=unused", "CULLY_MEM0_API_KEY=unused", "CULLY_MEM0_JWT_SECRET=unused",
+		"CULLY_MCP_AUTH_IMAGE=unused:unused", "CULLY_MCP_AUTH_CONFIG_DIR="+setupDir,
+		"CULLY_MCP_AUTH_ENV_FILE="+os.DevNull,
+		"CULLY_AUTH_ISSUER=https://unused.invalid", "CULLY_AUTH_RESOURCE=https://unused.invalid/mcp",
 	)
 	if err := command.Run(); err != nil {
 		return fmt.Errorf("stop Cully Docker stack: %w", err)

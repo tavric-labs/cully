@@ -88,20 +88,11 @@ final class SelfHomeView extends ScrollView {
     }
     private void evidenceCards(){
         if(!brief.has("last24h"))return;
-        java.util.LinkedHashSet<String> projects=new java.util.LinkedHashSet<>();
-        for(String key:weekly?new String[]{"last24h","earlier6days"}:new String[]{"last24h"}){
-            JSONObject window=brief.optJSONObject(key);JSONArray rows=window==null?null:window.optJSONArray("notes");
-            if(rows!=null)for(int i=0;i<rows.length();i++){JSONObject n=rows.optJSONObject(i);if(n!=null&&!value(n,"project_url").isEmpty())projects.add(value(n,"project_url"));}
-        }
-        LinearLayout p=card("PROJECTS IN THESE NOTES");
-        if(projects.isEmpty())text(p,"No project was attached to these sampled notes.",14,MUTED);
-        for(String project:projects)text(p,project.replace("https://github.com/",""),15,TEXT);
         int count=0;boolean more=false;
         for(String key:weekly?new String[]{"last24h","earlier6days"}:new String[]{"last24h"}){
             JSONObject window=brief.optJSONObject(key);if(window==null)continue;
             more|=window.optBoolean("has_more");JSONArray rows=window.optJSONArray("notes");if(rows==null)continue;
             for(int i=0;i<rows.length();i++){JSONObject n=rows.optJSONObject(i);if(n==null)continue;count++;
-                String project=value(n,"project_url");if(!project.isEmpty())projects.add(project);
                 LinearLayout c=card(key.equals("last24h")?"LAST 24 HOURS":"EARLIER THIS WEEK");
                 text(c,n.optString("summary"),16,TEXT);
                 text(c,localDate(n)+" · "+n.optString("assistant"),11,MUTED);
@@ -122,8 +113,7 @@ final class SelfHomeView extends ScrollView {
         int count=0;
         for(int i=0;i<notes.length()&&count<3;i++){
             JSONObject note=notes.optJSONObject(i);if(note==null||value(note,"next_steps").isEmpty())continue;count++;
-            String project=value(note,"project_url").replace("https://github.com/","");
-            text(intro,(project.isEmpty()?"Personal work":project)+" · "+localDate(note),11,GOLD);
+            text(intro,localDate(note),11,GOLD);
             text(intro,value(note,"next_steps"),16,TEXT);
             if(!value(note,"issue").isEmpty())text(intro,"Reported blocker · "+value(note,"issue"),13,MUTED);
             LinearLayout choices=new LinearLayout(activity);intro.addView(choices);
@@ -146,7 +136,6 @@ final class SelfHomeView extends ScrollView {
     }
     private void recall(JSONObject note){
         StringBuilder detail=new StringBuilder(localDate(note));
-        String project=value(note,"project_url");if(!project.isEmpty())detail.append("\n").append(project);
         detail.append("\n\n").append(value(note,"summary"));
         for(String[] field:new String[][]{{"approach","How we approached it"},{"outcome","Saved outcome"},{"issue","Reported blocker"},{"learning","Recorded learning"},{"next_steps","Last planned"}})
             if(!value(note,field[0]).isEmpty())detail.append("\n\n").append(field[1]).append("\n").append(value(note,field[0]));
@@ -155,8 +144,7 @@ final class SelfHomeView extends ScrollView {
             .setNegativeButton("Done",null).setPositiveButton("Draft a follow-up",(d,w)->question(note,"Find relevant saved Cully evidence before answering. Recall how we worked on: "+value(note,"summary")+". Explain the recorded approach and what is uncertain; do not invent a reason." )).show();
     }
     private void question(JSONObject note,String prompt){
-        String project=value(note,"project_url");
-        if(draftQuestion!=null)draftQuestion.accept(prompt+(project.isEmpty()?"":" Project: "+project));
+        if(draftQuestion!=null)draftQuestion.accept(prompt);
     }
     private void tasksPage() {
         title("Make space\nfor what matters."); text(body,"Personal tasks · saved on this phone",12,MUTED);

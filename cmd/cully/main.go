@@ -203,7 +203,7 @@ func runSetup(args []string) error {
 		printT3CodeHint(os.Stdout, exec.LookPath)
 		return nil
 	}
-	if err := runSelfHost(options.target, options.oauth, options.prepare); err != nil {
+	if err := runSelfHost(options.target, options.oauth, options.prepare, options.auth); err != nil {
 		return err
 	}
 	printT3CodeHint(os.Stdout, exec.LookPath)
@@ -223,6 +223,7 @@ func printT3CodeHint(w io.Writer, lookPath func(string) (string, error)) {
 type setupOptions struct {
 	target, endpoint string
 	oauth, prepare   bool
+	auth             mcpAuthOptions
 }
 
 func parseSetup(args []string) (setupOptions, error) {
@@ -233,6 +234,9 @@ func parseSetup(args []string) (setupOptions, error) {
 	fs.StringVar(&options.endpoint, "mcp-url", "", "connect to an already deployed Cully MCP server")
 	fs.BoolVar(&options.oauth, "oauth", false, "server uses OAuth; print sign-in instructions")
 	fs.BoolVar(&options.prepare, "prepare", false, "with --all, prepare local configuration without starting services")
+	fs.StringVar(&options.auth.Image, "mcp-auth-image", "", "testing only: override the automatically selected latest mcp-auth release image")
+	fs.StringVar(&options.auth.ConfigDir, "mcp-auth-config-dir", "", "mount this directory of mcp-auth configuration files read-only at /etc/mcp-auth")
+	fs.StringVar(&options.auth.EnvFile, "mcp-auth-env", "", "environment file for mcp-auth, including its configuration-file paths and provider secrets")
 	if err := fs.Parse(args); err != nil {
 		return setupOptions{}, err
 	}
@@ -248,12 +252,23 @@ func parseSetup(args []string) (setupOptions, error) {
 	if options.prepare && !*all {
 		return setupOptions{}, fmt.Errorf("--prepare requires --all")
 	}
+	if options.auth.specified() {
+		if !*all || !options.oauth {
+			return setupOptions{}, fmt.Errorf("mcp-auth options require --all --oauth")
+		}
+		if (options.auth.ConfigDir == "") != (options.auth.EnvFile == "") {
+			return setupOptions{}, fmt.Errorf("provide --mcp-auth-config-dir and --mcp-auth-env together")
+		}
+	}
 	if options.target != "" && options.target != "claude" && options.target != "codex" && options.target != "cursor" && options.target != "all" {
 		return setupOptions{}, fmt.Errorf("choose --agent claude, codex, cursor, or all")
 	}
 	var emptyFlag string
 	fs.Visit(func(f *flag.Flag) {
 		if f.Name == "agent" && options.target == "" || f.Name == "mcp-url" && options.endpoint == "" {
+			emptyFlag = f.Name
+		}
+		if f.Name == "mcp-auth-image" && options.auth.Image == "" || f.Name == "mcp-auth-config-dir" && options.auth.ConfigDir == "" || f.Name == "mcp-auth-env" && options.auth.EnvFile == "" {
 			emptyFlag = f.Name
 		}
 	})

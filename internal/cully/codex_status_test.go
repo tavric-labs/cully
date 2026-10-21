@@ -533,8 +533,8 @@ func TestCodexCullyHealthAndAuthAreIndependentAndUnknownByDefault(t *testing.T) 
 		default:
 			health = "Awaiting first MCP response"
 		}
-		if auth == "" {
-			auth = "unknown"
+		if auth == "" || auth == "unknown" {
+			auth = "not verified"
 		}
 		if !strings.Contains(text, health) || !strings.Contains(text, "Auth "+auth) || !strings.Contains(text, "MCP 0 calls") {
 			t.Fatalf("observed MCP state lost or invented: %s", text)

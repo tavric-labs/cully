@@ -40,10 +40,10 @@ final class CullyConnection implements AutoCloseable {
         if (!name.equals("cully_context")) throw new IOException("This tool is not enabled in Self mode.");
         if (rawArguments.length() > 4096) throw new IOException("Tool arguments exceeded the local limit.");
         JSONObject arguments = new JSONObject(rawArguments);
-        java.util.Set<String> allowed = new java.util.HashSet<>(java.util.Arrays.asList("query", "project_url", "session_ref", "section", "mode", "limit", "since", "until"));
+        java.util.Set<String> allowed = new java.util.HashSet<>(java.util.Arrays.asList("query", "session_ref", "mode", "limit", "since", "until"));
         java.util.Iterator<String> keys = arguments.keys();
         while(keys.hasNext()) if(!allowed.contains(keys.next())) throw new IOException("Unsupported tool argument.");
-        if (!arguments.optString("section", "personal").equals("personal")) throw new IOException("Only private personal context is enabled.");
+        if (!arguments.optString("personal").equals("personal")) throw new IOException("Only private personal context is enabled.");
         String mode = arguments.optString("mode", arguments.optString("query").isEmpty()?"recent":"text");
         if (!mode.equals("recent") && !mode.equals("text")) throw new IOException("Only recent and text lookups are enabled.");
         for(String field:new String[]{"since","until"})if(arguments.has(field)){
@@ -53,7 +53,7 @@ final class CullyConnection implements AutoCloseable {
         if (arguments.optString("query").length() > 180) throw new IOException("Keep the context query short.");
         int limit = arguments.optInt("limit", 3);
         if(limit<1 || limit>3) throw new IOException("Request one to three notes.");
-        arguments.put("section", "personal").put("limit", limit).put("mode", mode);
+        arguments.put("limit", limit).put("mode", mode);
         CountDownLatch done = new CountDownLatch(1);
         AtomicReference<String> result = new AtomicReference<>(), failure = new AtomicReference<>();
         org.mcpruntime.mobile.McpRequest request = session.callTool(name, arguments.toString(), new McpCallback() {
@@ -72,7 +72,7 @@ final class CullyConnection implements AutoCloseable {
             JSONArray notes=data.optJSONArray("notes"), compact=new JSONArray();
             if(notes!=null)for(int i=0;i<Math.min(notes.length(),3);i++){
                 JSONObject note=notes.getJSONObject(i), selected=new JSONObject();
-                for(String key:new String[]{"date","summary","outcome","issue","next_steps","learning","project_url","approach","entry_type"}){String text=note.isNull(key)?"":note.optString(key);selected.put(key,text.substring(0,Math.min(text.length(),180)));}
+                for(String key:new String[]{"date","summary","outcome","issue","next_steps","learning","approach","entry_type"}){String text=note.isNull(key)?"":note.optString(key);selected.put(key,text.substring(0,Math.min(text.length(),180)));}
                 compact.put(selected);
             }
             return new JSONObject().put("source",data.optString("source")).put("notes",compact).put("has_more",data.optBoolean("has_more")).toString();
@@ -179,11 +179,10 @@ final class CullyConnection implements AutoCloseable {
                             for(int i=0;i<tools.length();i++){
                                 JSONObject tool=tools.getJSONObject(i);
                                 if(tool.optString("name").equals("cully_context")) {
-                                    String description="Read saved private work notes. Use mode text for a topic or recent for latest work. Always set section personal and limit 1, 2 or 3.";
+                                    String description="Read saved private work notes. Use mode text for a topic or recent for latest work. Request at most three owned notes.";
                                     JSONObject schema=new JSONObject(tool.getJSONObject("inputSchema").toString());
                                     JSONObject properties=schema.getJSONObject("properties");
                                     properties.put("limit",new JSONObject().put("type","integer").put("minimum",1).put("maximum",3).put("default",3));
-                                    properties.put("section",new JSONObject().put("type","string").put("enum",new JSONArray().put("personal")));
                                     properties.put("mode",new JSONObject().put("type","string").put("enum",new JSONArray().put("text").put("recent")));
                                     functions.put(new JSONObject().put("type","function").put("function",new JSONObject()
                                         .put("name",tool.getString("name")).put("description",description.substring(0,Math.min(description.length(),360)))
@@ -206,7 +205,7 @@ final class CullyConnection implements AutoCloseable {
     }
 
     private void testRead(McpMobileJavaClient session, int count) {
-        session.callTool("cully_context", "{\"query\":\"mcp-mobile-release-smoke-never-match-6f4b0c2d\",\"limit\":1,\"mode\":\"text\",\"project_url\":\"https://github.com/tavric-labs/mcp-mobile\"}", new McpCallback() {
+        session.callTool("cully_context", "{\"query\":\"mcp-mobile-release-smoke-never-match-6f4b0c2d\",\"limit\":1,\"mode\":\"text\"}", new McpCallback() {
             public void onSuccess(String json) { try { report(true, !new JSONObject(json).optBoolean("isError", false), count); } catch (Exception ignored) {} }
             public void onError(String code, String message) { report(false, false, count); }
         });

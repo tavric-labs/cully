@@ -12,11 +12,11 @@ import (
 )
 
 // fakeStore matches every query word as a substring of the stored record.
-// ignoreProject simulates a store that leaks other projects' notes.
+// ignoreSession simulates a store that leaks other projects' notes.
 type fakeStore struct {
 	entries       []memory.Entry
 	deleted       []string
-	ignoreProject bool
+	ignoreSession bool
 	broken        string
 }
 
@@ -29,7 +29,7 @@ func (f *fakeStore) Log(_ context.Context, in memory.LogInput) (string, error) {
 		}
 	}
 	when, _ := time.Parse(time.RFC3339, in.OccurredAt)
-	f.entries = append(f.entries, memory.Entry{ID: id, Summary: text, ProjectURL: in.ProjectURL, OccurredAt: when})
+	f.entries = append(f.entries, memory.Entry{ID: id, Summary: text, SessionRef: in.SessionRef, OccurredAt: when})
 	return id, nil
 }
 
@@ -41,11 +41,11 @@ func (f *fakeStore) Search(_ context.Context, mode string, in memory.SearchInput
 		return nil, nil
 	}
 	if f.broken == "unseeded" {
-		return []memory.Entry{{ID: "unexpected", ProjectURL: in.ProjectURL}}, nil
+		return []memory.Entry{{ID: "unexpected", SessionRef: in.SessionRef}}, nil
 	}
 	var out []memory.Entry
 	for _, e := range f.entries {
-		if !f.ignoreProject && *e.ProjectURL != *in.ProjectURL {
+		if !f.ignoreSession && *e.SessionRef != *in.SessionRef {
 			continue
 		}
 		match := true
@@ -128,9 +128,9 @@ func TestRunScoresAndCleansUp(t *testing.T) {
 	}
 }
 
-func TestRunDetectsProjectLeak(t *testing.T) {
+func TestRunDetectsSessionLeak(t *testing.T) {
 	ds, _ := Load()
-	report, err := Run(context.Background(), &fakeStore{ignoreProject: true}, ds, "https://github.com/e/app", "https://github.com/e/other", "run2", 5)
+	report, err := Run(context.Background(), &fakeStore{ignoreSession: true}, ds, "https://github.com/e/app", "https://github.com/e/other", "run2", 5)
 	if err != nil {
 		t.Fatal(err)
 	}

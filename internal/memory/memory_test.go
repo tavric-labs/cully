@@ -8,14 +8,13 @@ import (
 
 func TestValidation(t *testing.T) {
 	good := func() Request {
-		return Request{Operation: "log", Log: &LogInput{Summary: "Fixed authentication", Assistant: "Codex", Section: "company"}}
+		return Request{Operation: "log", Log: &LogInput{Summary: "Fixed authentication", Assistant: "Codex"}}
 	}
 	cases := []struct {
 		name   string
 		change func(*Request)
 	}{
 		{"credential", func(r *Request) { r.Log.Summary = "api_key=supersecretvalue" }},
-		{"section", func(r *Request) { r.Log.Section = "shared" }},
 		{"assistant", func(r *Request) { r.Log.Assistant = "anonymous-bot" }},
 		{"timestamp", func(r *Request) { r.Log.OccurredAt = "2026-10-06T10:00:00" }},
 		{"session reference", func(r *Request) { bad := "native-session-id"; r.Log.SessionRef = &bad }},
@@ -45,19 +44,6 @@ func TestValidation(t *testing.T) {
 		t.Fatalf("native coding-agent session ID rejected: %v", err)
 	}
 }
-func TestProjectNormalization(t *testing.T) {
-	for _, s := range []string{"git@github.com:MCP-Runtime/Cully.git", "https://github.com/MCP-Runtime/Cully.git"} {
-		v, e := NormalizeProject(s)
-		if e != nil || v != "https://github.com/mcp-runtime/cully" {
-			t.Fatalf("%s: %s %v", s, v, e)
-		}
-	}
-	for _, s := range []string{"https://github.com.evil.test/org/repo", "https://github.com/org/repo/issues/1", "https://user:secret@github.com/org/repo", "git@github.com:/repo"} {
-		if _, e := NormalizeProject(s); e == nil {
-			t.Fatalf("accepted %s", s)
-		}
-	}
-}
 func TestUpdateClearingAndLimits(t *testing.T) {
 	empty := ""
 	r := Request{Operation: "update", Update: &UpdateInput{EntryID: "00000000-0000-0000-0000-000000000001", Learning: &empty}}
@@ -82,7 +68,7 @@ func TestSessionValidation(t *testing.T) {
 	ref := "claude-dd4aac2e2202d45c"
 	task := "Oauth validation"
 	good := func() Request {
-		return Request{Operation: "session", Session: &SessionInput{SessionRef: ref, Assistant: "Claude", Section: "company", Task: &task}}
+		return Request{Operation: "session", Session: &SessionInput{SessionRef: ref, Assistant: "Claude", Task: &task}}
 	}
 	r := good()
 	if err := r.Validate(); err != nil {
@@ -97,7 +83,6 @@ func TestSessionValidation(t *testing.T) {
 	cases := map[string]func(*Request){
 		"missing ref":     func(r *Request) { r.Session.SessionRef = "" },
 		"native id":       func(r *Request) { r.Session.SessionRef = "native-session-id" },
-		"section":         func(r *Request) { r.Session.Section = "" },
 		"assistant":       func(r *Request) { r.Session.Assistant = "bot" },
 		"long task":       func(r *Request) { r.Session.Task = &long },
 		"credential task": func(r *Request) { r.Session.Task = &secret },
@@ -121,7 +106,7 @@ func TestSessionValidation(t *testing.T) {
 	if err := capped.Validate(); err != nil {
 		t.Fatalf("60-rune task rejected: %v", err)
 	}
-	log := Request{Operation: "log", Log: &LogInput{Summary: "Oauth validation", Assistant: "claude", Section: "company", EntryType: "task"}}
+	log := Request{Operation: "log", Log: &LogInput{Summary: "Oauth validation", Assistant: "claude", EntryType: "task"}}
 	if err := log.Validate(); err == nil || !strings.Contains(err.Error(), "cully_session") {
 		t.Fatalf("task via cully_log must point at cully_session: %v", err)
 	}
@@ -133,7 +118,7 @@ func TestSessionTaskClearValidation(t *testing.T) {
 	empty := ""
 	clear := true
 	good := func() Request {
-		return Request{Operation: "session", Session: &SessionInput{SessionRef: ref, Assistant: "claude", Section: "company"}}
+		return Request{Operation: "session", Session: &SessionInput{SessionRef: ref, Assistant: "claude"}}
 	}
 	// Omitted task preserves the link.
 	omitted := good()

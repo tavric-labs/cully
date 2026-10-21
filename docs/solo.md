@@ -24,6 +24,6 @@ Run `cully harness` for setup gaps and recent oversized-output estimates. The te
 
 The [mobile Self preview](/mobile) reads dated personal notes and offers local tasks and questions. It does not run coding agents or expose Team actions.
 
-For an existing memory server, use `cully setup --mcp-url URL` and add `--oauth` if it requires sign-in. A shared server does not make your private notes visible to other people. `personal` and `company` are private organizational labels.
+For an existing memory server, use `cully setup --mcp-url URL` and add `--oauth` if it requires sign-in. A shared server does not make your private notes visible to other people. IC uses verified contributor identities on shared services; no notes are shared.
 
-Start with [quickstart](/quickstart), [terminal](/terminal), [advisor](/advisor), [session intelligence](/session-intelligence) and [memory](/memory). For shared ownership, handoffs and review, use [Team mode](/team-workflows). Team mode adds authorized project records without importing your journal or notes. See [product vision](/product-direction).
+Start with [quickstart](/quickstart), [terminal](/terminal), [advisor](/advisor), [session intelligence](/session-intelligence) and [memory](/memory). Existing [Team workflows](/team-workflows) add explicit project tasks, checkpoints and review while Solo and IC notes stay private. See [product vision](/product-direction).

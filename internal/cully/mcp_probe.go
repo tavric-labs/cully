@@ -46,6 +46,7 @@ func (p *mcpProber) get() (mcpProbeResult, bool) {
 // connected server is healthy and authenticated; one that needs authentication
 // is unauthenticated; a failure says nothing about authentication.
 func parseClaudeMCPList(out string) (health, auth string, found bool) {
+	var failedHealth, failedAuth string
 	for _, line := range strings.Split(out, "\n") {
 		name, rest, ok := strings.Cut(line, ": ")
 		if !ok || !(name == "cully" || strings.HasPrefix(name, "cully-")) {
@@ -59,11 +60,16 @@ func parseClaudeMCPList(out string) (health, auth string, found bool) {
 		case strings.Contains(status, "Connected"):
 			return "healthy", "authenticated", true
 		case strings.Contains(status, "Needs authentication"):
-			return "unhealthy", "unauthenticated", true
+			failedHealth, failedAuth = "unhealthy", "unauthenticated"
 		case strings.Contains(status, "Failed") || strings.Contains(status, "✘"):
-			return "unhealthy", "unknown", true
+			failedHealth = "unhealthy"
+			if failedAuth == "" {
+				failedAuth = "unknown"
+			}
 		}
-		return "", "", false
+	}
+	if failedHealth != "" {
+		return failedHealth, failedAuth, true
 	}
 	return "", "", false
 }
@@ -75,7 +81,7 @@ var claudeMCPList = func(ctx context.Context) (string, error) {
 }
 
 var cursorMCPTools = func(ctx context.Context) (string, error) {
-	out, err := mcpProbeCommand(ctx, "cursor-agent", "mcp", "list-tools", "cully").Output()
+	out, err := mcpProbeCommand(ctx, "cursor-agent", "mcp", "list-tools", "cully").CombinedOutput()
 	return string(out), err
 }
 
@@ -107,9 +113,24 @@ var agentMCPProbe = func(ctx context.Context, agent string) (string, string, boo
 		return probeCodexMCP(ctx)
 	case "cursor":
 		out, err := cursorMCPTools(ctx)
-		if err == nil && strings.Contains(out, "cully_context") {
-			return "healthy", "authenticated", true
-		}
+		return parseCursorMCPTools(out, err)
+	default:
+		return "unsupported", "unknown", true
+	}
+}
+
+// Tool discovery proves an MCP connection; a Cursor CLI login error does not
+// prove that the independently configured MCP credential is invalid.
+func parseCursorMCPTools(out string, err error) (string, string, bool) {
+	if err == nil && strings.Contains(out, "cully_context") {
+		return "healthy", "authenticated", true
+	}
+	lower := strings.ToLower(out)
+	if err != nil && strings.Contains(lower, "mcp login") {
+		return "unhealthy", "unauthenticated", true
+	}
+	if err != nil && (strings.Contains(lower, "cursor_api_key") || strings.Contains(lower, "agent login") || strings.Contains(lower, "cursor-agent login")) {
+		return "agent_signin", "unknown", true
 	}
 	return "", "", false
 }
@@ -123,13 +144,18 @@ func runMCPProbe(ctx context.Context, agent string, p *mcpProber) {
 		probeCtx, cancel := context.WithTimeout(ctx, 40*time.Second)
 		health, auth, found := agentMCPProbe(probeCtx, agent)
 		cancel()
-		if found {
-			p.set(mcpProbeResult{Health: health, Auth: auth, At: time.Now()})
+		delay := mcpProbeInterval
+		if !found {
+			health, auth = "unknown", "unknown"
 		}
+		if health != "healthy" && health != "unsupported" {
+			delay = 30 * time.Second
+		}
+		p.set(mcpProbeResult{Health: health, Auth: auth, At: time.Now()})
 		select {
 		case <-ctx.Done():
 			return
-		case <-time.After(mcpProbeInterval):
+		case <-time.After(delay):
 		}
 	}
 }
@@ -143,20 +169,30 @@ func parseCodexMCPStatus(raw json.RawMessage) (string, string, bool) {
 			Tools         map[string]json.RawMessage `json:"tools"`
 			RuntimeStatus string                     `json:"runtimeStatus"`
 			ToolsError    *string                    `json:"toolsError"`
+			AuthStatus    string                     `json:"authStatus"`
 		} `json:"data"`
 	}
 	if json.Unmarshal(raw, &result) != nil {
 		return "", "", false
 	}
+	var failedHealth, failedAuth string
 	for _, server := range result.Data {
 		if server.Name != "cully" && !strings.HasPrefix(server.Name, "cully-") {
 			continue
 		}
 		if server.RuntimeStatus == "authenticationRequired" {
-			return "unhealthy", "unauthenticated", true
+			failedHealth, failedAuth = "unhealthy", "unauthenticated"
+			continue
 		}
 		if server.RuntimeStatus == "failed" || server.ToolsError != nil {
-			return "unhealthy", "unknown", true
+			failedHealth = "unhealthy"
+			if failedAuth == "" {
+				failedAuth = "unknown"
+			}
+			if server.AuthStatus == "notLoggedIn" {
+				failedAuth = "unauthenticated"
+			}
+			continue
 		}
 		if server.RuntimeStatus != "" && server.RuntimeStatus != "connected" {
 			continue
@@ -167,16 +203,19 @@ func parseCodexMCPStatus(raw json.RawMessage) (string, string, bool) {
 			}
 		}
 	}
+	if failedHealth != "" {
+		return failedHealth, failedAuth, true
+	}
 	return "", "", false
 }
 
 // overlayMCPProbe fills only the fields that responses have not established.
 func overlayMCPProbe(c *cullyStats, r mcpProbeResult) {
 	known := func(v string) bool { return v != "" && v != "unknown" }
-	if !known(c.Health) && known(r.Health) {
+	if !known(c.Health) {
 		c.Health, c.Probed = r.Health, true
 	}
-	if !known(c.Auth) && known(r.Auth) {
+	if !known(c.Auth) {
 		c.Auth, c.Probed = r.Auth, true
 	}
 }

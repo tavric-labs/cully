@@ -84,7 +84,7 @@ func RunPane(agentName string, args []string, input, output *os.File) error {
 	defer pruneJournals()
 	cmd := exec.Command(agent.Binary, agent.args(args)...)
 	cmd.Env = append(os.Environ(), "CULLY_PANE_SESSION="+session, "CULLY_SESSION="+session, "CULLY_AGENT="+agent.Name)
-	view := sessionView{Agent: agent.Name, Project: currentDir(), Branch: gitBranch(currentDir()), Started: time.Now(), Daemon: isDaemonRunning(), Terminal: profile}
+	view := sessionView{HealthBar: true, Agent: agent.Name, Project: currentDir(), Branch: gitBranch(currentDir()), Started: time.Now(), Daemon: isDaemonRunning(), Terminal: profile}
 	restoredSession := false
 	lastSessionSave := time.Time{}
 	refreshSession := func() {
