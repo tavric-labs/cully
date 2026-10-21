@@ -81,8 +81,8 @@ func parseEval(args []string) (evalOptions, error) {
 	fs.StringVar(&o.project, "project", "personal", "advisor: only transcript folders containing this text")
 	fs.IntVar(&o.max, "max", 40, "advisor: most sessions to replay")
 	fs.IntVar(&o.live, "live", 0, "advisor: also ask the real advisor about this many checkpoints (uses model tokens and web search)")
-	fs.StringVar(&o.agent, "agent", "claude", "advisor: agent for the live pass")
-	fs.StringVar(&o.dir, "dir", "", "advisor: Claude projects directory (default ~/.claude/projects)")
+	fs.StringVar(&o.agent, "agent", "", "advisor: history and live-pass agent (default: cully run agent, otherwise detected)")
+	fs.StringVar(&o.dir, "dir", "", "advisor: override the selected agent's transcript directory")
 	fs.StringVar(&o.mcpURL, "mcp-url", "", "memory: MCP endpoint that needs no sign-in, such as the local stack")
 	fs.Float64Var(&o.semanticMin, "semantic-min", 0, "memory: fail when semantic recall is below this (0 reports only)")
 	fs.BoolVar(&o.asJSON, "json", false, "print JSON")
@@ -123,12 +123,17 @@ func RunEval(w io.Writer, args []string) error {
 	if err != nil {
 		return err
 	}
-	if o.dir == "" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return err
+	for _, suite := range o.suites {
+		if suite == "advisor" {
+			src, err := measurementSource(o.agent, o.dir)
+			if err != nil {
+				return err
+			}
+			o.agent = src.Agent
+			if o.dir == "" {
+				o.dir = transcriptRoot(src.Agent)
+			}
 		}
-		o.dir = filepath.Join(home, ".claude", "projects")
 	}
 	var results []EvalSuite
 	for _, name := range o.suites {
@@ -636,8 +641,16 @@ func evalAdvisorWithDetectors(o evalOptions, wasteScan func([][]byte) *TokenWast
 		s.check("catches an invented figure", len(bad) == 1, "ungrounded %v", bad)
 	})
 	// Real transcripts are read outside the isolated home: the user's own files.
+	src := transcriptSources[o.agent]
+	if o.agent == "" {
+		src = transcriptSources["claude"]
+	}
+	if src.Agent == "" {
+		s.note("replay unavailable for %s", agentDisplayName(o.agent))
+		return s
+	}
 	if _, err := os.Stat(o.dir); err != nil {
-		s.note("replay skipped: no Claude transcripts at %s", o.dir)
+		s.note("replay skipped: no %s transcripts at %s", src.Name, o.dir)
 		if o.live > 0 {
 			s.check("live advisor ran", false, "requested --live but transcript source is unavailable")
 		}
@@ -645,7 +658,7 @@ func evalAdvisorWithDetectors(o evalOptions, wasteScan func([][]byte) *TokenWast
 	}
 	isolated(func(string) {
 		var err error
-		points, sessions, err = replayTranscripts(o.dir, o.project, o.days, o.max)
+		points, sessions, err = replayAgentTranscripts(src, o.dir, o.project, o.days, o.max)
 		if err != nil {
 			s.note("replay failed: %v", err)
 		}
@@ -661,8 +674,12 @@ func evalAdvisorWithDetectors(o evalOptions, wasteScan func([][]byte) *TokenWast
 	ev.Context = summarizeContext(sessions)
 	s.note("replayed %d sessions: advice precision %.0f%%, recall %.0f%% (hindsight proxies: waste followed, not that the advice was followed)", ev.Sessions, ev.Precision*100, ev.Recall*100)
 	c := ev.Context
-	s.note("file-level context (ContextBench definitions; the session's edited files stand in for gold): redundancy %.2f over all sessions; recall %.2f, precision %.2f, AUC-Cov %.2f over %d sessions that edited files",
-		c.Redundancy, c.Recall, c.Precision, c.AUCCov, c.WithEdits)
+	if src.Agent == "claude" {
+		s.note("file-level context (ContextBench definitions; the session's edited files stand in for gold): redundancy %.2f over all sessions; recall %.2f, precision %.2f, AUC-Cov %.2f over %d sessions that edited files",
+			c.Redundancy, c.Recall, c.Precision, c.AUCCov, c.WithEdits)
+	} else {
+		s.note("file-level context is unavailable for %s shell history", src.Name)
+	}
 	if o.live > 0 {
 		isolated(func(string) { ev.runLive(o.agent, points, o.live) })
 		if len(ev.Live) == 0 {

@@ -48,7 +48,7 @@ cully harness --all --only personal
 | `--all` | Off | Measure all project folders and rank the top ten by oversized output |
 | `--only TEXT` | No filter | With `--all`, include folder names containing this text |
 
-The sample uses file modification time and skips transcripts shorter than 20 nonempty lines or unreadable transcripts. Nested subagent transcripts are excluded to avoid counting the same work twice. `--all` measures projects separately before adding totals. Codex and Cursor transcript histories are not included.
+The sample uses file modification time and skips transcripts shorter than 20 nonempty lines or unreadable transcripts. Nested subagent transcripts are excluded to avoid counting the same work twice. `--all` measures projects separately before adding totals. Cursor transcript history is not included.
 
 Use tokens per session as a baseline: change one setup component, do a comparable amount of work, then rerun. Different tasks and session lengths can change the number. A smaller result does not establish that a component caused savings. With no eligible sessions, Cully says nothing was measured.
 

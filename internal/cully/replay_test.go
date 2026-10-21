@@ -18,11 +18,17 @@ var replayT0 = time.Date(2026, 10, 8, 10, 31, 0, 0, time.UTC)
 
 func at(d time.Duration) time.Time { return replayT0.Add(d) }
 
-func utcLocal(t *testing.T) {
-	t.Helper()
-	old := time.Local
+func TestMain(m *testing.M) {
+	// Set the fixture timezone before tests start background panel workers.
+	// Per-test writes race with time.Now in those workers.
 	time.Local = time.UTC
-	t.Cleanup(func() { time.Local = old })
+	// Run in a clean Cully environment. From inside a Cully terminal, or an
+	// agent Cully wraps, these are set, and some behavior depends on them: a
+	// statusline prints nothing inside a pane, and measurements follow the agent.
+	for _, name := range []string{"CULLY_PANE_SESSION", "CULLY_SESSION", "CULLY_AGENT", "MODEL_HINT_GUARD", "CULLY_MCP_PROBE_SESSION", "CULLY_MCP_METRICS_SESSION", "CULLY_MCP_ORIGIN"} {
+		os.Unsetenv(name)
+	}
+	os.Exit(m.Run())
 }
 
 // replayFixture is a session with an explore stage, an implement stage, a
@@ -189,7 +195,6 @@ func TestReplayDelayCompressesGaps(t *testing.T) {
 }
 
 func TestBuildStepsAndFooter(t *testing.T) {
-	utcLocal(t)
 	steps := buildSteps(replayFixture())
 	var lines []string
 	for _, s := range steps {
@@ -246,7 +251,6 @@ func fixtureDoc(t *testing.T) replayDoc {
 }
 
 func TestInstantTranscriptGraphAndSummary(t *testing.T) {
-	utcLocal(t)
 	doc := fixtureDoc(t)
 	out := renderReplayText(doc, replayOptions{}, 100, false)
 	for _, want := range []string{
@@ -280,7 +284,6 @@ func TestInstantTranscriptGraphAndSummary(t *testing.T) {
 }
 
 func TestPartialDataIsStated(t *testing.T) {
-	utcLocal(t)
 	noPaths := []journalEvent{
 		{Time: at(0), Class: journalStart, Agent: "claude"},
 		{Time: at(time.Minute), Class: journalEdit},
@@ -331,7 +334,6 @@ func TestReplayJSONGolden(t *testing.T) {
 }
 
 func TestRunReplayEndToEndAndPrivacy(t *testing.T) {
-	utcLocal(t)
 	cwd := journalTestEnv(t)
 	secret := "TOPSECRET-BODY"
 	recordJournalTool("claude", "s1", makeToolEvent(cwd, "Write", map[string]string{"file_path": "a.go", "content": secret}), 'E', false)

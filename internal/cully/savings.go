@@ -8,19 +8,19 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 	"time"
 )
 
-// Savings answers "does Cully cost more tokens than it saves?" from Claude Code
-// transcripts. Cost is measured: bytes Cully injected into the conversation.
+// Savings answers "does Cully cost more tokens than it saves?" from the selected
+// agent's transcripts. Cost is measured: bytes Cully injected into the conversation.
 // Benefit is observational, not causal: sessions where Cully returned prior work
 // are compared with sessions where it did not, by how much the agent read and
 // searched before its first edit. Only counts are kept; no transcript text is
 // stored or printed.
 type Savings struct {
+	Agent                                     string
 	Sessions, WithHit, WithMiss, WithoutCully int
 	Calls, EmptyContext                       int
 	// Tokens are estimated at four characters each.
@@ -68,6 +68,10 @@ type svItem struct {
 }
 
 func scanSession(r io.Reader) sessionCost {
+	return scanAgentSession(r, nil)
+}
+
+func scanAgentSession(r io.Reader, normalize func([]byte) []byte) sessionCost {
 	sc := sessionCost{byTool: map[string]*ToolCost{}}
 	names := map[string]string{} // tool_use id -> name
 	// Transcripts can repeat an entry; count each tool call and result once.
@@ -75,6 +79,9 @@ func scanSession(r io.Reader) sessionCost {
 	reader := bufio.NewReaderSize(r, 1<<20)
 	for {
 		line, err := reader.ReadBytes('\n')
+		if normalize != nil {
+			line = normalize(line)
+		}
 		if len(bytes.TrimSpace(line)) > 0 {
 			var e tEntry
 			if json.Unmarshal(line, &e) == nil {
@@ -152,27 +159,26 @@ func meanExplore(total int64, n int) int64 {
 // directory), limited to sessions modified since the cutoff and, when project
 // is set, to directories whose name contains it.
 func ComputeSavings(root, project string, since time.Time) (Savings, error) {
+	return computeAgentSavings(transcriptSources["claude"], root, project, since)
+}
+
+func computeAgentSavings(src transcriptSource, root, project string, since time.Time) (Savings, error) {
 	var s Savings
+	s.Agent = src.Agent
 	s.ByTool = map[string]*ToolCost{}
 	var hitSum, missSum, noneSum int64
-	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
-		if err != nil || d.IsDir() || !strings.HasSuffix(path, ".jsonl") {
-			return nil
+	for _, file := range src.Files(root, "", since) {
+		if !strings.Contains(file.Project, project) {
+			continue
 		}
-		if project != "" && !strings.Contains(filepath.Base(filepath.Dir(path)), project) {
-			return nil
-		}
-		if info, err := d.Info(); err != nil || info.ModTime().Before(since) {
-			return nil
-		}
-		f, err := os.Open(path)
+		f, err := os.Open(file.Path)
 		if err != nil {
-			return nil
+			continue
 		}
-		defer f.Close()
-		sc := scanSession(f)
+		sc := scanAgentSession(f, src.Normalize)
+		f.Close()
 		if !sc.edited {
-			return nil // conversation-only sessions say nothing about exploration cost
+			continue // conversation-only sessions say nothing about exploration cost
 		}
 		s.Sessions++
 		s.Calls += sc.cullyCalls
@@ -201,10 +207,6 @@ func ComputeSavings(root, project string, since time.Time) (Savings, error) {
 			s.WithoutCully++
 			noneSum += sc.explore
 		}
-		return nil
-	})
-	if err != nil {
-		return s, err
 	}
 	s.ExploreHit = meanExplore(hitSum, s.WithHit)
 	s.ExploreMiss = meanExplore(missSum, s.WithMiss)
@@ -234,6 +236,9 @@ func ComputeSavings(root, project string, since time.Time) (Savings, error) {
 // Write prints the report. The cost lines are measured; the saving is an estimate.
 func (s Savings) Write(w io.Writer, days int) {
 	fmt.Fprintf(w, "CULLY TOKEN IMPACT  (last %d days, %d sessions that edited code)\n\n", days, s.Sessions)
+	if s.Agent != "" {
+		fmt.Fprintf(w, "  Source: %s transcripts\n\n", agentDisplayName(s.Agent))
+	}
 	cost := s.ResultTokens + s.ArgTokens + s.SchemaTokens
 	fmt.Fprintf(w, "  Cost (measured, ~4 chars/token)\n")
 	fmt.Fprintf(w, "    Cully results injected   %8d tokens in %d calls\n", s.ResultTokens, s.Calls)
@@ -255,7 +260,11 @@ func (s Savings) Write(w io.Writer, days int) {
 	fmt.Fprintf(w, "    Without Cully              %4d  mean %7d\n", s.WithoutCully, s.ExploreNone)
 	fmt.Fprintf(w, "    Estimated saved            %8d tokens\n\n", s.EstimatedSaved)
 	verdict := "Cully is saving tokens"
-	if s.NetTokens < 0 {
+	if s.Sessions == 0 {
+		verdict = "no sessions with a recognized edit were found"
+	} else if s.Calls == 0 {
+		verdict = "no named Cully calls were observed in eligible sessions"
+	} else if s.NetTokens < 0 {
 		verdict = "Cully is costing more than it saves"
 	}
 	fmt.Fprintf(w, "  Net %+d tokens: %s.\n  Confidence: %s.\n", s.NetTokens, verdict, s.Confidence)
@@ -270,18 +279,16 @@ func RunSavings(w io.Writer, args []string) error {
 	days := fs.Int("days", 14, "look back this many days")
 	project := fs.String("project", "", "only transcript folders containing this text")
 	asJSON := fs.Bool("json", false, "print JSON")
-	root := fs.String("dir", "", "Claude projects directory (default ~/.claude/projects)")
+	root := fs.String("dir", "", "override the selected agent's transcript directory")
+	agent := fs.String("agent", "", "agent whose history to measure (default: cully run agent, otherwise detected)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	if *root == "" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return err
-		}
-		*root = filepath.Join(home, ".claude", "projects")
+	src, err := measurementSource(*agent, *root)
+	if err != nil {
+		return err
 	}
-	s, err := ComputeSavings(*root, *project, time.Now().AddDate(0, 0, -*days))
+	s, err := computeAgentSavings(src, *root, *project, time.Now().AddDate(0, 0, -*days))
 	if err != nil {
 		return err
 	}

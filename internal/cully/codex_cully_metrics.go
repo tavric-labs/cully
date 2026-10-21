@@ -31,6 +31,9 @@ func cullyStatsFile(session string) string {
 
 func cullyTool(name string) string {
 	name = strings.ToLower(name)
+	if cullyToolName.MatchString(name) {
+		return name
+	}
 	for _, prefix := range []string{"mcp__cully__", "mcp__cully.", "mcp.cully."} {
 		if index := strings.LastIndex(name, prefix); index >= 0 {
 			tool := name[index+len(prefix):]

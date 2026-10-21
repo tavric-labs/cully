@@ -5,7 +5,7 @@ description: Run one Cully stack for multiple people with private, per-user memo
 
 # Deploy Cully for a team
 
-This guide is for the company ops team running Cully for several people. For your own laptop, use the [quickstart](/quickstart). Everyone connects to the same public MCP endpoint and signs in through the company's identity provider. Memory remains private to each person: `personal` and `company` organize records and do not share them. Separate [workspace operations](/team-workflows) provide explicitly authorized project tasks, checkpoints and published lessons.
+This guide is for the ops team running Cully for several people. For your own laptop, use the [quickstart](/quickstart). Everyone connects to the same public MCP endpoint and signs in using the configured methods: LDAP, Google, GitHub or an OIDC/OAuth provider. Memory remains private to each person: `personal` and `company` organize records and do not share them. Separate [workspace operations](/team-workflows) provide explicitly authorized project tasks, checkpoints and published lessons.
 
 The memory services and the advisor are installed in different places:
 
@@ -29,7 +29,8 @@ flowchart LR
     Mem0 --> Vector[(pgvector database)]
   end
   Agent -->|OAuth sign-in| Auth[MCP Auth or compatible server]
-  Auth -->|OIDC or OAuth 2.0| IdP[Company identity provider]
+  Auth -->|OIDC or OAuth 2.0| IdP[Google, GitHub or configured provider]
+  Auth -->|LDAPS or StartTLS| Directory[LDAP directory]
   Agent -->|MCP tools and bearer token| MCP[Cully MCP]
 ```
 
@@ -97,7 +98,7 @@ For a stack created by `cully setup --all`, review the generated files under `~/
 ## Connect sign-in
 
 1. Choose the public MCP URL, such as `https://mcp.example.com/mcp`, and an authorization-server URL. The exact MCP URL must be the token's resource audience.
-2. Configure [MCP Auth](https://github.com/tavric-labs/mcp-auth/blob/main/docs/auth-server.md#connect-an-organizations-identity-provider) or a compatible authorization server with the company's identity provider. Grant `tools:read` and `tools:write` for the MCP resource.
+2. Choose LDAP, Google, GitHub or generic OIDC/OAuth through [MCP Auth's login-method configuration](https://github.com/tavric-labs/mcp-auth/blob/main/docs/login-methods.md), or use a compatible authorization server. See [Choose login methods](/oauth#choose-login-methods) for the Cully integration and release requirement. Grant `tools:read` and `tools:write` for the MCP resource.
 3. Configure Cully MCP with `CULLY_MCP_AUTH_MODE=oauth`, the issuer, exact resource URL and JWKS URL. The [configuration reference](/configuration#manual-mcp-service-settings) lists the service variables.
 4. Give each person the public MCP URL. They pick their agent and install and connect with:
 

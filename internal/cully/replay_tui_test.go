@@ -34,7 +34,6 @@ func goldenCompare(t *testing.T, name, got string) {
 }
 
 func TestStepTranscriptFits(t *testing.T) {
-	utcLocal(t)
 	doc := fixtureDoc(t)
 	for _, width := range []int{80, 120, 200} {
 		out := renderReplayText(doc, replayOptions{}, width, false)
@@ -51,7 +50,6 @@ func TestStepTranscriptFits(t *testing.T) {
 
 func newTestModel(t *testing.T, w, h int) *replayModel {
 	t.Helper()
-	utcLocal(t)
 	return newReplayModel(fixtureDoc(t), replayOptions{Speed: 1}, w, h, false)
 }
 
@@ -214,7 +212,6 @@ func TestRenderFramesFitAt80_120_200(t *testing.T) {
 }
 
 func TestFilePanelHeatAndHotspots(t *testing.T) {
-	utcLocal(t)
 	steps := buildSteps(replayFixture())
 	panel := strings.Join(renderFilePanel(steps, len(steps), "", 60, 20, false), "\n")
 	for _, want := range []string{"FILE ACTIVITY (3)", "internal/auth/", "~ resource.go ████ ×4 ▲", "+ resource_test.go", "− helper.go"} {
@@ -233,7 +230,6 @@ func TestFilePanelHeatAndHotspots(t *testing.T) {
 }
 
 func TestScrubberMarksLoopsAndFailures(t *testing.T) {
-	utcLocal(t)
 	doc := fixtureDoc(t)
 	lines := renderScrubber(doc, at(10*time.Minute), at(3*time.Minute), at(4*time.Minute), 100, false)
 	if len(lines) != 2 || !strings.Contains(lines[0], "✕") || !strings.Contains(lines[0], "⚠") {
@@ -251,7 +247,6 @@ func TestScrubberMarksLoopsAndFailures(t *testing.T) {
 // HTML
 
 func TestReplayHTMLStructureAndOffline(t *testing.T) {
-	utcLocal(t)
 	page, err := renderReplayHTML(fixtureDoc(t))
 	if err != nil {
 		t.Fatal(err)
@@ -305,7 +300,6 @@ func TestReplayHTMLStructureAndOffline(t *testing.T) {
 }
 
 func TestReplayHTMLEscapesHostileText(t *testing.T) {
-	utcLocal(t)
 	hostile := `<img src=x onerror=alert(1)>/</script><script>alert(2)</script>&"'.go`
 	events := []journalEvent{
 		{Time: at(0), Agent: "claude", Class: journalStart},
@@ -340,7 +334,6 @@ func TestReplayHTMLEscapesHostileText(t *testing.T) {
 }
 
 func TestWriteReplayHTMLFile(t *testing.T) {
-	utcLocal(t)
 	dir := t.TempDir()
 	path := filepath.Join(dir, "out", "r.html")
 	if err := writeReplayHTML(path, fixtureDoc(t)); err != nil {

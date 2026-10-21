@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 0.23.0
+
+- Run the test suite in a clean Cully environment. Two statusline tests failed for anyone running them from inside a Cully terminal, because `CULLY_PANE_SESSION` and related variables made the statusline correctly print nothing; the suite now clears them.
+
+- Make savings, advisor replay and the impact transcript comparison follow the agent selected by `cully run`, with Codex history support and explicit unavailable results for unsupported agents. Check MCP connections through the selected Claude Code, Codex or Cursor CLI without a model turn, and keep replay tool/result counts consistent across checkpoints.
+
+- Prepare a separate Cully deployment example for native LDAP, Google and other mcp-auth login methods. The example requires an explicitly selected mcp-auth release containing pluggable login support; the existing Keycloak setup is unchanged.
+
 ## 0.22.0
 
 - Describe Cully as a self-improving harness on the website, README and docs: a new Self-improving section, the improve window, task and impact evaluation, and which agents each measurement reads. Capabilities lists the scheduled self-evaluation and task efficiency evaluation as partial where they are not yet observed over a long run or not controlled.

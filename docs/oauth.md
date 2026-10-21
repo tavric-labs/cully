@@ -5,11 +5,73 @@ description: Set up OAuth when several people use a Cully server over HTTPS.
 
 # Add sign-in to Cully
 
-OAuth is optional for a company team deployment. You do not need it for `cully setup --agent codex --all` on your laptop. When an ops team deploys one Cully server for several people over HTTPS, OAuth lets each person sign in and access their own records. [MCP Auth](https://github.com/tavric-labs/mcp-auth) can connect Cully to the company's OIDC or OAuth 2.0 identity provider.
+OAuth is optional for a team deployment. You do not need it for `cully setup --agent codex --all` on your laptop. When an ops team deploys one Cully server for several people over HTTPS, OAuth lets each person sign in and access their own records. [MCP Auth](https://github.com/tavric-labs/mcp-auth) provides configurable login methods: LDAP, Google, GitHub and generic OIDC or OAuth 2.0 providers such as Keycloak, Okta and Entra ID.
 
-MCP Auth is an authorization broker, not the company's user directory. The identity provider handles user sign-in; MCP Auth issues a token for Cully's exact public MCP URL; Cully verifies that token and uses its subject as the record owner. Read tools require `tools:read` and writes require `tools:write`. The [team deployment diagram](/team-deployment) shows the service flow.
+MCP Auth checks identity through the configured login method and issues a token for Cully's exact public MCP URL. Cully verifies that token and uses its subject as the record owner. The coding agent uses OAuth for every method, including LDAP; directory passwords are entered in the browser and never put in the agent's MCP configuration. Read tools require `tools:read` and writes require `tools:write`. The [team deployment diagram](/team-deployment) shows the service flow.
 
-For the provided Docker Compose stack, prepare two public hostnames pointing to your machine: one for Cully MCP and one for MCP Auth. Ports 80 and 443 must be reachable so Caddy can serve HTTPS. You also need an identity provider where you can register a client, plus the [Cully CLI](/installation) and Docker Compose.
+## Choose login methods
+
+Pick the methods your deployment needs; Cully has no required provider. One
+MCP Auth server can offer several methods on the same login page.
+
+| Available service | Configure in MCP Auth |
+| --- | --- |
+| An LDAP directory | A native `ldap` method. MCP Auth searches the directory and binds as the user over LDAPS or StartTLS. An upstream OIDC server is not required. |
+| Google accounts | A `google` method with an OAuth client ID and secret; optionally restrict Google Workspace domains. |
+| GitHub accounts | A `github` method with an OAuth client ID and secret; optionally restrict organization membership. |
+| Keycloak, Okta, Entra ID or another OIDC/OAuth provider | An `oidc` method referencing that provider's connector. |
+
+The authoritative instructions for writing these configurations are in
+[MCP Auth's login-method guide](https://github.com/tavric-labs/mcp-auth/blob/main/docs/login-methods.md).
+It documents each method's fields, complete examples, callback registration,
+secret environment variables, directory searches and provider restrictions.
+Use its [connector guide](https://github.com/tavric-labs/mcp-auth/blob/main/docs/auth-server.md#oidc-or-plain-oauth-20)
+for generic OIDC/OAuth provider settings. Additional providers can use that
+connector interface; a new native protocol still needs an MCP Auth implementation.
+
+## Configure a deployment with login methods
+
+Login methods require an MCP Auth release containing
+[PR #32](https://github.com/tavric-labs/mcp-auth/pull/32). Select that released
+auth-server image explicitly. The
+[Compose example](https://github.com/tavric-labs/cully/tree/main/deploy/login-methods)
+provides Cully's service wiring, independent storage, LDAP and Google examples,
+and an environment file passed only to MCP Auth.
+
+1. Write `login-methods.json` using the MCP Auth guide and set
+   `MCP_AUTH_LOGIN_METHODS_FILE` to its mounted container path. For an `oidc`
+   method, also provide `MCP_AUTH_CONNECTORS_FILE`. Leave `MCP_AUTH_CONNECTOR`
+   unset in login-method mode.
+2. Supply only the environment variables referenced by your selected methods.
+   Google and GitHub need their app credentials; LDAP needs directory settings
+   and, when using a search account, that account's secret. Anonymous directory
+   searches must be enabled explicitly. Keep secret values out of JSON and Git.
+3. Set MCP Auth's issuer and resource to the public authorization-server URL and
+   exact public Cully MCP URL. Allow `tools:read` and `tools:write` for that resource.
+4. Configure Cully to trust the same issuer and resource, plus the issuer's JWKS
+   URL. For the example's dedicated authorization hostname:
+
+   ```dotenv
+   CULLY_MCP_AUTH_MODE=oauth
+   CULLY_AUTH_ISSUER=https://auth.example.com
+   CULLY_AUTH_RESOURCE=https://mcp.example.com/mcp
+   CULLY_JWKS_URL=https://auth.example.com/.well-known/jwks.json
+   ```
+
+Users connect their agent once and choose an offered method in the browser.
+Provider selection lives in MCP Auth's configuration; Cully's token validation
+does not change per provider. Accounts from different methods are separate
+identities by default. Review MCP Auth's subject-prefix guidance before changing
+the method on a deployment that already has user records.
+
+## Bundled Docker setup with one connector
+
+The bundled `cully setup --all --oauth` path below uses one OIDC/OAuth connector.
+For the login-method registry, use the configurable deployment above. Prepare
+two public hostnames pointing to your machine: one for Cully MCP and one for MCP
+Auth. Ports 80 and 443 must be reachable so Caddy can serve HTTPS. This connector
+path needs a provider where you can register a client, the [Cully CLI](/installation)
+and Docker Compose.
 
 ## Self-hosted Docker with MCP Auth
 

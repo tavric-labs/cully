@@ -161,10 +161,15 @@ func classifyCheckpoint(advised bool, future int) evalVerdict {
 // evalSession replays one transcript at 30, 60 and 90 percent of its length.
 func evalSession(path, cwd string, scratch string) []evalCheckpoint {
 	lines := readTranscriptLines(path)
+	return evalSessionLines(lines, path, cwd, scratch)
+}
+
+func evalSessionLines(lines [][]byte, path, cwd, scratch string) []evalCheckpoint {
 	if len(lines) < 40 {
 		return nil
 	}
 	session := strings.TrimSuffix(filepath.Base(path), ".jsonl")
+	totalWaste := scanWaste(lines).BigTokens
 	var out []evalCheckpoint
 	for _, percent := range []int{30, 60, 90} {
 		cut := len(lines) * percent / 100
@@ -184,12 +189,13 @@ func evalSession(path, cwd string, scratch string) []evalCheckpoint {
 		os.Setenv("CULLY_ANALYZE_PROMPTS", t)
 		_ = os.Remove(prefix)
 		seen := scanWaste(lines[:cut])
-		future := scanWaste(lines[cut:])
+		// Keep call/result pairing and duplicate IDs across the checkpoint.
+		futureTokens := totalWaste - seen.BigTokens
 		advised := sig.WasteTokens > 0
 		out = append(out, evalCheckpoint{
 			Session: session, Percent: percent, Advised: advised,
-			SeenWaste: seen.BigTokens, FutureWaste: future.BigTokens,
-			Verdict: classifyCheckpoint(advised, future.BigTokens),
+			SeenWaste: seen.BigTokens, FutureWaste: futureTokens,
+			Verdict: classifyCheckpoint(advised, futureTokens),
 			Signals: formatSignals(sig), Project: cwd,
 		})
 	}
@@ -359,39 +365,53 @@ func truncateRunes(s string, n int) string {
 // replayTranscripts replays the most recent Claude transcripts whose project
 // folder contains project, newest first.
 func replayTranscripts(root, project string, days, max int) (points []evalCheckpoint, sessions []SessionContext, err error) {
+	return replayAgentTranscripts(transcriptSources["claude"], root, project, days, max)
+}
+
+func replayAgentTranscripts(src transcriptSource, root, project string, days, max int) (points []evalCheckpoint, sessions []SessionContext, err error) {
 	scratch, err := os.MkdirTemp("", "cully-eval-")
 	if err != nil {
 		return nil, nil, err
 	}
 	defer os.RemoveAll(scratch)
 	since := time.Now().AddDate(0, 0, -days)
-	type found struct {
-		path string
-		mod  time.Time
+	var paths []transcriptFile
+	for _, file := range src.Files(root, "", since) {
+		if strings.Contains(file.Project, project) {
+			paths = append(paths, file)
+		}
 	}
-	var paths []found
-	_ = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
-		if err != nil || d.IsDir() || !strings.HasSuffix(path, ".jsonl") {
-			return nil
-		}
-		if !strings.Contains(filepath.Base(filepath.Dir(path)), project) {
-			return nil
-		}
-		if info, err := d.Info(); err == nil && !info.ModTime().Before(since) {
-			paths = append(paths, found{path, info.ModTime()})
-		}
-		return nil
-	})
-	sort.Slice(paths, func(i, j int) bool { return paths[i].mod.After(paths[j].mod) })
+	sort.Slice(paths, func(i, j int) bool { return paths[i].Mod.After(paths[j].Mod) })
 	if len(paths) > max {
 		paths = paths[:max]
 	}
 	cwd, _ := os.Getwd()
 	for _, p := range paths {
-		got := evalSession(p.path, cwd, scratch)
+		lines := readTranscriptLines(p.Path)
+		if src.Normalize != nil {
+			var normalized [][]byte
+			for _, line := range lines {
+				if line = src.Normalize(line); len(line) > 0 {
+					normalized = append(normalized, line)
+				}
+			}
+			lines = normalized
+		}
+		projectDir := cwd
+		if src.Agent == "codex" {
+			projectDir = p.Project
+		}
+		got := evalSessionLines(lines, p.Path, projectDir, scratch)
 		if len(got) > 0 {
+			for i := range got {
+				got[i].Signals = "active_agent=" + src.Agent + "\n" + got[i].Signals
+			}
 			points = append(points, got...)
-			sessions = append(sessions, measureSessionContext(readTranscriptLines(p.path)))
+			if src.Agent == "claude" {
+				sessions = append(sessions, measureSessionContext(lines))
+			} else {
+				sessions = append(sessions, SessionContext{})
+			}
 		}
 	}
 	return points, sessions, nil
@@ -418,10 +438,9 @@ func (ev *AdvisorEval) runLive(agent string, points []evalCheckpoint, n int) {
 			picked, quiet = append(picked, quiet[0]), quiet[1:]
 		}
 	}
-	cwd, _ := os.Getwd()
 	for _, p := range picked {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-		r := liveAdvice(ctx, agent, cwd, p.Signals)
+		r := liveAdvice(ctx, agent, p.Project, p.Signals)
 		cancel()
 		r.Session, r.Verdict, r.Quiet = p.Session, string(p.Verdict), !p.Advised
 		r.Cited, r.Ungrounded = groundFigures(r.Lines, p.Signals)

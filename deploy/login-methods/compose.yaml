@@ -1,0 +1,155 @@
+# Separate deployment using mcp-auth's login-method registry (PR #32).
+# Select a released MCP_AUTH_IMAGE containing that feature before starting.
+name: cully-login-methods
+services:
+  db:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: cully
+      POSTGRES_USER: cully
+      POSTGRES_PASSWORD: ${CULLY_DB_PASSWORD:?set CULLY_DB_PASSWORD}
+    volumes: [db-data:/var/lib/postgresql/data]
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U cully -d cully']
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    networks: [private]
+  mem0-db:
+    image: pgvector/pgvector:pg17
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: postgres
+      POSTGRES_USER: mem0
+      POSTGRES_PASSWORD: ${CULLY_MEM0_DB_PASSWORD:?set CULLY_MEM0_DB_PASSWORD}
+    volumes:
+      - mem0-data:/var/lib/postgresql/data
+      - ../self-hosted/mem0-init-db.sql:/docker-entrypoint-initdb.d/10-mem0-app.sql:ro
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U mem0 -d postgres']
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    networks: [private]
+  mem0:
+    image: ghcr.io/tavric-labs/cully-mem0:${CULLY_IMAGE_TAG:?set CULLY_IMAGE_TAG}
+    restart: unless-stopped
+    command: [sh, -c, 'alembic upgrade head && uvicorn main:app --host 0.0.0.0 --port 8000']
+    environment:
+      POSTGRES_HOST: mem0-db
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: postgres
+      POSTGRES_USER: mem0
+      POSTGRES_PASSWORD: ${CULLY_MEM0_DB_PASSWORD:?set CULLY_MEM0_DB_PASSWORD}
+      POSTGRES_COLLECTION_NAME: cully_memories
+      APP_DB_NAME: mem0_app
+      HISTORY_DB_PATH: /app/history/history.db
+      ADMIN_API_KEY: ${CULLY_MEM0_API_KEY:?set CULLY_MEM0_API_KEY}
+      JWT_SECRET: ${CULLY_MEM0_JWT_SECRET:?set CULLY_MEM0_JWT_SECRET}
+      AUTH_DISABLED: "false"
+      MEM0_TELEMETRY: "false"
+    volumes: [mem0-history:/app/history]
+    depends_on:
+      mem0-db:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/openapi.json')"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    networks: [private, edge]
+  migrate:
+    profiles: [ops]
+    image: ghcr.io/tavric-labs/cully-data:${CULLY_IMAGE_TAG:?set CULLY_IMAGE_TAG}
+    command: [migrate]
+    environment:
+      CULLY_DATABASE_URL: ${CULLY_DATABASE_URL:?set CULLY_DATABASE_URL}
+    depends_on:
+      db:
+        condition: service_healthy
+    networks: [private]
+  data-api:
+    image: ghcr.io/tavric-labs/cully-data:${CULLY_IMAGE_TAG:?set CULLY_IMAGE_TAG}
+    restart: unless-stopped
+    environment:
+      CULLY_DATABASE_URL: ${CULLY_DATABASE_URL:?set CULLY_DATABASE_URL}
+      CULLY_DATA_API_TOKEN: ${CULLY_DATA_API_TOKEN:?set CULLY_DATA_API_TOKEN}
+      CULLY_MEM0_URL: http://mem0:8000
+      CULLY_MEM0_API_KEY: ${CULLY_MEM0_API_KEY:?set CULLY_MEM0_API_KEY}
+    depends_on:
+      db:
+        condition: service_healthy
+      mem0:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, /cully-data, health]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+    networks: [private]
+  mcp:
+    image: ghcr.io/tavric-labs/cully-mcp:${CULLY_IMAGE_TAG:?set CULLY_IMAGE_TAG}
+    restart: unless-stopped
+    environment:
+      CULLY_HOST: 0.0.0.0
+      CULLY_DATA_API_URL: http://data-api:8083
+      CULLY_DATA_API_TOKEN: ${CULLY_DATA_API_TOKEN:?set CULLY_DATA_API_TOKEN}
+      CULLY_MCP_AUTH_MODE: oauth
+      CULLY_AUTH_ISSUER: ${CULLY_AUTH_ISSUER:?set CULLY_AUTH_ISSUER}
+      CULLY_AUTH_RESOURCE: ${CULLY_AUTH_RESOURCE:?set exact public MCP URL}
+      CULLY_JWKS_URL: ${CULLY_AUTH_ISSUER:?set CULLY_AUTH_ISSUER}/.well-known/jwks.json
+    depends_on:
+      data-api:
+        condition: service_healthy
+    ports: ["127.0.0.1:${CULLY_MCP_PORT:-3393}:8080"]
+    networks: [private, edge]
+  mcp-auth:
+    image: ${MCP_AUTH_IMAGE:?select a released mcp-auth image containing PR 32}
+    restart: unless-stopped
+    depends_on:
+      auth-state-init:
+        condition: service_completed_successfully
+    # Only provider-specific environment variables belong in this file.
+    # Arbitrary *_env references in login-methods.json/connectors.json work here.
+    env_file: ["${MCP_AUTH_PROVIDER_ENV_FILE:-./provider.env}"]
+    environment:
+      MCP_AUTH_ISSUER: ${CULLY_AUTH_ISSUER:?set CULLY_AUTH_ISSUER}
+      MCP_AUTH_RESOURCES: ${CULLY_AUTH_RESOURCE:?set exact public MCP URL}
+      MCP_AUTH_RESOURCE_SCOPES: '{"${CULLY_AUTH_RESOURCE:?set exact public MCP URL}":["tools:read","tools:write"]}'
+      MCP_AUTH_LOGIN_METHODS_FILE: /etc/mcp-auth/login-methods.json
+      MCP_AUTH_CONNECTORS_FILE: /etc/mcp-auth/connectors.json
+      MCP_AUTH_CONNECTOR: ""
+      MCP_AUTH_PRIVATE_KEY_FILE: /run/secrets/signing_key
+      MCP_AUTH_STORE: sqlite
+      MCP_AUTH_DATABASE_URL: /var/lib/mcp-auth/state.db
+      MCP_AUTH_REGISTRATION_ENABLED: "true"
+      MCP_AUTH_REQUIRE_HTTPS: "true"
+      MCP_AUTH_TRUST_PROXY_TLS: "true"
+    secrets: [signing_key]
+    volumes:
+      - ./config:/etc/mcp-auth:ro
+      - auth-state:/var/lib/mcp-auth
+    ports: ["127.0.0.1:${CULLY_AUTH_PORT:-8081}:8080"]
+    networks: [edge]
+  auth-state-init:
+    # The auth image runs as UID 65532; a new volume otherwise belongs to root.
+    image: postgres:17
+    user: "0:0"
+    entrypoint: [/bin/sh, -c]
+    command: ['chown 65532:65532 /state && chmod 700 /state']
+    volumes: [auth-state:/state]
+    network_mode: none
+volumes:
+  db-data:
+  mem0-data:
+  mem0-history:
+  auth-state:
+secrets:
+  signing_key:
+    file: ./.secrets/signing-key.pem
+networks:
+  private:
+    internal: true
+  edge:
