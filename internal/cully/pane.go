@@ -90,9 +90,6 @@ func RunPane(agentName string, args []string, input, output *os.File) error {
 	refreshSession := func() {
 		if !restoredSession {
 			restoredSession = restoreCodexSessionView(session, &view)
-			if restoredSession {
-				go checkCodexMCPHealth(reviewContext, session, view.Project)
-			}
 		}
 	}
 	persistSession := func() {

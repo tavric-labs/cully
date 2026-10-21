@@ -323,8 +323,12 @@ func writeInjectedCost(w io.Writer, s Savings) {
 	if s.Calls == 0 {
 		return
 	}
+	agent := s.Agent
+	if agent == "" {
+		agent = "claude"
+	}
 	cost := s.ResultTokens + s.ArgTokens + s.SchemaTokens
-	fmt.Fprintf(w, "\n  Seen in your Claude transcripts (cully savings)\n")
+	fmt.Fprintf(w, "\n  Seen in your %s transcripts (cully savings)\n", agentDisplayName(agent))
 	fmt.Fprintf(w, "    Cully's calls injected ≈%s tokens across %d calls: results %s, arguments %s, schemas %s.\n",
 		compactCount(cost), s.Calls, compactCount(s.ResultTokens), compactCount(s.ArgTokens), compactCount(s.SchemaTokens))
 	fmt.Fprintf(w, "    The Net above does not subtract this. cully savings weighs it against exploration avoided and reports Net %s. Confidence: %s.\n", signedCount(s.NetTokens), s.Confidence)
@@ -354,13 +358,20 @@ func RunImpact(w io.Writer, args []string) error {
 	asJSON := fs.Bool("json", false, "print JSON")
 	showLog := fs.Bool("log", false, "also list recent events")
 	explain := fs.Bool("explain", false, "show how the Net token figure is built and what it does not count")
+	agent := fs.String("agent", "", "agent for the transcript comparison (default: cully run agent, otherwise detected)")
+	root := fs.String("dir", "", "override the selected agent's transcript directory")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	since := time.Now().AddDate(0, 0, -*days)
 	var perHit int64
-	if home, err := os.UserHomeDir(); err == nil {
-		perHit = observedPerHitSaving(filepath.Join(home, ".claude", "projects"), since)
+	src, sourceErr := measurementSource(*agent, *root)
+	var savings Savings
+	if sourceErr == nil {
+		savings, sourceErr = computeAgentSavings(src, *root, "", since)
+		if savings.WithHit >= 5 && savings.WithoutCully+savings.WithMiss >= 5 {
+			perHit = savings.EstimatedSaved / int64(savings.WithHit)
+		}
 	}
 	im := SummarizeImpact(readImpactEvents(impactLedgerFile(), since), *days, perHit)
 	if *asJSON {
@@ -371,10 +382,10 @@ func RunImpact(w io.Writer, args []string) error {
 	im.Write(w, *showLog)
 	if *explain {
 		im.WriteExplain(w)
-		if home, err := os.UserHomeDir(); err == nil {
-			if s, err := ComputeSavings(filepath.Join(home, ".claude", "projects"), "", since); err == nil {
-				writeInjectedCost(w, s)
-			}
+		if sourceErr == nil {
+			writeInjectedCost(w, savings)
+		} else {
+			fmt.Fprintf(w, "\n  Transcript comparison unavailable: %v.\n", sourceErr)
 		}
 	}
 	return nil

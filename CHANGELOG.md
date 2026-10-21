@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Make savings, advisor replay and the impact transcript comparison follow the agent selected by `cully run`, with Codex history support and explicit unavailable results for unsupported agents. Check MCP connections through the selected Claude Code, Codex or Cursor CLI without a model turn, and keep replay tool/result counts consistent across checkpoints.
+
 ## 0.22.0
 
 - Make measurements follow the agent you use. The panel's Waste row read only Claude transcripts, so Codex showed "no recent Claude sessions". The Harness column and `cully harness` now read the running agent's own sessions (Claude Code, or Codex from `~/.codex/sessions`), name it, and say "not measured for Cursor yet" where Cully cannot read the history. `cully harness --agent` and automatic detection choose the agent. `cully improve` plans with the running agent, or any installed one, instead of only Claude.

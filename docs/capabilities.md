@@ -86,7 +86,7 @@ See [team workflows](/team-workflows) for inputs, limits and roles.
 | --- | --- | --- |
 | Workflow hint from past sessions | Shipped | Narrow on purpose. |
 | [Impact ledger and savings report](/token-impact) | Shipped | Observed events and estimated costs; benefit comparisons are observational and Claude transcript based. |
-| Advisor replay evaluation | Shipped | Hindsight precision/recall proxies on selected Claude sessions; optional live model/research pass consumes tokens. |
+| Advisor replay evaluation | Shipped | Hindsight precision/recall proxies on selected Claude Code or Codex sessions, following the running agent; optional live model/research pass consumes tokens. |
 | Verified CLI updater | Shipped | `cully update`; preserves agent links and restarts an active local advisor. Services upgrade separately. |
 | Learned team workflow | Planned | |
 | Agent performance comparison | Planned | Needs measured outcomes first. See [product direction](/product-direction#later). |
@@ -103,6 +103,6 @@ See [team workflows](/team-workflows) for inputs, limits and roles.
 ## What Cully does not claim
 
 - Token costs and observed differences are estimates, not causal proof of savings or a productivity benchmark. A controlled benchmark remains on the [roadmap](/product-direction#next).
-- The harness audit reads Claude Code or Codex transcripts; `cully savings` and the advisor replay evaluation read Claude transcripts only, because Cully's Codex transcripts have not been checked against them. Raw transcript text is not persisted or uploaded by those measurements; an explicitly requested live advisor evaluation sends signal summaries to the configured adapter.
+- The harness audit, `cully savings` and advisor replay read Claude Code or Codex transcripts, following the running agent. Cursor and other agents without a validated history reader report measurement as unavailable. Named Codex MCP calls are measured when present; orchestrated calls may hide them. Codex file-level context metrics are unavailable. Raw transcript text is not uploaded by these measurements; an explicitly requested live advisor evaluation sends signal summaries to the configured adapter.
 - It does not see inside an agent's reasoning. It sees tool calls and results.
 - A missing signal is shown as missing, never guessed.

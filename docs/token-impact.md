@@ -10,9 +10,9 @@ Cully’s own lookups and advisor calls consume tokens. These tools help you ins
 | Question | Command | Source |
 | --- | --- | --- |
 | What did Cully observe or avoid? | `cully impact` | Local impact events from hooks and advisor activity |
-| How much did Cully inject, compared with early exploration? | `cully savings` | Local Claude transcripts from sessions that edited code |
+| How much did Cully inject, compared with early exploration? | `cully savings` | Local Claude Code or Codex transcripts from sessions that edited code |
 | Where are large tool results coming from? | `cully harness` | Recent sessions of the agent you use (Claude Code or Codex); see [harness](/harness) |
-| Would the advisor flag later oversized output? | `cully eval advisor` | Planted sessions, plus replayed Claude transcript checkpoints |
+| Would the advisor flag later oversized output? | `cully eval advisor` | Planted sessions, plus replayed Claude Code or Codex transcript checkpoints |
 
 ## Read the impact ledger
 
@@ -35,9 +35,12 @@ The CLI can add an observational memory-saving estimate when `cully savings` has
 cully savings --days 14
 cully savings --days 30 --project my-project --json
 cully savings --dir /path/to/claude/projects
+cully savings --agent codex --dir /path/to/codex/sessions
 ```
 
-The default source is `~/.claude/projects`. `--project TEXT` matches transcript folder names containing that text; use a distinctive value to keep the sample relevant. Only sessions containing an edit enter the comparison.
+Savings, advisor replay and the transcript comparison in `impact --explain` use the agent passed to `cully run` (`CULLY_AGENT`). Outside that terminal, they detect the agent with the newest history for this project. `--agent` overrides selection; `--dir` overrides that agent's history directory. Claude Code uses its configured `projects` directory and Codex its configured `sessions` directory. `--project TEXT` matches Claude folder names or Codex session working directories containing that text. Only sessions containing a recognized edit enter the savings comparison. Cursor and other agents without a validated history reader report that measurement is unavailable, without substituting Claude history.
+
+Codex measurements recognize named MCP calls and direct shell/tool events, including `apply_patch` edits. Calls hidden inside an orchestrator or edits performed by arbitrary shell scripts cannot be reconstructed. An absent named Cully call is not proof that Cully was never used. No cross-agent cohorts are combined.
 
 Cost includes Cully result text, call arguments and tool schemas found in the transcript, estimated at roughly four characters per token. The report also shows empty-lookup cost and per-tool results. This approximation is not the model’s tokenizer or invoice.
 
@@ -50,7 +53,7 @@ cully eval advisor --project personal --days 30 --max 20
 cully eval advisor --project my-project --max 10 --json
 ```
 
-The default is 30 days, up to 40 newest matching transcript files, filtered to folder names containing `personal`. The evaluator replays eligible sessions at 30%, 60% and 90% through the signal pipeline. It compares token-waste advice at each checkpoint with oversized output later in the same transcript, producing useful, low-value, missed and correct-quiet counts plus precision/recall proxies.
+The default is 30 days, up to 40 newest matching transcript files, filtered to projects containing `personal`. The evaluator replays eligible sessions at 30%, 60% and 90% through the signal pipeline. It compares token-waste advice at each checkpoint with oversized output later in the same transcript, producing useful, low-value, missed and correct-quiet counts plus precision/recall proxies. Tool IDs are counted once across checkpoints, including calls whose output arrives after the checkpoint. Codex shell history does not provide the file-level reads needed for ContextBench metrics, so those are reported as unavailable.
 
 These are hindsight proxies on the selected history. They do not establish advice quality on new tasks, correctness or actual savings. Small samples can move the scores sharply. This is a diagnostic tool, not an automated acceptance judge for unrelated UI, detection or documentation changes.
 

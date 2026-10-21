@@ -2,10 +2,12 @@ package cully
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"os/exec"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -68,24 +70,61 @@ func parseClaudeMCPList(out string) (health, auth string, found bool) {
 
 // claudeMCPList runs the agent CLI. It is a variable so tests need no CLI.
 var claudeMCPList = func(ctx context.Context) (string, error) {
-	out, err := exec.CommandContext(ctx, claudeExecutable(), "mcp", "list").Output()
+	out, err := mcpProbeCommand(ctx, claudeExecutable(), "mcp", "list").Output()
 	return string(out), err
 }
 
-// runMCPProbe probes now and then periodically until ctx ends. Only Claude
-// Code reports connection and authentication state this way.
+var cursorMCPTools = func(ctx context.Context) (string, error) {
+	out, err := mcpProbeCommand(ctx, "cursor-agent", "mcp", "list-tools", "cully").Output()
+	return string(out), err
+}
+
+func mcpProbeCommand(ctx context.Context, name string, args ...string) *exec.Cmd {
+	cmd := exec.CommandContext(ctx, name, args...)
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
+	cmd.WaitDelay = 2 * time.Second
+	for _, value := range os.Environ() {
+		key, _, _ := strings.Cut(value, "=")
+		switch key {
+		case "CULLY_PANE_SESSION", "CULLY_SESSION", "CULLY_AGENT", "MODEL_HINT_GUARD":
+			continue
+		}
+		cmd.Env = append(cmd.Env, value)
+	}
+	cmd.Env = append(cmd.Env, "MODEL_HINT_GUARD=1")
+	return cmd
+}
+
+// agentMCPProbe uses the selected agent's own connection and credentials.
+// Configuration or a stored OAuth token alone never proves a working connection.
+var agentMCPProbe = func(ctx context.Context, agent string) (string, string, bool) {
+	switch normalizeAgentID(agent) {
+	case "claude":
+		out, _ := claudeMCPList(ctx)
+		return parseClaudeMCPList(out)
+	case "codex":
+		return probeCodexMCP(ctx)
+	case "cursor":
+		out, err := cursorMCPTools(ctx)
+		if err == nil && strings.Contains(out, "cully_context") {
+			return "healthy", "authenticated", true
+		}
+	}
+	return "", "", false
+}
+
+// runMCPProbe probes now and periodically until ctx ends, without a model call.
 func runMCPProbe(ctx context.Context, agent string, p *mcpProber) {
-	if agent != "claude" || os.Getenv("CULLY_ANALYZE_DISABLE") == "1" {
+	if os.Getenv("CULLY_ANALYZE_DISABLE") == "1" {
 		return
 	}
 	for {
 		probeCtx, cancel := context.WithTimeout(ctx, 40*time.Second)
-		out, err := claudeMCPList(probeCtx)
+		health, auth, found := agentMCPProbe(probeCtx, agent)
 		cancel()
-		if err == nil || out != "" {
-			if health, auth, found := parseClaudeMCPList(out); found {
-				p.set(mcpProbeResult{Health: health, Auth: auth, At: time.Now()})
-			}
+		if found {
+			p.set(mcpProbeResult{Health: health, Auth: auth, At: time.Now()})
 		}
 		select {
 		case <-ctx.Done():
@@ -93,6 +132,42 @@ func runMCPProbe(ctx context.Context, agent string, p *mcpProber) {
 		case <-time.After(mcpProbeInterval):
 		}
 	}
+}
+
+// parseCodexMCPStatus requires discovered Cully tools as connection evidence.
+// authStatus describes the credential type, not whether those credentials work.
+func parseCodexMCPStatus(raw json.RawMessage) (string, string, bool) {
+	var result struct {
+		Data []struct {
+			Name          string                     `json:"name"`
+			Tools         map[string]json.RawMessage `json:"tools"`
+			RuntimeStatus string                     `json:"runtimeStatus"`
+			ToolsError    *string                    `json:"toolsError"`
+		} `json:"data"`
+	}
+	if json.Unmarshal(raw, &result) != nil {
+		return "", "", false
+	}
+	for _, server := range result.Data {
+		if server.Name != "cully" && !strings.HasPrefix(server.Name, "cully-") {
+			continue
+		}
+		if server.RuntimeStatus == "authenticationRequired" {
+			return "unhealthy", "unauthenticated", true
+		}
+		if server.RuntimeStatus == "failed" || server.ToolsError != nil {
+			return "unhealthy", "unknown", true
+		}
+		if server.RuntimeStatus != "" && server.RuntimeStatus != "connected" {
+			continue
+		}
+		for tool := range server.Tools {
+			if tool == "cully_context" {
+				return "healthy", "authenticated", true
+			}
+		}
+	}
+	return "", "", false
 }
 
 // overlayMCPProbe fills only the fields that responses have not established.

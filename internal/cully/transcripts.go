@@ -3,6 +3,7 @@ package cully
 import (
 	"bufio"
 	"encoding/json"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -30,11 +31,89 @@ type transcriptSource struct {
 	// Scan feeds one transcript line into the waste counters and returns the
 	// number of subagent delegations it records.
 	Scan func(w *TokenWaste, line []byte) int
+	// Normalize maps tool events to the shared measurement format in memory.
+	Normalize func([]byte) []byte
 }
 
 var transcriptSources = map[string]transcriptSource{
 	"claude": {Agent: "claude", Name: "Claude", Files: claudeTranscripts, Scan: scanWasteLine},
-	"codex":  {Agent: "codex", Name: "Codex", Files: codexTranscripts, Scan: scanCodexLine},
+	"codex":  {Agent: "codex", Name: "Codex", Files: codexTranscripts, Scan: scanCodexLine, Normalize: normalizeCodexLine},
+}
+
+// measurementSource respects the agent selected by cully run, including agents
+// without a history reader. Never measure a different agent as a fallback.
+func measurementSource(agent, root string) (transcriptSource, error) {
+	if agent == "" {
+		agent = os.Getenv("CULLY_AGENT")
+	}
+	if agent == "" {
+		agent = detectTranscriptAgent(currentDir(), root)
+	}
+	agent = normalizeAgentID(agent)
+	src, ok := transcriptSourceFor(agent)
+	if !ok {
+		return transcriptSource{}, fmt.Errorf("transcript measurement is not available for %s yet", agentDisplayName(agent))
+	}
+	return src, nil
+}
+
+func transcriptRoot(agent string) string {
+	if agent == "codex" {
+		return filepath.Join(CodexConfigDir(), "sessions")
+	}
+	return filepath.Join(ConfigDir(), "projects")
+}
+
+func normalizeCodexLine(line []byte) []byte {
+	var e struct {
+		Type    string `json:"type"`
+		Payload struct {
+			Type      string          `json:"type"`
+			Name      string          `json:"name"`
+			CallID    string          `json:"call_id"`
+			Arguments string          `json:"arguments"`
+			Input     string          `json:"input"`
+			Output    json.RawMessage `json:"output"`
+		} `json:"payload"`
+	}
+	if json.Unmarshal(line, &e) != nil || e.Type != "response_item" || e.Payload.CallID == "" {
+		return nil
+	}
+	p := e.Payload
+	it := svItem{}
+	role := "assistant"
+	switch p.Type {
+	case "function_call", "custom_tool_call", "local_shell_call":
+		name := strings.TrimPrefix(p.Name, "functions.")
+		it.Type, it.ID, it.Name = "tool_use", p.CallID, codexToolName(name)
+		if name == "spawn_agent" {
+			it.Name = "Agent"
+		}
+		it.Input = json.RawMessage(p.Arguments)
+		if !json.Valid(it.Input) {
+			it.Input, _ = json.Marshal(map[string]string{"input": p.Input})
+		}
+		if it.Name == "Bash" {
+			var args map[string]json.RawMessage
+			if json.Unmarshal(it.Input, &args) == nil {
+				if cmd, ok := args["cmd"]; ok {
+					args["command"] = cmd
+				}
+				it.Input, _ = json.Marshal(args)
+			}
+		}
+	case "function_call_output", "custom_tool_call_output":
+		role = "user"
+		it.Type, it.ToolUseID = "tool_result", p.CallID
+		it.Content, _ = json.Marshal(codexOutputText(p.Output))
+	default:
+		return nil
+	}
+	content, _ := json.Marshal([]svItem{it})
+	var out tEntry
+	out.Message.Role, out.Message.Content = role, content
+	data, _ := json.Marshal(out)
+	return data
 }
 
 // transcriptSourceFor returns the source for an agent, if Cully can read its
