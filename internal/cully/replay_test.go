@@ -22,6 +22,12 @@ func TestMain(m *testing.M) {
 	// Set the fixture timezone before tests start background panel workers.
 	// Per-test writes race with time.Now in those workers.
 	time.Local = time.UTC
+	// Run in a clean Cully environment. From inside a Cully terminal, or an
+	// agent Cully wraps, these are set, and some behavior depends on them: a
+	// statusline prints nothing inside a pane, and measurements follow the agent.
+	for _, name := range []string{"CULLY_PANE_SESSION", "CULLY_SESSION", "CULLY_AGENT", "MODEL_HINT_GUARD", "CULLY_MCP_PROBE_SESSION", "CULLY_MCP_METRICS_SESSION", "CULLY_MCP_ORIGIN"} {
+		os.Unsetenv(name)
+	}
 	os.Exit(m.Run())
 }
 
