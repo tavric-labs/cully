@@ -4,10 +4,10 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#f7f5ef">
-  <meta name="description" content="Cully Solo is a coding-agent harness runtime. Cully Team is a project management harness runtime for people and AI agents building software together.">
+  <meta name="description" content="Give your coding agent a better harness. Cully catches repeated failures, tracks verification, evaluates its own guidance and carries private memory between sessions.">
   <meta property="og:type" content="website">
   <meta property="og:title" content="Cully — the harness runtime for coding agents and software projects">
-  <meta property="og:description" content="Solo runs your coding agents with session intelligence and memory. Team manages software project tasks, handoffs and review across people and AI agents.">
+  <meta property="og:description" content="Catch stalled work. Improve the harness. Carry private context between Claude Code, Codex and Cursor.">
   <meta property="og:url" content="https://cully.net/">
   <link rel="canonical" href="https://cully.net/">
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
@@ -24,7 +24,7 @@
       <nav id="site-nav" class="site-nav" aria-label="Main navigation">
         <a href="#product">Features</a>
         <a href="#harness">Harness</a>
-        <a href="#teams">Team</a>
+        <a href="#memory">Memory</a>
         <a href="#mobile">Mobile preview</a>
         <a href="https://docs.cully.net/">Docs</a>
         <a href="https://github.com/tavric-labs/cully" target="_blank" rel="noopener noreferrer">GitHub <span aria-hidden="true">↗</span></a>
@@ -35,9 +35,9 @@
     <main id="main">
       <section class="hero section-wrap" aria-labelledby="hero-title">
         <div class="hero-copy">
-          <div class="eyebrow"><span class="eyebrow-line"></span> Coding agents · Project management</div>
+          <div class="eyebrow"><span class="eyebrow-line"></span> Session intelligence · Harness improvement · Private memory</div>
           <h1 id="hero-title">The harness runtime<br><em>for AI software work.</em></h1>
-          <p class="hero-lead">Solo is your coding-agent harness runtime: session health, advisor guidance, recovery and private memory around Claude Code, Codex and Cursor. Team is your project management harness runtime: tasks, ownership, handoffs, review and lessons for people and AI agents building software together.</p>
+          <p class="hero-lead">Your agent writes the code. Cully watches for repeated failures and unchecked edits, helps improve the harness around it, and brings useful context to the next session. Run Claude Code, Codex or Cursor with a second pair of eyes.</p>
           <div id="install" class="hero-try">
             <div class="hero-try-heading"><strong>Get started with Solo</strong><span>macOS and Linux</span></div>
             <div class="hero-command"><code>curl -fsSL https://cully.net/install.sh | sh</code><button class="copy-button" type="button" aria-label="Copy Cully install command">Copy</button></div>
@@ -45,7 +45,7 @@
           </div>
           <div class="hero-actions">
             <a class="button button-primary" href="https://docs.cully.net/solo">Start Solo <span aria-hidden="true">↗</span></a>
-            <a class="button button-text" href="https://docs.cully.net/team-workflows">Explore Team <span aria-hidden="true">↗</span></a>
+            <a class="button button-text" href="#improve">See the improvement loop <span aria-hidden="true">↓</span></a>
           </div>
           <div class="hero-footnote"><span class="pulse-dot" aria-hidden="true"></span><span>Open source · Works across agents. Learns across sessions. · Recall powered by <a href="https://mem0.ai/" target="_blank" rel="noopener noreferrer">Mem0 ↗</a></span></div>
         </div>
@@ -78,12 +78,12 @@
           <article><span>03</span><h4>Remember</h4><p>Decisions, attempts, results and next steps are saved through MCP and found again by meaning.</p></article>
           <article><span>04</span><h4>Advise</h4><p>A second pair of eyes for your coding agent. It warns about loops, context pressure and missing verification.</p></article>
           <article><span>05</span><h4>Improve</h4><p>Cully notices how you usually ship in a project, such as running checks after editing, and says when a session skips it.</p></article>
-          <article><span>06</span><h4>Across agents</h4><p>Start in Claude Code, continue in Codex, finish in Cursor. The record belongs to the project, not to one agent.</p></article>
+          <article><span>06</span><h4>Across agents</h4><p>Start in Claude Code, continue in Codex, finish in Cursor. Your saved context stays with you across agents.</p></article>
         </div>
       </section>
 
       <section id="product" class="section-wrap product-section" aria-labelledby="product-title">
-        <div class="section-intro"><div><div class="kicker">02 / WHAT YOU GET</div><h2 id="product-title">See the session.<br><em>Steer it.</em></h2></div><p>See observed session signals, clearly labeled token estimates and advice grounded in the evidence your agent supplies.</p></div>
+        <div class="section-intro"><div><div class="kicker">02 / KEEP WORK MOVING</div><h2 id="product-title">Catch the loop.<br><em>Find the next move.</em></h2></div><p>The same test fails again. Edits pile up without a check. Cully brings those signals into view, helps you inspect what happened, and prepares a handoff when you need a fresh start.</p></div>
         <div class="feature-grid">
           <article class="feature-card feature-green"><div class="feature-number">01 <span>↗</span></div><div class="feature-visual status-visual"><div class="mini-line"><span>ADVISOR</span><b>LOOP</b></div><div class="meter"><span></span></div><div class="mini-line muted"><span>Same command</span><span>failed 3 times</span></div></div><h3>A second pair of eyes.</h3><p>The advisor watches the session while the agent works on the task. Click it in the terminal to preview a suggestion before anything changes.</p><a href="https://docs.cully.net/advisor">Explore the advisor <span aria-hidden="true">→</span></a></article>
           <article class="feature-card feature-cream"><div class="feature-number">02 <span>↗</span></div><div class="feature-visual memory-visual"><div class="memory-visual-card"><span>▶ &nbsp; REPLAY</span><strong>Read resource.go → Edited resource.go → go test ✕ → go test ✓</strong><small>8 files touched · 2 checks failed · 1 loop</small></div><div class="memory-visual-shadow"></div></div><h3>See what the agent did, and how.</h3><p>Replay a session step by step: the files it read, edited, created and deleted, and the commands it ran.</p><a href="https://docs.cully.net/session-intelligence">Explore session intelligence <span aria-hidden="true">→</span></a></article>
@@ -91,25 +91,25 @@
         </div>
       </section>
 
-      <section id="use-cases" class="section-wrap product-section" aria-labelledby="use-cases-title">
-        <div class="section-intro"><div><div class="kicker">03 / IN THE WILD</div><h2 id="use-cases-title">The recorded session,<br><em>ready to review.</em></h2></div><p>Review the recorded steps behind a change, find repeated failures, and give the next person a useful starting point. Coverage follows the events your agent supplies.</p></div>
+      <section id="improve" class="section-wrap product-section" aria-labelledby="improve-title">
+        <div class="section-intro"><div><div class="kicker">03 / THE IMPROVEMENT LOOP</div><h2 id="improve-title">A better harness.<br><em>Built from evidence.</em></h2></div><p>Cully tests its own setup and guidance, turns failing checks into proposals, and lets you review the change before applying it. The next evaluation shows whether those checks improved.</p></div>
         <div class="feature-grid">
-          <article class="feature-card feature-cream"><div class="feature-number">01 <span>↗</span></div><div class="feature-visual memory-visual"><div class="memory-visual-card"><span>◉ &nbsp; RECORDER</span><strong>go test ✕ ×3 · loop span marked ⚠</strong><small>8 files touched · 2 checks failed · evidence kept</small></div><div class="memory-visual-shadow"></div></div><h3>A flight recorder for agent sessions.</h3><p>Supported hooks feed a bounded private journal, then replay the recorded file activity, command programs and checks. When a session derails, the postmortem starts where the loop began.</p><a href="https://docs.cully.net/use-cases">Explore use cases <span aria-hidden="true">→</span></a></article>
-          <article class="feature-card feature-green"><div class="feature-number">02 <span>↗</span></div><div class="feature-visual status-visual"><div class="mini-line"><span>SESSION AUDIT</span><b>DRIFT 1</b></div><div class="meter"><span></span></div><div class="mini-line muted"><span>Checks</span><span>2 passed · 1 failed</span></div></div><h3>Review the session, not just the diff.</h3><p>Reconstruct the verification trail behind a change and reconcile the record against Git before merge. Export a self-contained replay as review evidence.</p><a href="https://docs.cully.net/use-cases">Explore use cases <span aria-hidden="true">→</span></a></article>
-          <article class="feature-card feature-peach"><div class="feature-number">03 <span>↗</span></div><div class="feature-visual preview-visual"><span>PLAYBOOK</span><div class="preview-line"><i>✓</i> Shipped auth migration</div><div class="preview-line dim"><i>▶</i> Replay how it landed</div><div class="preview-button">Onboard from real sessions →</div></div><h3>Playbooks new engineers can replay.</h3><p>Strong sessions become onboarding material: watch how shipped work was actually made, while workflow hints teach project habits live.</p><a href="https://docs.cully.net/use-cases">Explore use cases <span aria-hidden="true">→</span></a></article>
+          <article class="feature-card feature-cream"><div class="feature-number">01 <span>↗</span></div><div class="feature-visual memory-visual"><div class="memory-visual-card"><span>01 / EVALUATE</span><strong>Setup · harness · advisor<br>Check against known failures</strong><small>Illustrative workflow · not a benchmark result</small></div><div class="memory-visual-shadow"></div></div><h3>Test the harness, too.</h3><p><code>cully eval</code> exercises real Cully code against planted failures. Find where setup detection, warnings or the improvement loop miss their expected behavior.</p><a href="https://docs.cully.net/evals">See how evaluation works <span aria-hidden="true">→</span></a></article>
+          <article class="feature-card feature-green"><div class="feature-number">02 <span>↗</span></div><div class="feature-visual status-visual"><div class="mini-line"><span>02 / PROPOSE</span><b>REVIEW</b></div><code class="harness-command">cully improve</code><div class="mini-line muted"><span>Read the failing checks</span><span>Preview the plan</span></div></div><h3>Turn failures into a plan.</h3><p>Open a proposal, inspect the checks behind it, and ask your coding agent to plan a change to Cully’s guidance. Read the exact plan before approving a write.</p><a href="https://docs.cully.net/self-improvement">Explore the improvement loop <span aria-hidden="true">→</span></a></article>
+          <article class="feature-card feature-peach"><div class="feature-number">03 <span>↗</span></div><div class="feature-visual preview-visual"><span>03 / CHECK AGAIN</span><div class="preview-line"><i>↻</i> Run the next evaluation</div><div class="preview-line dim">Compare failing checks over time</div><div class="preview-button">Keep the evidence in view</div></div><h3>See whether the fix holds.</h3><p>Follow evaluation history and before-and-after task measurements. Fewer failing checks are useful evidence; differences between tasks still need your judgment.</p><a href="https://docs.cully.net/evals">Read what the scores mean <span aria-hidden="true">→</span></a></article>
         </div>
       </section>
 
-      <section id="teams" class="section-wrap architecture-section" aria-labelledby="teams-title">
-        <div class="section-intro"><div><div class="kicker">TEAM WORKSPACE</div><h2 id="teams-title">The work continues.<br><em>The context comes with it.</em></h2></div><p>Keep the outcome, ownership and evidence connected when work moves between teammates and coding agents.</p></div>
+      <section id="memory" class="section-wrap architecture-section" aria-labelledby="memory-title">
+        <div class="section-intro"><div><div class="kicker">PRIVATE MEMORY / ACROSS AGENTS</div><h2 id="memory-title">New session.<br><em>Less starting over.</em></h2></div><p>Keep the decision, the failed attempt and the next step. Give your next agent useful context without making it reconstruct the whole conversation.</p></div>
         <div class="optimization-panel">
           <div class="optimization-grid">
-            <article><span>01</span><h4>Know what needs attention</h4><p>A project board and inbox show active tasks, blockers and waiting reviews. Claims keep two people from silently taking the same task.</p></article>
-            <article><span>02</span><h4>Pick up where they stopped</h4><p>Continue from a checkpoint with decisions, the branch, artifact links and the next action. Start your preferred agent and keep the task connected.</p></article>
-            <article><span>03</span><h4>Review, then reuse</h4><p>A reviewer checks the criteria and evidence at the submitted revision. Authors choose which lessons to publish; maintainers adopt guidance for later work.</p></article>
+            <article><span>01</span><h4>Save what mattered</h4><p>Your agent saves a concise note: what it tried, what worked, what blocked it and what comes next. Session references connect related notes.</p></article>
+            <article><span>02</span><h4>Find it by meaning</h4><p>Ask about the work in your own words. Semantic recall through Mem0 finds relevant saved notes; PostgreSQL keeps the source records.</p></article>
+            <article><span>03</span><h4>Keep your own context</h4><p>Use the same private memory from Claude Code, Codex or Cursor. On an OAuth deployment, each signed-in contributor’s records stay scoped to their identity.</p></article>
           </div>
-          <p class="optimization-caveat">Team workflows use CLI or MCP with signed-in project members. Agent launch is manual; submitted checks are labeled as reported evidence. Private notes and local journals stay separate.</p>
-          <a class="inline-link" href="https://docs.cully.net/team-workflows">Set up a team workflow <span aria-hidden="true">↗</span></a>
+          <p class="optimization-caveat">A shared deployment does not share your notes. The session journal stays local; durable memory contains the summaries your agent saves.</p>
+          <a class="inline-link" href="https://docs.cully.net/memory">See how private memory works <span aria-hidden="true">↗</span></a>
         </div>
       </section>
 
@@ -117,10 +117,10 @@
         <div class="section-intro"><div><div class="kicker">YOUR AGENT SETUP</div><h2 id="harness-title">Know what’s configured.<br><em>Measure what changes.</em></h2></div><p>Instructions, permissions, memory, skills and hooks shape how your agent works. Start with a read-only audit, then compare recent output before changing your setup.</p></div>
         <div class="feature-grid">
           <article class="feature-card feature-green"><div class="feature-number">01 <span aria-hidden="true">↗</span></div><div class="feature-visual status-visual"><div class="mini-line"><span>HARNESS</span><b>READ-ONLY</b></div><code class="harness-command">cully harness</code><div class="mini-line muted"><span>Find setup gaps</span><span>Keep your settings</span></div></div><h3>Check the setup around your agent.</h3><p>See which of seven components Cully finds, with one suggestion per gap. The terminal keeps readiness, pending checks and active loops in view. Optional plugins stay optional.</p><a href="https://docs.cully.net/harness">Read the harness guide <span aria-hidden="true">→</span></a></article>
-          <article class="feature-card feature-cream"><div class="feature-number">02 <span aria-hidden="true">↗</span></div><div class="feature-visual memory-visual"><div class="memory-visual-card"><span>OUTPUT BASELINE</span><strong>Oversized results<br>Estimated tokens / session</strong><small>Recent local Claude sessions · counts only</small></div><div class="memory-visual-shadow"></div></div><h3>Compare the output you measured.</h3><p>Inspect large tool results, Bash output and whole-file reads across recent Claude sessions. Change one component and compare similar work. A baseline helps you investigate; it does not prove savings.</p><a href="https://docs.cully.net/harness#compare-measured-output">Understand the measurements <span aria-hidden="true">→</span></a></article>
+          <article class="feature-card feature-cream"><div class="feature-number">02 <span aria-hidden="true">↗</span></div><div class="feature-visual memory-visual"><div class="memory-visual-card"><span>OUTPUT BASELINE</span><strong>Oversized results<br>Estimated tokens / session</strong><small>Local Claude Code or Codex history · estimates</small></div><div class="memory-visual-shadow"></div></div><h3>Compare the output you measured.</h3><p>Find oversized tool results in supported Claude Code or Codex history, with extra file-read and Bash detail for Claude. Change one component and compare similar work to investigate its effect.</p><a href="https://docs.cully.net/harness#compare-measured-output">Understand the measurements <span aria-hidden="true">→</span></a></article>
           <article class="feature-card feature-peach"><div class="feature-number">03 <span aria-hidden="true">↗</span></div><div class="feature-visual preview-visual"><span>YOUR WORKFLOW</span><div class="preview-line"><code>cully workflow</code></div><div class="preview-line dim">Build · test · review · release</div><div class="preview-button">Preview before saving</div></div><h3>Give the advisor your working rules.</h3><p>Create an optional private workflow profile with your build, test and release habits. Review it before saving. Your configured advisor model gets bounded, redacted context; the profile grants no access.</p><a href="https://docs.cully.net/installation#optional-workflow-skill">Set your workflow context <span aria-hidden="true">→</span></a></article>
         </div>
-        <p class="optimization-caveat">Setup detection checks file names and configuration keys across supported agents; it does not verify a live connection. Historical output estimates use local Claude transcripts, including when the current terminal runs Codex or Cursor. <a href="https://docs.cully.net/privacy#harness-measurements">See what stays on your machine →</a></p>
+        <p class="optimization-caveat">Setup detection checks file names and configuration keys across supported agents; it does not verify a live connection. Historical output estimates follow the selected agent’s supported local history: Claude Code or Codex. Cursor history measurements are unavailable. <a href="https://docs.cully.net/privacy#harness-measurements">See what stays on your machine →</a></p>
       </section>
 
       <section id="terminal" class="section-wrap architecture-section" aria-labelledby="terminal-title">
@@ -141,10 +141,10 @@
         <div class="optimization-panel">
           <div class="optimization-grid">
             <article><span>01 / IMPACT</span><h4><code>cully impact</code></h4><p>Memory hits, empty lookups, analyses avoided, loops caught and oversized output flagged. The panel brings this session’s impact beside its usage.</p></article>
-            <article><span>02 / COST</span><h4><code>cully savings</code></h4><p>Estimate Cully results, arguments and schema tokens in Claude history. Compare early exploration with and without a memory hit, with a confidence label.</p></article>
+            <article><span>02 / COST</span><h4><code>cully savings</code></h4><p>Estimate Cully results, arguments and schema tokens in supported Claude Code or Codex history. Compare early exploration with and without a memory hit, with a confidence label.</p></article>
             <article><span>03 / EVALUATE</span><h4><code>cully eval</code></h4><p>Score setup, harness, advisor and memory against planted ground truth and published metrics. An optional live pass checks the advisor cites no figure it was not given.</p></article>
           </div>
-          <p class="optimization-caveat">These are different samples and estimates, not billing totals or causal proof of savings. Historical transcript reports support Claude today. Live evaluation consumes model tokens and can use web research.</p>
+          <p class="optimization-caveat">These are different samples and estimates, not billing totals or causal proof of savings. Historical transcript reports support Claude Code and Codex; unavailable measurements are labeled. Live evaluation consumes model tokens and can use web research.</p>
           <a class="inline-link" href="https://docs.cully.net/token-impact">Read the measurement guide <span aria-hidden="true">↗</span></a>
         </div>
       </section>
@@ -167,15 +167,15 @@
           <span class="flow-arrow" aria-hidden="true">↔</span>
           <div class="flow-node"><span class="flow-icon">✳</span><strong>Cully at work</strong><small>Terminal · hooks · journal · advisor · MCP</small><p>Health bar, loop detection, replay, handoff and rescue, plus tools to save and recall context.</p></div>
           <span class="flow-arrow" aria-hidden="true">↔</span>
-          <div class="flow-node"><span class="flow-icon">▤</span><strong>Your records</strong><small>PostgreSQL · self-hosted Mem0</small><p>Private source records and semantic recall, plus explicitly shared project tasks and lessons.</p></div>
+          <div class="flow-node"><span class="flow-icon">▤</span><strong>Your records</strong><small>PostgreSQL · self-hosted Mem0</small><p>Private source notes, session links and semantic recall across your coding agents.</p></div>
         </div>
-        <p class="architecture-note">Run the standard memory stack on your laptop. OAuth identifies each team member; project membership controls shared access. <a href="https://docs.cully.net/hosting">Self-hosting guide →</a></p>
+        <p class="architecture-note">Run the memory stack locally or connect to an OAuth deployment. Verified sign-in keeps each contributor’s private records separate. <a href="https://docs.cully.net/hosting">Self-hosting guide →</a></p>
         <div class="memory-foundation">
-          <div><div class="kicker">PRIVACY</div><h3>Your conversations aren't Cully's database.</h3><p>The local session journal keeps the time, the kind of tool, whether it passed, project-relative file paths and the program of a command. It never keeps prompts, file contents, command arguments or tool output, and you can turn off path recording. Project memory holds only the short summary your agent chooses to save. Harness and cost reports read local Claude transcripts for aggregate counts and estimates. Replay evaluation can send signal summaries to your configured advisor when you explicitly request a live pass; these measurements never save or upload raw transcript text.</p></div>
+          <div><div class="kicker">PRIVACY</div><h3>Your conversations aren't Cully's database.</h3><p>The local session journal keeps the time, the kind of tool, whether it passed, project-relative file paths and the program of a command. It never keeps prompts, file contents, command arguments or tool output, and you can turn off path recording. Private memory holds only the short notes your agent chooses to save. Harness and cost reports read supported local Claude Code or Codex history for aggregate counts and estimates. Replay evaluation can send signal summaries to your configured advisor when you explicitly request a live pass; these measurements never save or upload raw transcript text.</p></div>
           <a class="inline-link" href="https://docs.cully.net/privacy">Read what Cully records <span aria-hidden="true">↗</span></a>
         </div>
         <div class="memory-foundation">
-          <div><div class="kicker">PROJECT MEMORY</div><h3>Semantic recall, powered by Mem0.</h3><p>Cully uses self-hosted Mem0 to index saved decisions, lessons and project context by meaning. PostgreSQL keeps the source records; Mem0 powers semantic search across them.</p></div>
+          <div><div class="kicker">PRIVATE MEMORY</div><h3>Semantic recall, powered by Mem0.</h3><p>Cully uses self-hosted Mem0 to index saved decisions, lessons and task context by meaning. PostgreSQL keeps the source records; Mem0 powers semantic search across them.</p></div>
           <a class="inline-link" href="https://mem0.ai/" target="_blank" rel="noopener noreferrer">Explore Mem0 <span aria-hidden="true">↗</span></a>
         </div>
       </section>
@@ -222,7 +222,7 @@
       </dialog>
     </main>
 
-    <footer class="site-footer section-wrap"><div><a class="brand" href="/" aria-label="Cully home"><span class="brand-mark" aria-hidden="true"><span></span></span><span>cully<span class="brand-dot">.</span></span></a><p>Coding agents.<br>Software projects.<br>One harness runtime.</p></div><div class="footer-links"><div><strong>Explore</strong><a href="#loop">The loop</a><a href="#use-cases">Use cases</a><a href="#teams">Team</a><a href="#terminal">Solo</a><a href="#how-it-works">How it works</a><a href="https://docs.cully.net/quickstart">Get started</a></div><div><strong>Resources</strong><a href="https://docs.cully.net/">Documentation</a><a href="https://docs.cully.net/capabilities">Current capabilities</a><a href="https://docs.cully.net/product-direction">Product vision</a><a href="https://github.com/tavric-labs/cully">GitHub</a><a href="https://github.com/tavric-labs/cully/releases">Releases</a></div></div><div class="footer-bottom"><span>© <span id="year">2026</span> Cully. Built in the open.</span><span>Works across agents. Learns across sessions.</span></div></footer>
+    <footer class="site-footer section-wrap"><div><a class="brand" href="/" aria-label="Cully home"><span class="brand-mark" aria-hidden="true"><span></span></span><span>cully<span class="brand-dot">.</span></span></a><p>Better sessions.<br>Private context.<br>One harness runtime.</p></div><div class="footer-links"><div><strong>Explore</strong><a href="#loop">The loop</a><a href="#improve">Improvement loop</a><a href="#memory">Private memory</a><a href="#terminal">Solo</a><a href="#how-it-works">How it works</a><a href="https://docs.cully.net/quickstart">Get started</a></div><div><strong>Resources</strong><a href="https://docs.cully.net/">Documentation</a><a href="https://docs.cully.net/capabilities">Current capabilities</a><a href="https://docs.cully.net/product-direction">Product vision</a><a href="https://github.com/tavric-labs/cully">GitHub</a><a href="https://github.com/tavric-labs/cully/releases">Releases</a></div></div><div class="footer-bottom"><span>© <span id="year">2026</span> Cully. Built in the open.</span><span>Works across agents. Learns across sessions.</span></div></footer>
   </div>
 </body>
 </html>

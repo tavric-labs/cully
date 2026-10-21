@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Refocus the homepage on catching stalled work, evaluating and improving the harness, and carrying private context across agents. Replace repeated replay and Team marketing sections with concrete workflows, and update history measurement coverage for Codex.
+
 ## 0.23.0
 
 - Run the test suite in a clean Cully environment. Two statusline tests failed for anyone running them from inside a Cully terminal, because `CULLY_PANE_SESSION` and related variables made the statusline correctly print nothing; the suite now clears them.
