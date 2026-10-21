@@ -8,12 +8,26 @@ description: Cully scores itself every five hours, proposes changes from failing
 Cully's own evaluation runs on a schedule. When a check fails, Cully proposes a change to itself. Nothing is written until you approve it. This is separate from the [advisor](/advisor), which watches a session in your project and, when you accept a suggestion, changes that project with `cully apply`. Self-improvement changes Cully's own guidance and nothing in your projects.
 
 ```sh
-cully improve                      # last eval, trend and pending proposals
+cully improve                      # open the window: select, read, apply or drop
+cully improve --list               # print the last eval, trend and proposals instead
 cully improve --run                # evaluate now instead of waiting
 cully improve --apply 1 --dry-run  # preview what proposal 1 would write
 cully improve --apply 1            # approve it; Cully writes it
 cully improve --dismiss 1          # skip it
 ```
+
+## The window
+
+In a terminal, `cully improve` opens a window listing the suggestions. Select one with the arrow keys or a click and press Enter, or click its title, to read the failing checks behind it. Then:
+
+| Key | Does |
+| --- | --- |
+| `a` or **Apply** | Asks your model for a plan and shows it. `y` writes it; `n` keeps the suggestion pending. |
+| `d` or **Drop** | Asks first. Only `y` drops it, and a dropped suggestion stays dropped. |
+| Enter, `b` or **Back** | Opens or closes the details. |
+| `q` or Esc | Goes back, then quits. |
+
+Looking at a suggestion, cancelling an apply, a failed plan and quitting never drop anything. Only a confirmed Drop does. Without a terminal, or with `--list`, `cully improve` prints the proposals, and `--apply N` and `--dismiss N` still work in scripts.
 
 ## How it works
 

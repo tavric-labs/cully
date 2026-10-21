@@ -761,6 +761,9 @@ func cullyInstrumentRows(stats toolStats, width int) []string {
 		rows = append(rows, line)
 	}
 	row := fmt.Sprintf("MCP %d calls · Auth %s", c.Calls, observedState(c.Auth, true))
+	if c.Probed {
+		row += dim + " (connection check)" + rst
+	}
 	if c.Calls == 0 && c.Auth == "" {
 		// Health and auth are read from Cully tool responses, so nothing is
 		// known before the first call; say why instead of leaving a bare unknown.

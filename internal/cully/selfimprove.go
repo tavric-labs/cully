@@ -17,6 +17,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"golang.org/x/term"
 )
 
 // The self-improvement loop scores Cully with its own `cully eval` on a
@@ -413,6 +415,7 @@ func RunImprove(w io.Writer, in io.Reader, args []string) error {
 	dismiss := fs.Int("dismiss", 0, "dismiss pending proposal N")
 	dryRun := fs.Bool("dry-run", false, "with --apply, show the plan and write nothing")
 	yes := fs.Bool("yes", false, "with --apply, skip the confirmation prompt")
+	list := fs.Bool("list", false, "print the proposals instead of opening the window")
 	if err := fs.Parse(args); err != nil {
 		if err == flag.ErrHelp {
 			return nil
@@ -420,7 +423,7 @@ func RunImprove(w io.Writer, in io.Reader, args []string) error {
 		return err
 	}
 	if fs.NArg() != 0 {
-		return fmt.Errorf("usage: cully improve [--run] [--apply N [--dry-run] [--yes]] [--dismiss N]")
+		return fmt.Errorf("usage: cully improve [--run] [--list] [--apply N [--dry-run] [--yes]] [--dismiss N]")
 	}
 	if *runNow {
 		fmt.Fprintln(w, "Evaluating Cully (setup, harness, improve, tasks, advisor)…")
@@ -451,6 +454,19 @@ func RunImprove(w io.Writer, in io.Reader, args []string) error {
 			return err
 		}
 		return applyImprovement(w, in, p, *dryRun, *yes)
+	}
+	if outFile, ok := w.(*os.File); ok && !*list && len(pending) > 0 {
+		if inFile, ok := in.(*os.File); ok && term.IsTerminal(int(inFile.Fd())) && term.IsTerminal(int(outFile.Fd())) {
+			home, _ := os.UserHomeDir()
+			return runImproveTUI(outFile, inFile, pending, improveActions{
+				Plan:  planImprovement,
+				Apply: commitImprovement,
+				Drop: func(p improvement) error {
+					return setImprovementStatus(p.ID, "dismissed", "", io.Discard, "")
+				},
+				Home: home,
+			})
+		}
 	}
 	if !*runNow {
 		if runs := readEvalHistory(1); len(runs) > 0 {
@@ -502,16 +518,57 @@ func setImprovementStatus(id, status, summary string, w io.Writer, message strin
 	return nil
 }
 
-func applyImprovement(w io.Writer, in io.Reader, p improvement, dryRun, yes bool) error {
+// planImprovement asks the planner for a change and keeps only what a
+// self-improvement may write.
+func planImprovement(p improvement) (applyPlan, []string, error) {
 	out, err := improvePlanner(improvePrompt(p))
 	if err != nil {
-		return fmt.Errorf("plan improvement: %w", err)
+		return applyPlan{}, nil, fmt.Errorf("plan improvement: %w", err)
 	}
 	plan, err := parseApplyPlan(out)
 	if err != nil {
-		return fmt.Errorf("parse plan: %w", err)
+		return applyPlan{}, nil, fmt.Errorf("parse plan: %w", err)
 	}
-	plan, dropped, err := sanitizeImprovePlan(plan)
+	return sanitizeImprovePlan(plan)
+}
+
+func planWritesAnything(plan applyPlan) bool {
+	return plan.ClaudeMDSection != "" || (plan.SkillName != "" && plan.SkillContent != "")
+}
+
+// planBullets describes what an approved plan would write, one line each.
+func planBullets(home string, plan applyPlan, dropped []string) []string {
+	var out []string
+	if plan.ClaudeMDSection != "" {
+		out = append(out, fmt.Sprintf("Add rules to %s", sharedSkillPath(home, "cully")))
+	}
+	if plan.SkillName != "" && plan.SkillContent != "" {
+		out = append(out, fmt.Sprintf("Install skill %s", sharedSkillPath(home, plan.SkillName)))
+	}
+	if plan.Notes != "" {
+		out = append(out, "Note: "+plan.Notes)
+	}
+	if len(dropped) > 0 {
+		out = append(out, "Ignored (self-improvement never adds these): "+strings.Join(dropped, ", "))
+	}
+	return out
+}
+
+// commitImprovement writes an approved plan and marks the proposal applied.
+func commitImprovement(p improvement, plan applyPlan) error {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return err
+	}
+	if err := executePlan(home, "cully-self:"+p.ID, plan); err != nil {
+		return err
+	}
+	recordAppliedChange("self", "", plan.Summary)
+	return setImprovementStatus(p.ID, "applied", plan.Summary, io.Discard, "")
+}
+
+func applyImprovement(w io.Writer, in io.Reader, p improvement, dryRun, yes bool) error {
+	plan, dropped, err := planImprovement(p)
 	if err != nil {
 		return err
 	}
@@ -520,20 +577,11 @@ func applyImprovement(w io.Writer, in io.Reader, p improvement, dryRun, yes bool
 		return err
 	}
 	fmt.Fprintf(w, "Proposal %s (%s)\n\nPlan: %s\n", p.ID, p.Suite, plan.Summary)
-	if plan.ClaudeMDSection != "" {
-		fmt.Fprintf(w, "  • Add rules to %s\n", sharedSkillPath(home, "cully"))
-	}
-	if plan.SkillName != "" && plan.SkillContent != "" {
-		fmt.Fprintf(w, "  • Install skill %s\n", sharedSkillPath(home, plan.SkillName))
-	}
-	if plan.Notes != "" {
-		fmt.Fprintf(w, "  • Note: %s\n", plan.Notes)
-	}
-	if len(dropped) > 0 {
-		fmt.Fprintf(w, "  • Ignored (self-improvement never adds these): %s\n", strings.Join(dropped, ", "))
+	for _, line := range planBullets(home, plan, dropped) {
+		fmt.Fprintf(w, "  • %s\n", line)
 	}
 	fmt.Fprintln(w)
-	if plan.ClaudeMDSection == "" && (plan.SkillName == "" || plan.SkillContent == "") {
+	if !planWritesAnything(plan) {
 		fmt.Fprintln(w, "Nothing to write: this needs a change to Cully's code or a person. The proposal stays pending.")
 		return nil
 	}
@@ -545,14 +593,29 @@ func applyImprovement(w io.Writer, in io.Reader, p improvement, dryRun, yes bool
 		fmt.Fprint(w, "Apply this improvement? [y/N]: ")
 		answer, _ := bufio.NewReader(in).ReadString('\n')
 		if a := strings.ToLower(strings.TrimSpace(answer)); a != "y" && a != "yes" {
-			fmt.Fprintln(w, "Cancelled.")
+			fmt.Fprintln(w, "Cancelled; the proposal stays pending.")
 			return nil
 		}
 	}
-	if err := executePlan(home, "cully-self:"+p.ID, plan); err != nil {
+	if err := commitImprovement(p, plan); err != nil {
 		return err
 	}
-	recordAppliedChange("self", "", plan.Summary)
 	fmt.Fprintln(w, "\033[32mApplied.\033[0m Cully re-evaluates on its schedule; run cully improve --run to check the effect now.")
-	return setImprovementStatus(p.ID, "applied", plan.Summary, io.Discard, "")
+	return nil
+}
+
+// improvementTitle is the one-line name of a proposal: the suite and what failed.
+func improvementTitle(p improvement) string {
+	suite := p.Suite
+	if suite != "" {
+		suite = strings.ToUpper(suite[:1]) + suite[1:]
+	}
+	if len(p.Evidence) == 0 {
+		return suite
+	}
+	title := fmt.Sprintf("%s: %s", suite, p.Evidence[0].Check)
+	if n := len(p.Evidence) - 1; n > 0 {
+		title += fmt.Sprintf(" (+%d more)", n)
+	}
+	return title
 }

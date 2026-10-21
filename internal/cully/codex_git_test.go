@@ -39,9 +39,9 @@ func TestCodexGitChangesIncludesIndexAndWorkingTree(t *testing.T) {
 	git("add", "--", name)
 	write(name, "one\nreplacement\nthree\nfour\n")
 	write("binary", "different\x00bytes")
-	write("untracked", "not a tracked diff\n")
+	write("untracked", "not a tracked diff\n") // one line of new, uncommitted work
 	readGitChanges(&view)
-	if !view.ChangesKnown || view.ChangedFiles != 2 || view.LinesAdded != 3 || view.LinesRemoved != 1 || view.UntrackedFiles != 1 {
+	if !view.ChangesKnown || view.ChangedFiles != 2 || view.LinesAdded != 4 || view.LinesRemoved != 1 || view.UntrackedFiles != 1 {
 		t.Fatalf("tracked aggregate against HEAD: %+v", view)
 	}
 	view.Project = t.TempDir()

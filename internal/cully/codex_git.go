@@ -3,8 +3,12 @@
 package cully
 
 import (
+	"bytes"
 	"context"
+	"io"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -47,6 +51,45 @@ func readGitChanges(view *sessionView) {
 	// New files are invisible to a diff against HEAD, so an agent that mostly
 	// creates files looks idle. Count them without reading names or contents.
 	if others, err := exec.CommandContext(ctx, "git", "-C", view.Project, "ls-files", "--others", "--exclude-standard", "-z").Output(); err == nil {
-		view.UntrackedFiles = strings.Count(string(others), "\x00")
+		for _, name := range strings.Split(string(others), "\x00") {
+			if name == "" {
+				continue
+			}
+			view.UntrackedFiles++
+			// Lines in new files are uncommitted additions too. Names and
+			// contents are read here only to count, and never retained.
+			if view.UntrackedFiles <= untrackedLineFiles {
+				view.LinesAdded += countFileLines(filepath.Join(view.Project, name))
+			}
+		}
 	}
+}
+
+// untrackedLineFiles bounds the work done per refresh: files beyond it are
+// counted as new but add no lines.
+const untrackedLineFiles = 200
+
+// countFileLines counts lines in a text file, reading at most 1 MiB. Binary
+// files (a NUL in the first 8 KiB), directories and unreadable files count 0.
+func countFileLines(path string) int64 {
+	f, err := os.Open(path)
+	if err != nil {
+		return 0
+	}
+	defer f.Close()
+	if info, err := f.Stat(); err != nil || !info.Mode().IsRegular() {
+		return 0
+	}
+	data, err := io.ReadAll(io.LimitReader(f, 1<<20))
+	if err != nil || len(data) == 0 {
+		return 0
+	}
+	if bytes.IndexByte(data[:min(len(data), 8<<10)], 0) >= 0 {
+		return 0
+	}
+	n := int64(bytes.Count(data, []byte{'\n'}))
+	if data[len(data)-1] != '\n' {
+		n++
+	}
+	return n
 }

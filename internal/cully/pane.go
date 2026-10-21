@@ -101,9 +101,14 @@ func RunPane(agentName string, args []string, input, output *os.File) error {
 	}
 	refreshSession()
 	readGitChanges(&view)
+	var prober mcpProber
+	go runMCPProbe(reviewContext, agent.Name, &prober)
 	loadStats := func() toolStats {
 		s := readToolStats(session)
 		s.Impact = ImpactSince(view.Started)
+		if res, ok := prober.get(); ok {
+			overlayMCPProbe(&s.Cully, res)
+		}
 		return s
 	}
 	stats := loadStats()

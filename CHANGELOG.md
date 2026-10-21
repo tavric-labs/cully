@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Open `cully improve` as a window: select a suggestion, read its failing checks, then Apply (the plan is shown first and written only on `y`) or Drop (confirmed, and the only way a suggestion is dropped). Cancelling, a failed plan and quitting keep it pending. `--list` prints instead.
+- Count lines in new, untracked files in the panel's Git row, so `+N` reflects uncommitted work and not only tracked changes.
+- Show the Cully MCP connection and authentication in the panel from `claude mcp list`, checked every ten minutes without a model call, whenever tool responses have not established them. The row notes "(connection check)". Hook-observed values still win.
+
 - Add a self-improvement loop. The advisor daemon runs `cully eval` every five hours (`CULLY_EVAL_INTERVAL` changes it, `off` disables it), keeps the history, and turns failing checks into proposals. `cully improve` shows the trend and proposals; `cully improve --apply N` writes an approved change, limited to rules and one skill under `~/.cully`, and never adds MCP servers or runs commands. Skill names that escape their folder are now rejected by `cully apply` too.
 - Add a `tasks` eval suite that scores sessions as tasks: verified or not, time, steps, orientation before the first edit, rework and loops, with rules checked against hand-worked sessions and your own history reported as measurements. Cully now records when `cully apply` and `cully improve --apply` change something, and `tasks` compares median time and steps for tasks before and after each change in the same project, without a verdict when the sample is thin.
 - Add an `improve` eval suite that scores the loop against planted failures, and `cully eval --repeat N`, which runs the deterministic suites N times and fails when their results differ.
