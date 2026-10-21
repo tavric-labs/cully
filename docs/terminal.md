@@ -65,6 +65,8 @@ Drag the horizontal health bar between the agent and Cully up to expand the pane
 
 The divider grip highlights when the pointer is over it, and Cully requests a vertical-resize cursor (OSC 22) while you hover or drag, restoring the default when you leave the bar or open the advisor. Cursor appearance depends on terminal support.
 
+Scroll back through the agent's output with the mouse wheel over the agent area. Cully draws the agent from its own terminal emulator, which keeps the last 10,000 lines, because your terminal never receives that output and has no scrollback of it. The panel shows how many lines back you are; typing, or scrolling down to the bottom, returns to the live screen, and new output does not move the lines you are reading. An agent that uses the alternate screen, such as a full-screen interface, scrolls itself and receives the wheel instead. In Warp, mouse tracking stays off until you open the advisor or divider resizing, so Warp's own scrolling applies.
+
 In Warp, press `Ctrl+\` to enable divider dragging, drag the bar, then press `Ctrl+\` again or Esc to restore normal host scrolling. Other terminals allow dragging immediately. Click below the divider to open the advisor.
 
 Before your first drag, the panel grows only as far as its content needs. It always leaves the agent at least 12 rows on a normal screen (8 on a short one). Terminals shorter than 12 rows give the agent the whole screen.

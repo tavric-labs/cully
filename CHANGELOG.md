@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Scroll back through the agent's output with the mouse wheel. Cully draws the agent from its own emulator, so the host terminal had no scrollback of it and the wheel did nothing. The emulator's 10,000 lines are now readable: the wheel moves three lines a notch, the panel says how far back you are, new output does not move what you are reading, and typing returns to the live screen. An agent on the alternate screen still receives the wheel.
+
 - Color the panel: the 5h and weekly limits turn green, yellow or red by what remains; the Harness, Project & usage and Cully impact columns get their own header colors, with colored token counts, waste and MCP call counts.
 - Strip terminal escape sequences and control characters from model-written plan text and evaluation details before the improve window or `cully improve` prints them, and from rules and skills before they are written.
 
