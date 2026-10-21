@@ -70,6 +70,8 @@ type svItem struct {
 func scanSession(r io.Reader) sessionCost {
 	sc := sessionCost{byTool: map[string]*ToolCost{}}
 	names := map[string]string{} // tool_use id -> name
+	// Transcripts can repeat an entry; count each tool call and result once.
+	seenUse, seenResult := map[string]bool{}, map[string]bool{}
 	reader := bufio.NewReaderSize(r, 1<<20)
 	for {
 		line, err := reader.ReadBytes('\n')
@@ -81,6 +83,12 @@ func scanSession(r io.Reader) sessionCost {
 					for _, it := range items {
 						switch it.Type {
 						case "tool_use":
+							if it.ID != "" {
+								if seenUse[it.ID] {
+									continue
+								}
+								seenUse[it.ID] = true
+							}
 							names[it.ID] = it.Name
 							if tool := cullyTool(it.Name); tool != "" {
 								sc.args += approxTokens(len(it.Input))
@@ -88,6 +96,12 @@ func scanSession(r io.Reader) sessionCost {
 								sc.edited = true
 							}
 						case "tool_result":
+							if it.ToolUseID != "" {
+								if seenResult[it.ToolUseID] {
+									continue
+								}
+								seenResult[it.ToolUseID] = true
+							}
 							name := names[it.ToolUseID]
 							text := toolResultText(it.Content)
 							tool := cullyTool(name)

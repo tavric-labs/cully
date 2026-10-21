@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Count each tool call and result once when measuring transcripts. Some Claude transcripts repeat entries, which made the harness waste, whole-file read and Bash estimates, delegation counts and `cully savings` cost figures up to about twice too high. On one project the oversized-output estimate fell from 149,504 to 127,151 tokens and Cully's measured injected cost from 82,640 to 63,087.
+- `cully impact --explain` now shows what Cully's own calls injected in your Claude transcripts, which the net figure does not subtract, so it no longer reads as more favorable than `cully savings`.
+
 - Scroll back through the agent's output with the mouse wheel. Cully draws the agent from its own emulator, so the host terminal had no scrollback of it and the wheel did nothing. The emulator's 10,000 lines are now readable: the wheel moves three lines a notch, the panel says how far back you are, new output does not move what you are reading, and typing returns to the live screen. An agent on the alternate screen still receives the wheel.
 
 - Color the panel: the 5h and weekly limits turn green, yellow or red by what remains; the Harness, Project & usage and Cully impact columns get their own header colors, with colored token counts, waste and MCP call counts.
