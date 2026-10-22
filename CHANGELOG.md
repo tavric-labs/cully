@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.25.1
+
+- Refresh the README and docs for 0.25.0: list technique discovery in the README capability table, add `CULLY_DISCOVERY=off` to the advisor controls table and mention discovery in the docs index and on the website advisor card.
+
 ## 0.25.0
 
 - Add periodic advisor discovery of recent coding-agent releases, model updates, articles, workflows, skills and hooks through the active agent's web tools. Filter dated public findings against the accepted task, bound searches to one attempt per hour, and turn selected workflow ideas into prompts that continue the agreed work. Keep private task context out of the public scout and allow opting out with `CULLY_DISCOVERY=off`.
