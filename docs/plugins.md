@@ -48,11 +48,11 @@ The repository has a Cursor plugin and a marketplace manifest at `.cursor-plugin
 
 ## Where the plugins are published
 
-A release does four things for the plugins:
+Plugin releases and directory submissions work as follows:
 
 - It runs the plugin drift tests, then attaches `cully-plugin-claude.zip`, `cully-plugin-cursor.zip` and `cully-plugin-codex.zip` to the GitHub release.
 - It adds the pinned install commands to the release notes, for example `claude plugin marketplace add tavric-labs/cully@v0.19.0`. The Claude Code and Codex marketplaces are this repository, so that is the publication.
-- It opens one tracked issue per release with the steps that need a person. Anthropic's directory (a developer portal, paid claude.ai plan) and the Cursor Marketplace (a web form for the repository link) list a plugin only after a reviewed submission, and neither documents an API, so no workflow can submit for you. OpenAI documents Codex plugin hooks as not eligible for its public directory.
+- [One ongoing checklist](https://github.com/tavric-labs/cully/issues/72) tracks the steps that need a person for the latest release; releases do not create new submission issues. Anthropic's directory (a developer portal, paid claude.ai plan) and the Cursor Marketplace (a web form for the repository link) list a plugin only after a reviewed submission, and neither documents an API, so no workflow can submit for you. OpenAI documents Codex plugin hooks as not eligible for its public directory.
 - A separate CI job installs the Claude Code CLI and runs `claude plugin validate` on every change to a plugin, so a broken manifest cannot reach a release.
 
 Each plugin folder has a README that says what the plugin does not do, as both directory checklists ask. The manifests omit `version` on purpose, so repository-marketplace users track the repository. Claude Code's strict validation, which Anthropic's portal also applies, asks for a version. Decide on one, and how to bump it each release, before you submit there.
