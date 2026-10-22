@@ -43,7 +43,7 @@ Works across agents. Learns across sessions.
 | [Token impact](/token-impact) | Observed events, estimated overhead and diagnostic comparisons |
 | [Evaluate Cully](/evals) | Score setup, harness, the improvement loop, task efficiency, advisor and memory against planted ground truth |
 | [Self-improvement](/self-improvement) | A scheduled eval, suggestions you read, apply or drop, and a before/after check |
-| [Advisor](/advisor) | A second pair of eyes that warns and suggests while you work |
+| [Advisor](/advisor) | A second pair of eyes that warns, suggests and surfaces current agent techniques while you work |
 | [Private memory](/memory) | Decisions, attempts, results and session links that outlive the conversation |
 | [Agent integration](/agents) | How Claude Code, Codex, Cursor and others connect |
 | [Install as a plugin](/plugins) | Add Cully's hooks and skill from an agent's plugin marketplace |

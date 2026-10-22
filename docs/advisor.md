@@ -151,6 +151,7 @@ Set these environment variables only when you want to change the defaults:
 | Variable | Effect |
 | --- | --- |
 | `CULLY_ANALYZE_DISABLE=1` | Disable advisor analysis while keeping the status line. |
+| `CULLY_DISCOVERY=off` | Disable periodic public discovery of current coding-agent techniques; local warnings and tool-gap research remain. |
 | `CULLY_ANALYZE_PROMPTS=0` | Exclude recent prompt text from analyzer signals. |
 | `CULLY_DISPLAY` | Use `minimal`, `full` or `debug` display. |
 | `CULLY_COST_INDEX` | Use `eco`, `normal` or `perf` cost estimate. |

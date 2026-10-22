@@ -36,6 +36,7 @@ Setup is user-wide: run it once, then use Cully in any project. No project `.cul
 | Capability | What it helps with |
 | --- | --- |
 | [Live guidance](https://docs.cully.net/advisor) | Notice context pressure, repeated failures and edits awaiting checks. |
+| [Technique discovery](https://docs.cully.net/advisor#discover-current-techniques) | Hourly, bounded public research on current agent releases, workflows, skills and hooks, filtered against your task. Opt out with `CULLY_DISCOVERY=off`. |
 | [Harness audit](https://docs.cully.net/harness) | Find setup gaps in instructions, permissions, memory, skills and hooks. |
 | [Token impact](https://docs.cully.net/token-impact) | Inspect lookup overhead, oversized output and observational savings estimates. |
 | [Replay and handoff](https://docs.cully.net/session-intelligence) | Review recorded steps, recover a stuck session and prepare the next agent. |
