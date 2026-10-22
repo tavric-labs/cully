@@ -374,7 +374,7 @@ h1 em { color: #54926b; }
 .term-badge{display:inline-block;font-size:.66rem;letter-spacing:.06em;padding:.05rem .4rem;border-radius:.25rem;background:#f3d9a4;color:#5a3d00;margin-right:.35rem}
 
 /* Compact example of the terminal’s three instrument groups. */
-.term-instruments { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; padding: 10px 0; border-block: 1px solid #d8e2d3; font-size: 9px; }
+.term-instruments { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; padding: 10px 0; border-block: 1px solid #d8e2d3; font-size: 9px; }
 .term-instruments > div { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
 .term-instruments strong { color: #376d4c; }
 .term-instruments span { color: #536b59; overflow-wrap: anywhere; }

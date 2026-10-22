@@ -138,7 +138,7 @@ func TestPanelLeadsWithWinsInsteadOfLastToolCall(t *testing.T) {
 	view := sessionView{Project: "/work/cully", Daemon: true, Started: time.Now()}
 	for _, cols := range []int{149, 80} {
 		text := normalizedCodexPanel(strings.Join(compactSessionStatusRows(cols, 43, nil, stats, view), "\n"))
-		for _, want := range []string{"Cully impact", "Memory used 1×", "Analysis avoided 1×", "Loops caught 1", "Net +", "MCP 12 calls"} {
+		for _, want := range []string{"Session", "Memory used 1×", "Analysis avoided 1×", "Loops caught 1", "Net +", "MCP 12 calls"} {
 			if !strings.Contains(text, want) {
 				t.Errorf("cols=%d panel lacks %q:\n%s", cols, want, text)
 			}

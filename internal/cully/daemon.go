@@ -346,6 +346,11 @@ func dispatchAdvisor(signals, session, cwd string) {
 		return
 	}
 	signals = advisorTaskContext(signals, readTask(session))
+	// The daemon may predate this terminal's environment. Carry its discovery
+	// opt-out with the job instead of relying on the worker's inherited env.
+	if !discoveryEnabled(advisorAgent(signals)) {
+		signals += "\nperiodic_discovery=off\n"
+	}
 	if !strings.Contains(signals, "terminal_program=") {
 		signals += "\n" + detectTerminalProfile().signals()
 	}

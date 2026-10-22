@@ -460,7 +460,7 @@ func TestCodexAdviceCategoriesIncludeApply(t *testing.T) {
 	}
 }
 
-func TestCodexCompactThreeGroupsAndObservedCullyStates(t *testing.T) {
+func TestCodexCompactTwoGroupsAndObservedCullyStates(t *testing.T) {
 	isolateWorkflow(t)
 	stats := toolStats{Tools: 60, Searches: 3, Edits: 2, Checks: 1}
 	stats.Cully.Calls = 27
@@ -473,13 +473,33 @@ func TestCodexCompactThreeGroupsAndObservedCullyStates(t *testing.T) {
 	stats.Cully.Health = "healthy"
 	stats.Cully.Auth = "authenticated"
 	stats.Cully.CheckedAt = "2026-10-07T12:34:56Z"
-	view := sessionView{Project: "/work/cully", Branch: "main", Model: "GPT-6.1-Sol high", ContextKnown: true, ContextLeft: 73, Input: "1.2K", Output: "240", FiveHour: "5h 82% left", Weekly: "Weekly 91% left", Fast: "Fast off", Daemon: true, Started: time.Now()}
+	view := sessionView{Project: "/work/cully", Branch: "main", Model: "GPT-6.1-Sol high", ContextKnown: true, ContextLeft: 73, Input: "0", Output: "0", FiveHour: "5h 79% left", Weekly: "Weekly 91% left", Fast: "Fast off", ChangesKnown: true, Daemon: true, Started: time.Now()}
 	advice := []string{"CAUT|Inspect repeated failures before retrying.", "ADV|Run a focused verification before finishing."}
 	wide := compactSessionStatusRows(149, 43, advice, stats, view)
 	text := normalizedCodexPanel(strings.Join(wide, "\n"))
-	for _, want := range []string{"Harness", "Project & usage", "Cully impact", "MCP 27 calls", "● Healthy", "Auth authenticated", "daemon online", "2 suggestions", "Open advisor"} {
+	for _, want := range []string{"Harness", "Session", "MCP 27 calls", "● Healthy", "Auth authenticated", "daemon online", "2 suggestions", "Open advisor"} {
 		if !strings.Contains(text, want) {
-			t.Fatalf("three-group panel lost %q", want)
+			t.Fatalf("two-group panel lost %q", want)
+		}
+	}
+	for _, old := range []string{"Project & usage", "Cully impact", "Cully activity"} {
+		if strings.Contains(text, old) {
+			t.Fatalf("compact panel still has a third section: %q", old)
+		}
+	}
+	for _, metric := range []string{"Project cully", "Context ", "Tokens in 0 / out 0", "5h 79% left", "Fast off", "Git +0/-0 (0 tracked)", "MCP 27 calls"} {
+		found := false
+		for _, row := range wide {
+			plain := ansi.Strip(row)
+			if at := strings.Index(plain, metric); at >= 0 {
+				if column := ansi.StringWidth(plain[:at]); column < 77 {
+					t.Fatalf("%q must be in the right Session column, got column %d", metric, column)
+				}
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("Session column lost %q", metric)
 		}
 	}
 	if len(wide)+1 > 22 {
@@ -488,24 +508,23 @@ func TestCodexCompactThreeGroupsAndObservedCullyStates(t *testing.T) {
 	headerFound := false
 	for _, row := range wide {
 		plain := ansi.Strip(row)
-		model, usage, cully := strings.Index(plain, "Harness"), strings.Index(plain, "Project & usage"), strings.Index(plain, "Cully impact")
-		if model < 0 || usage < 0 || cully < 0 {
+		model, session := strings.Index(plain, "Harness"), strings.Index(plain, "Session")
+		if model < 0 || session < 0 {
 			continue
 		}
 		left := ansi.StringWidth(plain[:model])
-		middle := ansi.StringWidth(plain[:usage])
-		right := ansi.StringWidth(plain[:cully])
-		if left != 2 || middle < 50 || right < 100 || middle-left != right-middle {
-			t.Fatalf("groups must form three aligned columns: %d/%d/%d", left, middle, right)
+		right := ansi.StringWidth(plain[:session])
+		if left != 2 || right != 77 {
+			t.Fatalf("groups must form two aligned columns: %d/%d", left, right)
 		}
 		headerFound = true
 	}
 	if !headerFound {
-		t.Fatal("wide panel did not align all three group headings on one row")
+		t.Fatal("wide panel did not align both group headings on one row")
 	}
 	narrow := compactSessionStatusRows(80, 43, advice, stats, view)
 	narrowText := normalizedCodexPanel(strings.Join(narrow, "\n"))
-	for _, want := range []string{"Harness", "Project & usage", "Cully impact", "● Healthy", "Auth authenticated", "MCP 27 calls"} {
+	for _, want := range []string{"Harness", "Session", "● Healthy", "Auth authenticated", "MCP 27 calls"} {
 		if !strings.Contains(narrowText, want) {
 			t.Fatalf("stacked panel lost %q", want)
 		}
@@ -547,7 +566,7 @@ func TestCodexCullyHealthAndAuthAreIndependentAndUnknownByDefault(t *testing.T) 
 		}
 	}
 	full := normalizedCodexPanel(strings.Join(sessionStatusRows(149, nil, stats, view), "\n"))
-	if !strings.Contains(full, "Cully impact") || strings.Contains(full, "Cost / cache") {
+	if !strings.Contains(full, "Cully activity") || strings.Contains(full, "Cost / cache") {
 		t.Fatal("expanded instruments should retain MCP metrics and omit unsupported cost")
 	}
 }

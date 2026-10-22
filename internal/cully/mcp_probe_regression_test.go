@@ -35,7 +35,7 @@ func TestCodexProbeCheckedAuthenticationStatus(t *testing.T) {
 		{Probed: true, Health: "unsupported", Auth: "unknown"},
 		{Probed: true, Health: "agent_signin", Auth: "unknown"},
 	} {
-		text := normalizedCodexPanel(strings.Join(cullyInstrumentRows(toolStats{Cully: state}, 180), "\n"))
+		text := normalizedCodexPanel(strings.Join(cullyInstrumentRows(toolStats{Cully: state}, "Session"), "\n"))
 		if strings.Contains(text, "first call") || strings.Contains(text, "Auth unknown") {
 			t.Fatalf("checked status still looks unobserved: %s", text)
 		}

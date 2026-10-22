@@ -65,13 +65,14 @@ func RunPane(agentName string, args []string, input, output *os.File) error {
 	if err := registerPane(session, currentDir()); err != nil {
 		return fmt.Errorf("register %s advisor pane: %w", agent.Name, err)
 	}
-	defer os.Remove(paneRegistrationFile(session)) //nolint:errcheck
-	defer os.Remove(paneBindingFile(session))      //nolint:errcheck
-	defer os.Remove(signalFile(session))           //nolint:errcheck
-	defer os.Remove(sessionReportFile(session))    //nolint:errcheck
-	defer os.Remove(sessionSnapshotFile(session))  //nolint:errcheck
-	defer os.Remove(sessionSignalsFile(session))   //nolint:errcheck
-	defer os.Remove(sessionSeenFile(session))      //nolint:errcheck
+	defer os.Remove(paneRegistrationFile(session))      //nolint:errcheck
+	defer os.Remove(paneBindingFile(session))           //nolint:errcheck
+	defer os.Remove(signalFile(session))                //nolint:errcheck
+	defer os.Remove(sessionReportFile(session))         //nolint:errcheck
+	defer os.Remove(sessionSnapshotFile(session))       //nolint:errcheck
+	defer os.Remove(sessionSignalsFile(session))        //nolint:errcheck
+	defer os.Remove(sessionSeenFile(session))           //nolint:errcheck
+	defer os.Remove(discoveryFile(session, agent.Name)) //nolint:errcheck
 	defer clearCodexCullyStats(session)
 	if id := agent.resumeID(args); id != "" {
 		bindPane(currentDir(), id)
@@ -512,7 +513,7 @@ func RunPane(agentName string, args []string, input, output *os.File) error {
 			if time.Since(lastSessionSave) >= time.Second {
 				persistSession()
 			}
-			if stats.Tools > lastAnalysisTools && time.Since(lastAnalysis) >= 2*time.Minute {
+			if advisorAnalysisDue(agent.Name, stats.Tools, lastAnalysisTools, time.Since(lastAnalysis)) {
 				snap := readSnapshot(session)
 				snap.Cwd = view.Project
 				snap.Searches, snap.ToolErrors = stats.Searches, stats.Errors

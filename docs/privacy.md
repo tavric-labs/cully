@@ -67,6 +67,10 @@ Audit events contain actor, action, target IDs and timestamp, without checkpoint
 
 The optional `dev-workflow-rules` skill is a private file under `~/.cully/skills/dev-workflow-rules/` that you write and edit yourself; Cully installs only a starter with hint comments. Cully sends at most 12 KiB of it, with likely credentials redacted, to your configured advisor model as background for local analysis. It is excluded from web-research prompts, is never saved to memory automatically, and grants no tool or infrastructure access. Hint comments are not sent, and likely credentials are redacted. Delete the file to remove it.
 
+## Public advisor discovery
+
+The periodic public scout receives only the active agent's name and the current date. Cully does not include the project, accepted task title, private memory, workflow profile or transcript in that prompt. The scout is instructed to use public web tools only. Dated findings enter the private analysis, which determines relevance to the current task; web content remains untrusted evidence. The local cooldown stores only a timestamp. The session report can retain relevant recommendations with their public source links, not fetched articles. Set `CULLY_DISCOVERY=off` to disable periodic discovery. See [the advisor](/advisor#discover-current-techniques) for cadence and limitations.
+
 ## Harness measurements
 
 `cully harness` checks instruction and skill file names and selected agent configuration keys without printing their contents. It also streams recent local transcripts of the running agent (Claude Code or Codex) to count oversized tool output and actual subagent calls. The terminal’s Harness column does this automatically for up to 20 sessions from the exact project’s folder, over the last 30 days, refreshed every five minutes. The CLI defaults to 40 sessions per project; `--all` explicitly measures all project folders, optionally filtered with `--only`.

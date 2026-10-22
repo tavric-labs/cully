@@ -240,7 +240,7 @@ func sessionStatusContent(cols int, advice []string, stats toolStats, view sessi
 	}
 	grid(left, right)
 	rows = append(rows, "")
-	for _, line := range cullyInstrumentRows(stats, max(1, cols-5)) {
+	for _, line := range cullyInstrumentRows(stats, "Cully activity") {
 		add(line)
 	}
 	rows = append(rows, "")
@@ -499,7 +499,7 @@ func adviceBadge(suggestion string) (color, badge string) {
 	}
 	if isApplyable(classified) {
 		lower := strings.ToLower(classified.Text)
-		for _, action := range []string{"mcp", "skill", "graphify", "install", "configure", "enable", "register", "integration", "agents.md", "claude.md", "create ", "add ", "update ", "write ", "rule"} {
+		for _, action := range []string{"mcp", "skill", "hook", "workflow", "graphify", "install", "configure", "enable", "register", "integration", "agents.md", "claude.md", "create ", "add ", "update ", "write ", "rule"} {
 			if strings.Contains(lower, action) {
 				return magenta, "Apply"
 			}
@@ -713,7 +713,8 @@ func compactInstrumentRows(cols int, stats toolStats, view sessionView) ([]strin
 		workParts = append(workParts, "Git "+changes)
 	}
 	work := strings.Join(workParts, " · ")
-	usage := []string{blue + bold + "Project & usage" + rst, ""}
+	cully := cullyInstrumentRows(stats, "Session")
+	session := []string{cully[0], ""}
 	locationKey := view.Project
 	if locationKey != "" {
 		locationKey = filepath.Base(locationKey)
@@ -722,47 +723,47 @@ func compactInstrumentRows(cols int, stats toolStats, view sessionView) ([]strin
 		locationKey += ":" + view.Branch
 	}
 	if locationKey == "" || !hudShows(cols, stats, view, locationKey) {
-		usage = append(usage, location)
-	} else {
-		usage[0] = blue + bold + "Usage" + rst
+		session = append(session, location)
 	}
 	if !view.ContextKnown || !hudShows(cols, stats, view, fmt.Sprintf("Context %d%%", 100-view.ContextLeft)) {
-		usage = append(usage, "Context "+context)
+		session = append(session, "Context "+context)
 	}
-	usage = append(usage, tokens, quota, work)
-	cully := cullyInstrumentRows(stats, width)
-	groups := [][]string{activity, usage, cully}
+	compactSession := append([]string{session[0]}, session[2:]...)
+	compactSession = append(compactSession, strings.TrimSuffix(tokens+" · "+quota, " · "), work)
+	compactSession = append(compactSession, cully[2:]...)
+	session = append(session, tokens, quota, work)
+	session = append(session, cully[2:]...)
+	groups := [][]string{activity, session}
 	if cols >= 120 {
 		const gap = 6
-		cellWidth := max(1, (width-gap*2)/3)
-		var wrapped [3][]string
+		cellWidth := max(1, (width-gap)/2)
+		var wrapped [2][]string
 		for column, group := range groups {
 			for _, value := range group {
 				wrapped[column] = append(wrapped[column], strings.Split(ansi.Wrap(value, cellWidth, ""), "\n")...)
 			}
 		}
-		for y := 0; y < max(len(wrapped[0]), len(wrapped[1]), len(wrapped[2])); y++ {
+		for y := 0; y < max(len(wrapped[0]), len(wrapped[1])); y++ {
 			var line strings.Builder
-			for column := 0; column < 3; column++ {
+			for column := 0; column < 2; column++ {
 				value := ""
 				if y < len(wrapped[column]) {
 					value = wrapped[column][y]
 				}
 				line.WriteString(value)
-				if column < 2 {
+				if column == 0 {
 					line.WriteString(strings.Repeat(" ", max(0, cellWidth-ansi.StringWidth(value))+gap))
 				}
 			}
 			add(line.String())
 		}
 	} else {
-		// Stack the same groups, combining adjacent counters and usages so a
+		// Stack the same groups, combining adjacent session instruments so a
 		// normal narrow terminal still leaves most rows to the conversation.
 		rows = rows[:len(rows)-1] // title and first group belong to one section
 		groups = [][]string{
 			append([]string{activity[0] + " · Model " + model}, activity[3:]...),
-			usage,
-			append([]string{cully[0]}, cully[2:]...),
+			compactSession,
 		}
 		for i, group := range groups {
 			if i > 0 {
@@ -785,10 +786,9 @@ func compactInstrumentRows(cols int, stats toolStats, view sessionView) ([]strin
 	return rows, context
 }
 
-// cullyInstrumentRows is the Cully column of the panel. It leads with what
-// Cully did for the user (memory used, analyses avoided, loops caught, net
-// tokens) and keeps MCP health and authentication to one compact line.
-func cullyInstrumentRows(stats toolStats, width int) []string {
+// cullyInstrumentRows renders observed Cully activity beneath the supplied
+// heading. The compact panel combines it with native instruments in Session.
+func cullyInstrumentRows(stats toolStats, title string) []string {
 	c := stats.Cully
 	health := dim + "Awaiting first MCP response" + rst
 	if c.Calls > 0 {
@@ -805,7 +805,11 @@ func cullyInstrumentRows(stats toolStats, width int) []string {
 	} else if c.Probed {
 		health = dim + "Connection not verified" + rst
 	}
-	rows := []string{magenta + bold + "Cully impact" + rst + " · " + health, ""}
+	headerColor := magenta
+	if title == "Session" {
+		headerColor = blue
+	}
+	rows := []string{headerColor + bold + title + rst + " · MCP " + health, ""}
 	for _, line := range stats.Impact.Lines() {
 		switch {
 		case strings.HasPrefix(line, "Net -"):

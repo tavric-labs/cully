@@ -57,7 +57,9 @@ func admitAdvisorRequest(session, signals string, now time.Time) string {
 	}
 	sum := sha256.Sum256([]byte(signals))
 	evidence := hex.EncodeToString(sum[:])
-	if evidence == budget.Evidence {
+	// An idle live session can refresh public discovery once the hourly window
+	// expires. Duplicate evidence inside that window still costs no model call.
+	if evidence == budget.Evidence && (len(recent) > 0 || !discoveryEnabled(advisorAgent(signals))) {
 		return "unchanged advisor evidence"
 	}
 	if len(recent) >= advisorRequestLimit {

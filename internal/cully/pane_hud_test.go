@@ -65,7 +65,7 @@ func TestPaneHUDMetricsReplaceOnlyVisibleCompactDuplicates(t *testing.T) {
 			t.Errorf("HUD metric repeated below: %q in %s", duplicate, compact)
 		}
 	}
-	for _, want := range []string{"Setup ", "Model GPT", "MCP ", "Usage"} {
+	for _, want := range []string{"Setup ", "Model GPT", "MCP ", "Session"} {
 		if !strings.Contains(compact, want) {
 			t.Errorf("useful panel detail lost: %s", want)
 		}
