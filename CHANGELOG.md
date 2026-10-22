@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Stop creating duplicate plugin marketplace submission issues on every release; keep one ongoing checklist in #72 for the latest release.
+
 ## 0.25.1
 
 - Refresh the README and docs for 0.25.0: list technique discovery in the README capability table, add `CULLY_DISCOVERY=off` to the advisor controls table and mention discovery in the docs index and on the website advisor card.

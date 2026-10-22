@@ -48,34 +48,6 @@ jobs:
           args: release --clean --release-notes release-notes-composed.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-  marketplace-submissions:
-    needs: release
-    runs-on: ubuntu-latest
-    permissions:
-      issues: write
-    steps:
-      # Anthropic's directory and the Cursor Marketplace accept a plugin only
-      # through a reviewed submission, which no workflow can make. Open one
-      # tracked checklist per release so it is not forgotten.
-      - name: Open the marketplace submission checklist
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GH_REPO: ${{ github.repository }}
-          TAG: ${{ github.ref_name }}
-        run: |
-          title="Submit Cully plugins to the agent directories: $TAG"
-          if [ -n "$(gh issue list --state all --search "\"$title\" in:title" --json number --jq '.[0].number')" ]; then
-            echo "checklist already exists"; exit 0
-          fi
-          gh issue create --title "$title" --body "Release $TAG published the plugins in the Claude Code and Codex marketplaces, which are this repository, and attached them as zips. These two directories accept a plugin only through a reviewed submission that a person must make:
-
-          - [ ] **Anthropic's directory** (needs a paid claude.ai plan): submit in the developer portal at https://claude.ai/directory/manage. Run 'claude plugin validate ./plugins/claude' first. The portal's strict check also asks for a version, which the plugin omits on purpose so repository-marketplace users track the repository; decide on a version before submitting.
-          - [ ] **Cursor Marketplace**: submit https://github.com/${GH_REPO} at https://cursor.com/marketplace/publish. The repository root carries .cursor-plugin/marketplace.json.
-          - [ ] **Codex**: OpenAI documents plugin hooks as supported only for plugins installed manually, and not for its public directory, so there is nothing to submit.
-
-          The Cully MCP server is not part of any listing: users deploy it on their own infrastructure.
-
-          Plugin guide: https://docs.cully.net/plugins"
   service-images:
     needs: release
     uses: ./.github/workflows/publish-images.yml
