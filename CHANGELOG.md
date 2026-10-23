@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.27.1
+
+- Restore trackpad and wheel scrolling for alternate-screen agents that do not request mouse reports. Cully now turns each wheel notch into arrow keys for them instead of dropping it; agents that request the mouse still receive real wheel events.
+
 ## 0.27.0
 
 - Make the session sidebar opt-in with `cully run --sidebar AGENT` (`CULLY_SIDEBAR=1` still opts in); the list costs 24 columns, so plain runs keep the full width.

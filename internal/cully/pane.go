@@ -480,7 +480,16 @@ func runPaneOptions(agent paneAgent, args []string, input, output *os.File, exer
 				// The panel belongs to the same conversation view. A wheel over
 				// it must read history too, rather than silently doing nothing.
 				if up, wheel := agentMouse.verticalWheel(); !drawer.Open && wheel {
-					if s.emulator.IsAltScreen() || s.native.mouseRequested() {
+					if s.emulator.IsAltScreen() && !s.native.mouseRequested() {
+						// The agent never asked for mouse reports, so the emulator
+						// would drop the wheel. Do what terminals do for alternate
+						// scroll: turn each notch into arrow keys.
+						key := "\x1b[B"
+						if up {
+							key = "\x1b[A"
+						}
+						s.emulator.SendText(strings.Repeat(key, wheelLines))
+					} else if s.emulator.IsAltScreen() || s.native.mouseRequested() {
 						// An alternate-screen agent owns its history. Wheel events over
 						// the compact panel must reach that agent inside its viewport.
 						forwarded := agentMouse
