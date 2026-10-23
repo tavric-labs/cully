@@ -22,7 +22,7 @@ See [how Cully works](/how-cully-works) for the product-level picture.
 
 ## Local harness runtime
 
-`cully setup --all` owns the complete local startup: Docker memory services, user-level agent integrations shared across projects, and the advisor daemon. `--mcp-url` uses an existing memory server; `--prepare` only prepares editable configuration. Startup failures return a nonzero exit status. Setup and uninstall never write into the invoking project. Session IDs and authenticated ownership remain separate from installation scope. Private memory has no inferred project or classification fields.
+`cully setup --all` owns the complete local startup: Docker memory services, user-level agent integrations shared across projects, and the advisor daemon. `--mcp-url` uses an existing memory server; Startup failures return a nonzero exit status. Setup and uninstall never write into the invoking project. Session IDs and authenticated ownership remain separate from installation scope. Private memory has no inferred project or classification fields.
 
 `cmd/cully` uses the session-control implementation in `internal/cully`. It runs agents in the terminal, renders instruments, runs advisory analysis, manages suggestions and records the session journal.
 

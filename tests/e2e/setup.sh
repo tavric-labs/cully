@@ -63,7 +63,7 @@ else
   git -C "$repo_root" archive HEAD | tar -x -C "$HOME/.cully/self-hosted/releases/$stack_tag"
 fi
 
-# This must work from a clean home without running --prepare first. The CLI
+# This must work from a clean home in one command. The CLI
 # downloads the matching public release archive and runs its setup script.
 project_dir="$e2e_root/project"
 mkdir -p "$project_dir"
@@ -76,7 +76,8 @@ grep -Fq '[mcp_servers.cully]' "$CODEX_HOME/config.toml"
 grep -Fq 'http://127.0.0.1:3393/mcp' "$CODEX_HOME/config.toml"
 "$cli" status | tee "$e2e_root/status"
 grep -Fq 'cully advisor daemon running' "$e2e_root/status"
-test ! -e "$CODEX_HOME/AGENTS.md"
+# Direct claude, codex and cursor-agent launches stay native.
+bash "$repo_root/tests/e2e/native_isolation.sh" "$HOME/.claude" "$CODEX_HOME" "$HOME/.cursor"
 test ! -e "$project_dir/AGENTS.md"
 test ! -e "$project_dir/.cully"
 test ! -e "$project_dir/.cursor"
@@ -88,13 +89,12 @@ if [[ "${CULLY_E2E_PUBLISHED_CLI:-false}" == true ]]; then
   # Releases before `cully eval` still get the retrieval eval through Go.
   go test ./tests/e2e -run '^(TestSolo|TestRetrievalEval)$' -race -count=1 -v
 else
-  go test ./tests/e2e -run '^TestSolo$' -race -count=1 -v
+  go test ./tests/e2e -run '^(TestSolo|TestTerminal)$' -race -count=1 -v
   # All four eval suites through the CLI under test, memory against this stack.
   "$cli" eval --mcp-url "$CULLY_E2E_MCP_URL"
 fi
 
 cd "$HOME"
-"$cli" setup --all --prepare
 test -f "$HOME/.cully/self-hosted/config/.env"
 
 # Finish the same flow with the supported uninstall command.

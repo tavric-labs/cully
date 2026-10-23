@@ -20,7 +20,7 @@ Run `cully status` to check the integration. The [advisor controls](/advisor#con
 | `~/.cully/self-hosted/config/connectors.json` | Identity-provider connector settings for MCP Auth. |
 | `~/.cully/self-hosted/config/.secrets/signing-key.pem` | MCP Auth signing key for OAuth. |
 
-Run `cully setup --all --prepare` to create editable stack files before starting containers. Run `cully setup --agent AGENT --all` for the default private stack, or follow the [OAuth guide](/oauth) before adding `--oauth`.
+Run `cully setup --agent AGENT --all` for the default private stack, or follow the [OAuth guide](/oauth) before adding `--oauth`.
 
 ## Manual MCP service settings
 

@@ -19,7 +19,7 @@ var version = "dev"
 const help = `Cully — the harness runtime for coding agents and software projects.
 
 Usage:
-  cully setup --all [--agent claude|codex|cursor|all] [--oauth] [--prepare]
+  cully setup --all [--agent claude|codex|cursor|all] [--oauth]
                                          Start the full local stack, integrations and advisor
   cully setup [--agent AGENT] --mcp-url URL [--oauth]
                                          Use an existing server; set up integrations and advisor
@@ -219,13 +219,10 @@ func runSetup(args []string) error {
 		printT3CodeHint(os.Stdout, exec.LookPath)
 		return nil
 	}
-	if err := runSelfHost(options.target, options.oauth, options.prepare, options.auth); err != nil {
+	if err := runSelfHost(options.target, options.oauth, options.auth); err != nil {
 		return err
 	}
 	printT3CodeHint(os.Stdout, exec.LookPath)
-	if options.prepare {
-		return nil
-	}
 	return cully.SetupInteractiveTerminal(os.Stdin, os.Stdout, options.skipTerminalTest, options.terminal)
 }
 
@@ -241,7 +238,7 @@ func printT3CodeHint(w io.Writer, lookPath func(string) (string, error)) {
 
 type setupOptions struct {
 	target, endpoint               string
-	oauth, prepare                 bool
+	oauth                          bool
 	terminalOnly, skipTerminalTest bool
 	terminal                       string
 	auth                           mcpAuthOptions
@@ -254,7 +251,6 @@ func parseSetup(args []string) (setupOptions, error) {
 	all := fs.Bool("all", false, "start the full stack on this machine, configure agents, and start the advisor")
 	fs.StringVar(&options.endpoint, "mcp-url", "", "connect to an already deployed Cully MCP server")
 	fs.BoolVar(&options.oauth, "oauth", false, "server uses OAuth; print sign-in instructions")
-	fs.BoolVar(&options.prepare, "prepare", false, "with --all, prepare local configuration without starting services")
 	fs.BoolVar(&options.terminalOnly, "terminal-only", false, "install the required zsh/Oh My Zsh and font setup without services or agents")
 	fs.StringVar(&options.terminal, "terminal", "", "native terminal program; default: detect")
 	fs.BoolVar(&options.skipTerminalTest, "skip-terminal-test", false, "configure terminal settings without the interactive wheel/divider/advisor exercise")
@@ -270,14 +266,11 @@ func parseSetup(args []string) (setupOptions, error) {
 	if *all && options.endpoint != "" {
 		return setupOptions{}, fmt.Errorf("choose either --all for a local stack or --mcp-url for a deployed stack")
 	}
-	if options.terminalOnly && (*all || options.endpoint != "" || options.target != "" || options.oauth || options.prepare || options.auth.specified()) {
+	if options.terminalOnly && (*all || options.endpoint != "" || options.target != "" || options.oauth || options.auth.specified()) {
 		return setupOptions{}, fmt.Errorf("--terminal-only cannot be combined with stack or agent setup options")
 	}
 	if !*all && options.endpoint == "" && !options.terminalOnly {
 		return setupOptions{}, fmt.Errorf("setup requires --all to start Cully on this machine, or --mcp-url URL to connect to a deployed Cully stack")
-	}
-	if options.prepare && !*all {
-		return setupOptions{}, fmt.Errorf("--prepare requires --all")
 	}
 	if options.auth.specified() {
 		if !*all || !options.oauth {

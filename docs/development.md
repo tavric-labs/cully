@@ -59,6 +59,6 @@ After a release's archives and service images are published, verify the real dis
 gh workflow run e2e-test.yml --ref main -f published_cli=true
 ```
 
-Published mode keeps the downloaded CLI; candidate mode replaces it with the checkout's binary and stack scripts. Both run `cully setup --all` and `cully setup --all --prepare` in a disposable home. The published CLI's version must match the checkout's newest stable tag.
+Published mode keeps the downloaded CLI; candidate mode replaces it with the checkout's binary and stack scripts. Both run `cully setup --all` in a disposable home, check that direct agent launches stay native, and drive `cully run` with the session sidebar in a pseudo-terminal. The published CLI's version must match the checkout's newest stable tag.
 
 Keep private-memory validation in `internal/memory`, Team policies in `internal/workspace`, SQL in `internal/store/postgres`, protocol handlers in `internal/transport`, and initialization in `internal/app`. Workspace access, projections, task lifecycle, evidence/review and learning/playbook handlers have separate responsibilities; a shared operation table defines routing, authorization scope and read/write status. Follow the [architecture](architecture.md) and [roadmap](roadmap.md) when extending session capture or synchronization.

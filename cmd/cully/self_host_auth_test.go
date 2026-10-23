@@ -15,7 +15,7 @@ import (
 
 func TestMCPAuthInputOptions(t *testing.T) {
 	inputs := []string{"--mcp-auth-image", "example/auth:v1", "--mcp-auth-config-dir", "/config", "--mcp-auth-env", "/provider.env"}
-	o, err := parseSetup(append([]string{"--all", "--oauth", "--prepare"}, inputs...))
+	o, err := parseSetup(append([]string{"--all", "--oauth"}, inputs...))
 	if err != nil || o.auth.Image != "example/auth:v1" || o.auth.ConfigDir != "/config" || o.auth.EnvFile != "/provider.env" {
 		t.Fatalf("options: %+v, %v", o, err)
 	}

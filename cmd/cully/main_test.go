@@ -47,7 +47,6 @@ func TestSetupExplicitModes(t *testing.T) {
 		args     []string
 		target   string
 		oauth    bool
-		prepare  bool
 		endpoint string
 	}{
 		{args: []string{"--all"}},
@@ -55,18 +54,16 @@ func TestSetupExplicitModes(t *testing.T) {
 		{args: []string{"--agent", "all", "--all"}, target: "all"},
 		{args: []string{"--agent", "codex", "--mcp-url", "https://mcp.example.com/mcp", "--oauth"}, target: "codex", endpoint: "https://mcp.example.com/mcp", oauth: true},
 		{args: []string{"--agent=claude", "--all", "--oauth"}, target: "claude", oauth: true},
-		{args: []string{"--agent", "cursor", "--all", "--prepare"}, target: "cursor", prepare: true},
-		{args: []string{"--all", "--prepare"}, prepare: true},
 	} {
 		options, err := parseSetup(test.args)
-		if err != nil || options.target != test.target || options.oauth != test.oauth || options.prepare != test.prepare || options.endpoint != test.endpoint {
+		if err != nil || options.target != test.target || options.oauth != test.oauth || options.endpoint != test.endpoint {
 			t.Fatalf("parseSetup(%v) = %+v, %v", test.args, options, err)
 		}
 	}
 	for _, args := range [][]string{
-		nil, {"codex"}, {"--agent", "codex"}, {"--all", "--mcp-url", "https://example.com/mcp"}, {"--prepare"}, {"--agent"}, {"--agent", ""}, {"--agent", "other"},
+		nil, {"codex"}, {"--agent", "codex"}, {"--all", "--mcp-url", "https://example.com/mcp"}, {"--agent"}, {"--agent", ""}, {"--agent", "other"},
 		{"codex", "--agent", "claude"}, {"--agent", "codex", "cursor"},
-		{"--mcp-url", ""}, {"--mcp-url"}, {"--mcp-url", "https://mcp.example.com/mcp", "--prepare"},
+		{"--mcp-url", ""}, {"--mcp-url"},
 	} {
 		if _, err := parseSetup(args); err == nil {
 			t.Fatalf("accepted invalid setup args: %v", args)
@@ -85,7 +82,7 @@ func TestTerminalOnlySetupOptions(t *testing.T) {
 	if err != nil || !options.terminalOnly || !options.skipTerminalTest {
 		t.Fatalf("%+v %v", options, err)
 	}
-	for _, args := range [][]string{{"--terminal-only", "--all"}, {"--terminal-only", "--mcp-url", "https://example.com/mcp"}, {"--terminal-only", "--prepare"}, {"--terminal-only", "--agent", "codex"}, {"--terminal-only", "--oauth"}} {
+	for _, args := range [][]string{{"--terminal-only", "--all"}, {"--terminal-only", "--mcp-url", "https://example.com/mcp"}, {"--terminal-only", "--agent", "codex"}, {"--terminal-only", "--oauth"}} {
 		if _, err := parseSetup(args); err == nil {
 			t.Fatalf("accepted mixed terminal/stack setup: %v", args)
 		}

@@ -124,7 +124,6 @@ Review the preview. To apply it, run `cully apply 1` and confirm the proposed ch
 | `cully apply <n>` | Applies one after confirmation. |
 | `cully setup --all [--agent AGENT]` | Starts the local stack, installs agent integrations and starts the advisor; detects agents by default. |
 | `cully setup --mcp-url URL [--agent AGENT]` | Connects an existing server, installs agent integrations and starts the advisor. |
-| `cully setup --all --prepare` | Prepares editable stack configuration without starting services or installing integrations. |
 | `cully uninstall AGENT` | Removes one agent's Cully-managed integration settings. |
 | `cully uninstall` | Stops the local stack and removes managed agent integrations; keeps memory data. |
 | `cully uninstall --purge-data` | Also deletes local memory volumes and self-hosted configuration. |

@@ -22,7 +22,7 @@ const maxSourceSize = 200 << 20
 
 var releaseVersion = regexp.MustCompile(`^v?[0-9]+\.[0-9]+\.[0-9]+(?:-[A-Za-z0-9.-]+)?$`)
 
-func runSelfHost(agent string, oauth, prepare bool, auth mcpAuthOptions) error {
+func runSelfHost(agent string, oauth bool, auth mcpAuthOptions) error {
 	if agent != "" && agent != "claude" && agent != "codex" && agent != "cursor" && agent != "all" {
 		return fmt.Errorf("choose an agent: claude, codex, cursor, or all")
 	}
@@ -59,14 +59,6 @@ func runSelfHost(agent string, oauth, prepare bool, auth mcpAuthOptions) error {
 		}
 	}
 	fmt.Printf("Cully self-hosted configuration: %s\n", configDir)
-	if prepare {
-		if customAuth {
-			fmt.Println("MCP Auth image and config paths saved. Edit .env with public hostnames and create .secrets/signing-key.pem; then run cully setup --all --oauth.")
-		} else {
-			fmt.Println("Edit .env and, for OAuth, connectors.json and .secrets/signing-key.pem; then run cully setup --all (add --oauth for private IC sign-in).")
-		}
-		return nil
-	}
 	// Run the current helper against the matching release's Docker files.
 	helper, err := os.CreateTemp(setupDir, ".cully-setup-*.sh")
 	if err != nil {

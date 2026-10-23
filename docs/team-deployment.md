@@ -54,7 +54,7 @@ These connections are the deployment requirement; choose the hosts, platform and
 
 ### Quick path with Docker Compose
 
-After installing the Cully CLI, open a new terminal and run `cully setup --all --prepare` to create editable files. Set the public MCP and authorization hostnames and the upstream identity-provider client secret in `~/.cully/self-hosted/config/.env`. Add the provider's `connectors.json` and a persistent signing key as shown in the [OAuth setup](/oauth#self-hosted-docker-with-mcp-auth). Then start the stack:
+After installing the Cully CLI, open a new terminal and create `~/.cully/self-hosted/config/` with a `.env` file. Set the public MCP and authorization hostnames and the upstream identity-provider client secret in `.env`; setup adds the generated credentials. Add the provider's `connectors.json` and a persistent signing key as shown in the [OAuth setup](/oauth#self-hosted-docker-with-mcp-auth). Then start the stack:
 
 ```sh
 cully setup --all --oauth
