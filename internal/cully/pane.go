@@ -17,10 +17,21 @@ import (
 	"golang.org/x/term"
 )
 
-// paneOptions selects host features. The sidebar is a Cully control, so it is
-// on for `cully run` and off for the single-session terminal check.
+// paneOptions selects host features. The sidebar is a Cully control, so it
+// is opt-in for `cully run --sidebar` and off for the single-session
+// terminal check.
 type paneOptions struct {
 	Sidebar bool
+}
+
+// sidebarEnabled is explicit opt-in: the --sidebar flag or CULLY_SIDEBAR=1.
+// The list costs 24 columns, so it stays off unless requested.
+func sidebarEnabled(flag bool) bool {
+	if flag {
+		return true
+	}
+	enabled, ok := os.LookupEnv("CULLY_SIDEBAR")
+	return ok && enabled == "1"
 }
 
 // RunPane owns the physical terminal and gives each coding agent a smaller
@@ -29,11 +40,18 @@ type paneOptions struct {
 // same terminal; only its launch command and native footer differ. Several
 // named sessions can run in one window; they end with it.
 func RunPane(agentName string, args []string, input, output *os.File) error {
+	return RunPaneOptions(agentName, args, input, output, false)
+}
+
+// RunPaneOptions is RunPane with an explicit sidebar choice. Callers that
+// accept a --sidebar flag pass it through; otherwise the CULLY_SIDEBAR=1
+// environment escape hatch still opts in.
+func RunPaneOptions(agentName string, args []string, input, output *os.File, sidebar bool) error {
 	agent, err := lookupPaneAgent(agentName)
 	if err != nil {
 		return err
 	}
-	return runPaneOptions(agent, args, input, output, nil, paneOptions{Sidebar: os.Getenv("CULLY_SIDEBAR") != "0"})
+	return runPaneOptions(agent, args, input, output, nil, paneOptions{Sidebar: sidebarEnabled(sidebar)})
 }
 
 func runPane(agent paneAgent, args []string, input, output *os.File, exercise *terminalExercise) error {
@@ -281,8 +299,14 @@ func runPaneOptions(agent paneAgent, args []string, input, output *os.File, exer
 	}
 	finishRename := func(save bool) {
 		if save {
-			if name := cleanSessionName(sidebar.Input); name != "" {
+			names := make([]string, len(sessions))
+			for i, s := range sessions {
+				names[i] = s.name
+			}
+			if name, ok := renameSessionName(names, sidebar.Selected, sidebar.Input); ok {
 				sessions[sidebar.Selected].name = name
+			} else if cleanSessionName(sidebar.Input) != "" {
+				say("session name already used")
 			}
 		}
 		sidebar.Renaming = false

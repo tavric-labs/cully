@@ -142,10 +142,48 @@ func TestSupportedNativeTerminalsOnly(t *testing.T) {
 		allowed     bool
 	}{
 		{"darwin", "Apple_Terminal", true}, {"linux", "gnome-terminal", true}, {"linux", "ptyxis", true}, {"linux", "gnome-console", true},
-		{"linux", "", true}, {"darwin", "WarpTerminal", false}, {"linux", "Warp", false}, {"darwin", "iTerm.app", false}, {"windows", "", false},
+		{"linux", "", true},
+		{"darwin", "ghostty", true}, {"darwin", "iTerm.app", true}, {"darwin", "kitty", true}, {"darwin", "wezterm", true}, {"darwin", "alacritty", true},
+		{"linux", "ghostty", true}, {"linux", "kitty", true}, {"linux", "wezterm", true}, {"linux", "alacritty", true},
+		{"darwin", "WarpTerminal", false}, {"linux", "Warp", false}, {"windows", "", false},
 	} {
 		if err := (terminalProfile{OS: test.os, Program: test.program}).requireNative(); (err == nil) != test.allowed {
 			t.Fatalf("%+v: %v", test, err)
+		}
+	}
+	if err := (terminalProfile{OS: "darwin", Program: "Warp"}).requireNative(); err == nil || !strings.Contains(err.Error(), "Warp") {
+		t.Fatalf("Warp rejection must name Warp: %v", err)
+	}
+}
+
+func TestGhosttyAndManualFontGuidance(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", "")
+	profile := terminalProfile{OS: "darwin", Program: "ghostty"}
+	if settings, err := nativeFontSettings(profile, nil); err != nil || len(settings) != 0 {
+		t.Fatalf("Ghostty defaults must be accepted: %v %v", settings, err)
+	}
+	macConfig := filepath.Join(home, "Library", "Application Support", "com.mitchellh.ghostty", "config")
+	if err := os.MkdirAll(filepath.Dir(macConfig), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(macConfig, []byte("# comment\nfont-family = MesloLGS Nerd Font Mono\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if settings, err := nativeFontSettings(profile, nil); err != nil || len(settings) != 0 {
+		t.Fatalf("Ghostty Nerd Font must be accepted: %v %v", settings, err)
+	}
+	if err := os.WriteFile(macConfig, []byte("font-family = Menlo\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := nativeFontSettings(profile, nil); err == nil || !strings.Contains(err.Error(), "Menlo") {
+		t.Fatalf("Ghostty non-Nerd family must guide: %v", err)
+	}
+	for program, name := range map[string]string{"iterm.app": "iTerm2", "kitty": "Kitty", "wezterm": "WezTerm", "alacritty": "Alacritty"} {
+		_, err := nativeFontSettings(terminalProfile{OS: "darwin", Program: program}, nil)
+		if err == nil || !strings.Contains(err.Error(), name) || !strings.Contains(err.Error(), "Nerd Font") {
+			t.Fatalf("%s must guide to its own font settings: %v", program, err)
 		}
 	}
 }

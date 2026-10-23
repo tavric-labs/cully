@@ -101,6 +101,18 @@ func nativeFontSettings(profile terminalProfile, run nativeCommand) ([]nativeFon
 		}
 		return settings, nil
 	}
+	// Ghostty embeds Nerd Font symbols, so its default font already renders
+	// Cully's icons. Only a configured non-Nerd family needs a manual fix;
+	// Cully never rewrites Ghostty's config file.
+	if strings.EqualFold(profile.Program, "ghostty") {
+		return ghosttyFontSettings()
+	}
+	// These terminals speak Cully's protocols but own their font settings
+	// (native UI or text configs Cully must not rewrite). Point at the manual
+	// step instead of failing setup with an unrelated terminal's instructions.
+	if guidance, ok := manualFontTerminals[strings.ToLower(profile.Program)]; ok {
+		return nil, fmt.Errorf("select a Nerd Font in %s, then rerun cully terminal configure; preferences unchanged", guidance)
+	}
 	if profile.OS != "linux" {
 		return nil, fmt.Errorf("open macOS Terminal to configure its font")
 	}
@@ -136,6 +148,53 @@ func nativeFontSettings(profile terminalProfile, run nativeCommand) ([]nativeFon
 	}
 	settings := []nativeFontSetting{{schema, key, font, "'" + nativeFontFamily + " 12'"}, {schema, "use-system-font", useSystem, "false"}}
 	return settings, nil
+}
+
+// manualFontTerminals configures fonts outside Cully's reach: the terminal
+// speaks the needed protocols, but its font lives in its own UI or text
+// config, so setup guides instead of rewriting.
+var manualFontTerminals = map[string]string{
+	"iterm.app": "iTerm2 (Preferences → Profiles → Text)",
+	"kitty":     "Kitty (font_family in kitty.conf)",
+	"wezterm":   "WezTerm (font in wezterm.lua)",
+	"alacritty": "Alacritty (font in alacritty.toml)",
+}
+
+// ghosttyFontSettings accepts Ghostty's default font (Nerd symbols are
+// embedded) or an explicitly configured Nerd Font, and guides otherwise.
+func ghosttyFontSettings() ([]nativeFontSetting, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil, err
+	}
+	paths := []string{filepath.Join(home, "Library", "Application Support", "com.mitchellh.ghostty", "config")}
+	if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
+		paths = append(paths, filepath.Join(xdg, "ghostty", "config"))
+	}
+	paths = append(paths, filepath.Join(home, ".config", "ghostty", "config"))
+	for _, path := range paths {
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+		for _, line := range strings.Split(string(raw), "\n") {
+			line = strings.TrimSpace(line)
+			if line == "" || strings.HasPrefix(line, "#") {
+				continue
+			}
+			key, value, ok := strings.Cut(line, "=")
+			if !ok || strings.TrimSpace(key) != "font-family" {
+				continue
+			}
+			family := strings.Trim(strings.TrimSpace(value), `"'`)
+			if family == "" || strings.Contains(strings.ToLower(family), "nerd") {
+				return nil, nil
+			}
+			return nil, fmt.Errorf("Ghostty uses %s; select a Nerd Font in the Ghostty config, then rerun cully terminal configure; preferences unchanged", family)
+		}
+		return nil, nil
+	}
+	return nil, nil
 }
 
 func installNativeFont(home, goos string, fetch func() ([]byte, error)) (string, error) {

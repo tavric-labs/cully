@@ -72,7 +72,7 @@ func TestTerminal(t *testing.T) {
 		}
 	})
 
-	cmd := exec.Command(cli, "run", "codex")
+	cmd := exec.Command(cli, "run", "--sidebar", "codex")
 	cmd.Env = env
 	cmd.Dir = home
 	terminal, err := pty.StartWithSize(cmd, &pty.Winsize{Rows: 30, Cols: 120})

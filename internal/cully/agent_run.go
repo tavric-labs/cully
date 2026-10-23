@@ -12,6 +12,12 @@ import (
 // RunAgent adds a panel only to interactive coding sessions. Utility commands
 // and redirected streams retain the native CLI arguments, environment and IO.
 func RunAgent(name string, args []string, input, output, stderr *os.File) error {
+	return RunAgentOptions(name, args, input, output, stderr, false)
+}
+
+// RunAgentOptions is RunAgent with an explicit sidebar choice for callers
+// that accept a --sidebar flag.
+func RunAgentOptions(name string, args []string, input, output, stderr *os.File, sidebar bool) error {
 	agent, err := lookupPaneAgent(name)
 	if err != nil {
 		return err
@@ -20,7 +26,7 @@ func RunAgent(name string, args []string, input, output, stderr *os.File) error 
 		if err := MaybeWorkflowOnboarding(input, output); err != nil {
 			return err
 		}
-		return agentRunResult(RunPane(name, args, input, output))
+		return agentRunResult(RunPaneOptions(name, args, input, output, sidebar))
 	}
 	cmd := exec.Command(agent.Binary, args...)
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = input, output, stderr

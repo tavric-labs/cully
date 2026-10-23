@@ -31,7 +31,7 @@ cully run codex        # or claude, cursor, another executable
 
 Setup is user-wide: run it once, then use Cully in any project. No project `.cully` folder is required. The local memory stack requires Docker. For an existing server, use `cully setup --mcp-url URL`. See the [quickstart](https://docs.cully.net/quickstart) for prerequisites and other agents.
 
-Cully supports native terminals on macOS and Linux with **zsh + Oh My Zsh**. Setup installs the required shell and Nerd Font preset automatically, with backups. Use macOS Terminal or a supported GNOME terminal on Linux; Warp and other third-party terminals are outside support. See [terminal setup](https://docs.cully.net/terminal#configure-and-verify-your-terminal).
+Cully supports native terminals on macOS and Linux with **zsh + Oh My Zsh**. Setup installs the required shell and Nerd Font preset automatically, with backups. Use macOS Terminal, Ghostty, iTerm2, Kitty, WezTerm, Alacritty or a supported GNOME terminal on Linux; Warp is outside support. See [terminal setup](https://docs.cully.net/terminal#configure-and-verify-your-terminal).
 
 ## What you get
 

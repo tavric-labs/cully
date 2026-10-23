@@ -11,7 +11,7 @@ It is an observation surface, not another terminal emulator you have to learn. Y
 
 ## Supported environment
 
-Cully supports **macOS and Linux**, using **zsh + Oh My Zsh** in the OS-provided terminal. Native font configuration targets [macOS Terminal](https://support.apple.com/guide/terminal/welcome/mac), GNOME Terminal, Ptyxis and GNOME Console on Linux. Warp and other third-party terminal apps are outside support; identified unsupported apps receive an instruction to use a native terminal. Unidentified client metadata does not prove support.
+Cully supports **macOS and Linux**, using **zsh + Oh My Zsh** in macOS Terminal, Ghostty, iTerm2, Kitty, WezTerm, Alacritty or a native Linux terminal. These all speak the mouse, keyboard and sync protocols Cully needs; Warp's input model conflicts with Cully owning the screen, so it stays unsupported with its own guidance. Native font configuration targets [macOS Terminal](https://support.apple.com/guide/terminal/welcome/mac), GNOME Terminal, Ptyxis and GNOME Console on Linux. Ghostty's embedded Nerd symbols already render icons; iTerm2, Kitty, WezTerm and Alacritty need a Nerd Font selected in their own settings. Unidentified client metadata does not prove support.
 
 Setup applies a consistent preset automatically: MesloLGS Nerd Font Mono at **14 pt on macOS** or **12 pt on Linux**, plus the stock `robbyrussell` prompt for a new Oh My Zsh configuration. An existing Oh My Zsh configuration is reused. Bash, fish and other interactive shells are outside the supported setup. This does not restrict a coding agent's own shell tools.
 
@@ -44,7 +44,7 @@ Interactive panel requirements: a terminal at least 20 columns by 8 rows, macOS 
 
 ## Sessions
 
-A sidebar down the left edge of the window lists the named sessions running in that window. Click **+ New** to start another session of the same agent, click a name to switch to it, and click **Rename** then type a name and press Enter. Each session keeps its own agent process, input and scroll position, so switching back returns you to where you were. Sessions belong to the window: closing it ends them, and nothing runs in the background. The sidebar hides itself in windows narrower than 60 columns, and `CULLY_SIDEBAR=0` turns it off.
+A sidebar down the left edge of the window lists the named sessions running in that window. It is opt-in: start with `cully run --sidebar AGENT` (or set `CULLY_SIDEBAR=1`). Click **+ New** to start another session of the same agent, click a name to switch to it, and click **Rename** then type a name and press Enter. Each session keeps its own agent process, input and scroll position, so switching back returns you to where you were. Sessions belong to the window: closing it ends them, and nothing runs in the background. The sidebar hides itself in windows narrower than 60 columns.
 
 Keys go to the agent unless the sidebar has focus after you click it. With focus, Up/Down move, Enter switches, `n` creates, `r` renames and Esc returns to the agent. Cully does not take any agent shortcut by default. `CULLY_SHORTCUTS=1` adds F7 to move focus to the sidebar.
 

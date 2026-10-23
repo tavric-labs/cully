@@ -134,3 +134,19 @@ func cleanSessionName(input []rune) string {
 	}
 	return name
 }
+
+// renameSessionName cleans a rename candidate and rejects blanks and names
+// another session already uses, keeping the numbered sidebar unambiguous.
+// Creation already guarantees unique names; renames must not break that.
+func renameSessionName(names []string, index int, input []rune) (string, bool) {
+	name := cleanSessionName(input)
+	if name == "" {
+		return "", false
+	}
+	for i, other := range names {
+		if i != index && other == name {
+			return "", false
+		}
+	}
+	return name, true
+}

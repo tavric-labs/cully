@@ -17,6 +17,7 @@ func TestPaneSidebarNewSwitchRename(t *testing.T) {
 	t.Setenv("TERM_PROGRAM", "Apple_Terminal")
 	t.Setenv("CULLY_ANALYZE_DISABLE", "1")
 	t.Setenv("CULLY_SHORTCUTS", "0")
+	t.Setenv("CULLY_SIDEBAR", "1") // the sidebar is opt-in; this exercises the env path
 	dir := t.TempDir()
 	t.Setenv("CLAUDE_CONFIG_DIR", dir)
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))

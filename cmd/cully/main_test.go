@@ -88,3 +88,27 @@ func TestTerminalOnlySetupOptions(t *testing.T) {
 		}
 	}
 }
+
+func TestParseRunFlags(t *testing.T) {
+	for _, c := range []struct {
+		args    []string
+		sidebar bool
+		rest    []string
+	}{
+		{nil, false, nil},
+		{[]string{"codex"}, false, []string{"codex"}},
+		{[]string{"--sidebar", "codex"}, true, []string{"codex"}},
+		{[]string{"--sidebar", "--sidebar", "codex", "--sidebar"}, true, []string{"codex", "--sidebar"}},
+		{[]string{"codex", "--sidebar"}, false, []string{"codex", "--sidebar"}},
+	} {
+		sidebar, rest := parseRunFlags(c.args)
+		if sidebar != c.sidebar || len(rest) != len(c.rest) {
+			t.Fatalf("parseRunFlags(%v) = %v,%v", c.args, sidebar, rest)
+		}
+		for i := range rest {
+			if rest[i] != c.rest[i] {
+				t.Fatalf("parseRunFlags(%v) = %v,%v", c.args, sidebar, rest)
+			}
+		}
+	}
+}
