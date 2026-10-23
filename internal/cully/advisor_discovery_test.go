@@ -125,29 +125,6 @@ func TestDiscoveryPromptUsesOnlyPublicHostContext(t *testing.T) {
 	}
 }
 
-func TestDiscoveryRefreshesIdleSessionsOnlyAfterActivityAndCooldown(t *testing.T) {
-	t.Setenv("CULLY_DISCOVERY", "")
-	for _, tc := range []struct {
-		tools, previous int
-		elapsed         time.Duration
-		want            bool
-	}{
-		{0, 0, 2 * time.Hour, false},
-		{1, 0, time.Minute, false},
-		{1, 0, 2 * time.Minute, true},
-		{1, 1, 59 * time.Minute, false},
-		{1, 1, time.Hour, true},
-	} {
-		if got := advisorAnalysisDue("codex", tc.tools, tc.previous, tc.elapsed); got != tc.want {
-			t.Errorf("tools=%d previous=%d elapsed=%s: %t, want %t", tc.tools, tc.previous, tc.elapsed, got, tc.want)
-		}
-	}
-	t.Setenv("CULLY_DISCOVERY", "off")
-	if advisorAnalysisDue("codex", 1, 1, 2*time.Hour) || !advisorAnalysisDue("codex", 2, 1, 2*time.Minute) {
-		t.Fatal("disabling discovery must preserve normal activity-based analysis")
-	}
-}
-
 func TestWorkerDiscoveryFailureOrOptOutPreservesNormalAdvice(t *testing.T) {
 	for _, tc := range []struct{ name, setting, marker, state string }{
 		{"unavailable", "", "SOURCE|RESEARCH|unavailable", "unavailable"},
@@ -262,5 +239,27 @@ esac
 	}
 	if !strings.Contains(strings.Join(readSuggestions(session), "\n"), "Create a verification workflow") {
 		t.Fatal("standing suggestion disappeared during discovery cooldown")
+	}
+}
+
+func TestDiscoveryAcceptsPrimaryPaperDatesAndBoundsAge(t *testing.T) {
+	now := time.Date(2026, 10, 23, 0, 0, 0, 0, time.UTC)
+	recent := "SOURCE|RESEARCH|checked\nPAPER|2024-06-01|https://arxiv.org/abs/2406.00001|Study evaluated tool-use accuracy in a bounded benchmark; test transfer to this harness."
+	if got := discoveryFindings(recent, now); len(got) != 1 || !strings.Contains(got[0], "Research paper published") {
+		t.Fatal("foundational paper rejected", got)
+	}
+	if len(discoveryFindings(strings.Replace(recent, "2024-06-01", "2020-01-01", 1), now)) != 0 {
+		t.Fatal("out-of-window paper accepted")
+	}
+	if len(discoveryFindings(strings.Replace(recent, "PAPER|", "FINDING|", 1), now)) != 0 {
+		t.Fatal("old ordinary article accepted as current")
+	}
+	for _, agent := range []string{"claude", "codex", "cursor"} {
+		p := buildDiscoveryPrompt(agent, now)
+		for _, want := range []string{"research papers", "official documentation", "Open and read", "primary", "applicability limit"} {
+			if !strings.Contains(p, want) {
+				t.Errorf("%s missing %s", agent, want)
+			}
+		}
 	}
 }

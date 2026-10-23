@@ -23,6 +23,11 @@
         "timeout": 5
       }
     ],
+    "beforeSubmitPrompt": [
+      {
+        "command": "cully _internal continuity cursor prompt"
+      }
+    ],
     "sessionEnd": [
       {
         "command": "cully _internal continuity cursor end"

@@ -41,6 +41,15 @@ func advisorSignals(stats toolStats, view sessionView) string {
 	return fmt.Sprintf("agent=%s\n%s\ntools=%d searches=%d edits=%d checks=%d tool_errors=%d edits_since_check=%d\ncully_mcp_calls=%d cully_log_calls=%d cully_context_calls=%d cully_recall_calls=%d cully_search_calls=%d cully_get_calls=%d cully_mcp_health=%s cully_mcp_auth=%s\nsignal_scope=aggregate_counters_and_native_usage; task_intent=unknown\nsignal_coverage=%s\nunknown_check_outcomes=%d\nsignal_history_partial=%t\njournal_coverage=%s\n", agent, ctx, stats.Tools, stats.Searches, stats.Edits, stats.Checks, stats.Errors, stats.EditsSinceCheck, stats.Cully.Calls, stats.Cully.Log, stats.Cully.Context, stats.Cully.Recall, stats.Cully.Search, stats.Cully.Get, fallback(stats.Cully.Health, "unknown"), fallback(stats.Cully.Auth, "unknown"), signalCoverage(agent, stats.Tools), stats.UnknownChecks, stats.Partial, fallback(view.JournalCoverage, "no known history gap; completeness unconfirmed")) + view.Terminal.signals()
 }
 
+func completedWindowSignals(session, agent, cwd, fallbackSignals string) string {
+	if pane, ok := soleActiveCodexPane(cwd); ok && pane.Session == session {
+		view := sessionView{Agent: agent, Project: cwd, Terminal: detectTerminalProfile()}
+		restoreCodexSessionView(session, &view)
+		return advisorSignals(readToolStats(session), view)
+	}
+	return fallbackSignals
+}
+
 func combinedAdvice(session string, stats toolStats, view sessionView) []string {
 	local := statsAdviceWithStatus(stats, view)
 	cwd := currentDir()
@@ -82,7 +91,11 @@ func combinedAdvice(session string, stats toolStats, view sessionView) []string 
 		local = append(local, "MEMO|Automatic advisor deferred: "+snap.AdvisorDeferred+"; local warnings remain active.")
 	}
 	if snap.AdvisorAt == "" {
-		return append(local, "MEMO|🔎 Deeper analysis is awaiting session activity.")
+		cadence := analyzeCadence(snap.AdvisorPrompts)
+		if snap.AdvisorCadence > 0 {
+			cadence = snap.AdvisorCadence
+		}
+		return append(local, fmt.Sprintf("MEMO|🔎 Model analysis after %d completed prompts · %d observed; local checks active.", cadence, snap.AdvisorPrompts))
 	}
 	when, err := time.Parse(time.RFC3339, snap.AdvisorAt)
 	age := "unknown age"
@@ -96,5 +109,5 @@ func combinedAdvice(session string, stats toolStats, view sessionView) []string 
 	if snap.AdvisorDiscoveryAt != "" {
 		local = append(local, fmt.Sprintf("MEMO|🌐 Public discovery %s · last attempt %s (agent-reported)", snap.AdvisorDiscovery, snap.AdvisorDiscoveryAt))
 	}
-	return append(local, fmt.Sprintf("MEMO|🔎 %s advisor %s · %s · memory %s · research %s (agent-reported)", snap.AdvisorAgent, mode, age, fallback(snap.AdvisorMemory, "unconfirmed"), fallback(snap.AdvisorResearch, "unconfirmed")))
+	return append(local, fmt.Sprintf("MEMO|🔎 %s advisor %s · %s · memory %s · patterns %s · research %s (agent-reported)", snap.AdvisorAgent, mode, age, fallback(snap.AdvisorMemory, "unconfirmed"), fallback(snap.AdvisorPatterns, "unconfirmed"), fallback(snap.AdvisorResearch, "unconfirmed")))
 }

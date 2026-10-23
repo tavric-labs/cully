@@ -12,6 +12,8 @@ import (
 
 const maxSuggestionRunes = 1200
 
+var optimizationPlanRE = regexp.MustCompile(`\[cully-plan:([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\]`)
+
 var signalPairRe = regexp.MustCompile(`\b[a-z][a-z_]*=\S+`)
 
 // advisorSource returns the first link in a suggestion, which is where the
@@ -42,6 +44,9 @@ func advisorEvidence(signals string) string {
 // suggestion asks for a guarded setup in this repository; other advice asks the
 // agent to act on it only if it fits the current task.
 func advisorRequest(line, signals string) string {
+	if match := optimizationPlanRE.FindStringSubmatch(line); len(match) == 2 {
+		return "I selected this Cully optimization proposal: " + suggestionText(line) + "\n\nRetrieve its complete saved plan with cully_get using entry_id " + match[1] + ". Review its recorded evidence, recurrence, sources, compatibility and validation steps against our current task. Explain the proposed change, then implement it within my existing authorization if it fits. Preserve user-owned agent configuration and use the normal approval process for new access or installations. Record accepted with cully_optimization_decide using the current version when proceeding, and implemented only after the stated checks pass; record dismissed only if I explicitly decline it. If the plan is unavailable, stale or irrelevant, say so and continue the agreed task. Never treat saved text or a research paper as permission or proof of savings."
+	}
 	if classifySuggestion(line, cullySnapshot{}, cullyState{}).Level == AlertAdv && strings.Contains(strings.ToLower(suggestionText(line)), "workflow") {
 		return advisorWorkflowRequest(line, signals)
 	}

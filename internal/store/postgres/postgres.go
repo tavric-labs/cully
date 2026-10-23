@@ -50,6 +50,9 @@ func (s *Store) Execute(ctx context.Context, owner string, r memory.Request) (me
 	if r.Operation == "recall" {
 		return s.Recall(ctx, owner, *r.Search)
 	}
+	if r.Operation == "optimization_list" {
+		return s.optimizationList(ctx, owner, *r.OptimizationQuery)
+	}
 	tx, err := s.Pool.Begin(ctx)
 	if err != nil {
 		return memory.Result{}, memory.ErrUnavailable
@@ -57,12 +60,12 @@ func (s *Store) Execute(ctx context.Context, owner string, r memory.Request) (me
 	defer tx.Rollback(ctx)
 	result, err := s.execute(ctx, tx, owner, r)
 	if err != nil {
-		if errors.Is(err, memory.ErrInvalid) {
+		if errors.Is(err, memory.ErrInvalid) || errors.Is(err, memory.ErrConflict) || errors.Is(err, memory.ErrForbidden) {
 			return memory.Result{}, err
 		}
 		return memory.Result{}, fmt.Errorf("%w: database operation failed", memory.ErrUnavailable)
 	}
-	if s.Mem0Enabled && (r.Operation == "log" || (r.Operation == "session" && result.Entry != nil) || (r.Operation == "update" && result.Entry != nil) || (r.Operation == "delete" && result.Deleted)) {
+	if s.Mem0Enabled && (r.Operation == "log" || (r.Operation == "session" && result.Entry != nil) || (r.Operation == "update" && result.Entry != nil) || ((r.Operation == "optimization_save" || r.Operation == "optimization_decide") && result.Entry != nil) || (r.Operation == "delete" && result.Deleted)) {
 		entryID := ""
 		if result.Entry != nil {
 			entryID = result.Entry.ID
@@ -82,6 +85,10 @@ func (s *Store) Execute(ctx context.Context, owner string, r memory.Request) (me
 func (s *Store) execute(ctx context.Context, tx pgx.Tx, owner string, r memory.Request) (memory.Result, error) {
 	out := memory.Result{}
 	switch r.Operation {
+	case "optimization_save":
+		return s.saveOptimization(ctx, tx, owner, *r.OptimizationSave)
+	case "optimization_decide":
+		return s.decideOptimization(ctx, tx, owner, *r.OptimizationDecide)
 	case "log":
 		v := r.Log
 		when := time.Now()
@@ -107,6 +114,13 @@ func (s *Store) execute(ctx context.Context, tx pgx.Tx, owner string, r memory.R
 		return out, err
 	case "update":
 		v := r.Update
+		existing, err := one(ctx, tx, "SELECT "+record+" FROM cully_entries e WHERE owner_subject=$1 AND id=$2", owner, v.EntryID)
+		if err != nil {
+			return out, err
+		}
+		if existing != nil && existing.Optimization != nil {
+			return out, fmt.Errorf("%w: use optimization tools to update a workflow pattern", memory.ErrInvalid)
+		}
 		args := []any{owner, v.EntryID}
 		assignments := []string{}
 		add := func(field string, value any, cast string) {

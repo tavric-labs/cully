@@ -33,9 +33,9 @@ func terminalField(value string) string {
 	return value
 }
 
-// isWarp reports Warp's terminal program. Warp's scroll mode needs the host
-// to own the mouse wheel; Cully therefore defers mouse tracking until the
-// advisor drawer is open.
+// isWarp reports Warp's terminal program. Cully defers continuous mouse motion
+// there until the advisor or divider needs it, while keeping wheel reports on
+// so the emulator's history remains reachable.
 func (p terminalProfile) isWarp() bool {
 	return strings.EqualFold(p.Program, "WarpTerminal") || strings.EqualFold(p.Program, "Warp")
 }

@@ -45,19 +45,17 @@ func RunPane(agentName string, args []string, input, output *os.File) error {
 		return err
 	}
 	defer term.Restore(int(input.Fd()), state) //nolint:errcheck
-	// Mouse tracking steals Warp's scroll mode (and the host wheel). Keep it
-	// off in Warp until the advisor drawer is open; other terminals keep the
-	// always-on click-to-open panel behavior.
+	// The host alternate screen has no agent history: the wheel must reach
+	// Cully's emulator even in Warp. Only motion reporting is deferred there
+	// until the advisor or divider needs it.
 	profile := detectTerminalProfile()
-	startup := "\x1b[?1049h\x1b[?25l"
-	mouseTracking := !profile.isWarp()
-	if mouseTracking {
-		startup += "\x1b[?1000h\x1b[?1002h\x1b[?1003h\x1b[?1006h"
-	}
+	startup := "\x1b[?1049h\x1b[?25l\x1b[?1000h\x1b[?1006h"
 	if _, err := io.WriteString(output, startup); err != nil {
 		return err
 	}
 	defer io.WriteString(output, "\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b[0m\x1b[?25h\x1b[?1049l") //nolint:errcheck
+	mouseMotion := !profile.isWarp()
+	writeMouseMotion(output, mouseMotion)
 	reviewContext, cancelReviews := context.WithCancel(context.Background())
 	defer cancelReviews()
 
@@ -216,8 +214,6 @@ func RunPane(agentName string, args []string, input, output *os.File) error {
 	dirty, lastAdvice := true, ""
 	lastContent := ""
 	lastBeat := time.Now()
-	lastAnalysis := time.Time{}
-	lastAnalysisTools := 0
 	var keyFeed panelInput
 	lastInput := time.Now()
 	var drawer advisorDrawer
@@ -230,15 +226,15 @@ func RunPane(agentName string, args []string, input, output *os.File) error {
 			_ = pty.Setsize(child, &pty.Winsize{Rows: uint16(top), Cols: uint16(cols)})
 		}
 	}
-	// Warp keeps host scroll mode while mouse tracking is off. Toggle tracking
-	// with the advisor drawer so clicks still work once the user opens it.
+	// Keep wheel reporting active when the drawer closes; disabling it would
+	// strand Warp on the alternate screen without any reachable scrollback.
 	syncMouseTracking := func() {
 		want := !profile.isWarp() || drawer.Open || resizeMode
-		if mouseTracking == want {
+		if mouseMotion == want {
 			return
 		}
-		writeMouseTracking(output, want)
-		mouseTracking = want
+		writeMouseMotion(output, want)
+		mouseMotion = want
 	}
 	// OSC 22 asks the terminal for a vertical-resize pointer over the divider;
 	// terminals without support ignore it.
@@ -332,6 +328,14 @@ func RunPane(agentName string, args []string, input, output *os.File) error {
 			}
 			if key.Mouse != nil {
 				mouse := key.Mouse
+				// The panel belongs to the same conversation view. A wheel over
+				// it must read history too, rather than silently doing nothing.
+				if !drawer.Open && (mouse.Button == 64 || mouse.Button == 65) && !mouse.Release && !emulator.IsAltScreen() {
+					if scroll.wheel(mouse.Button == 64, emulator.ScrollbackLen()) {
+						dirty = true
+					}
+					continue
+				}
 				if !drawer.Open {
 					if motion, changed := divider.hover(mouse, rows, top); motion {
 						setPointer(divider.Hover || divider.Dragging)
@@ -348,14 +352,6 @@ func RunPane(agentName string, args []string, input, output *os.File) error {
 					continue
 				}
 				if !drawer.Open && mouse.Y <= top {
-					// Off the alternate screen the agent has no scrolling of its
-					// own, so the wheel reads the lines that scrolled away.
-					if (mouse.Button == 64 || mouse.Button == 65) && !mouse.Release && !emulator.IsAltScreen() {
-						if scroll.wheel(mouse.Button == 64, emulator.ScrollbackLen()) {
-							dirty = true
-						}
-						continue
-					}
 					emulator.SendMouse(mouse.event())
 					continue
 				}
@@ -513,17 +509,6 @@ func RunPane(agentName string, args []string, input, output *os.File) error {
 			if time.Since(lastSessionSave) >= time.Second {
 				persistSession()
 			}
-			if advisorAnalysisDue(agent.Name, stats.Tools, lastAnalysisTools, time.Since(lastAnalysis)) {
-				snap := readSnapshot(session)
-				snap.Cwd = view.Project
-				snap.Searches, snap.ToolErrors = stats.Searches, stats.Errors
-				if view.ContextKnown {
-					snap.ContextUsedPct = 100 - view.ContextLeft
-				}
-				writeSnapshot(session, snap)
-				dispatchAdvisor(advisorSignals(stats, view), session, view.Project)
-				lastAnalysis, lastAnalysisTools = time.Now(), stats.Tools
-			}
 			loops, journal := sessionLoops(currentDir(), session)
 			view.Loops, view.JournalCoverage = loops, journalCoverage(journal)
 			advice = combinedAdvice(session, stats, view)
@@ -562,14 +547,14 @@ func currentDir() string {
 	return cwd
 }
 
-// writeMouseTracking turns host mouse reporting on or off. Leaving it on in
-// Warp consumes scroll mode; enable it only for the advisor or divider resizing.
-func writeMouseTracking(w io.Writer, on bool) {
+// writeMouseMotion toggles drag/hover reports without disabling the basic
+// button and wheel reports needed to read the virtual terminal's history.
+func writeMouseMotion(w io.Writer, on bool) {
 	if on {
-		_, _ = io.WriteString(w, "\x1b[?1000h\x1b[?1002h\x1b[?1003h\x1b[?1006h")
+		_, _ = io.WriteString(w, "\x1b[?1002h\x1b[?1003h")
 		return
 	}
-	_, _ = io.WriteString(w, "\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l")
+	_, _ = io.WriteString(w, "\x1b[?1002l\x1b[?1003l")
 }
 
 func renderTerminalPane(emulator *vt.Emulator, cols, rows int, content []string, nativeFooter bool, hud string, hints ...string) string {

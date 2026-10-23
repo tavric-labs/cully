@@ -40,6 +40,18 @@ servers:
         description: Team workspace requires OAuth
         requiredTrust: high
         sideEffect: write
+      - name: cully_optimization_save
+        description: Save private repeated-work evidence and a proposed plan
+        requiredTrust: low
+        sideEffect: write
+      - name: cully_optimizations
+        description: Recall private optimization patterns and plans
+        requiredTrust: low
+        sideEffect: read
+      - name: cully_optimization_decide
+        description: Record an explicit user decision about a plan
+        requiredTrust: medium
+        sideEffect: write
       - name: cully_log
         description: Save a source record
         requiredTrust: low

@@ -48,6 +48,7 @@ type contentItem struct {
 }
 
 type stopInput struct {
+	StopHookActive bool   `json:"stop_hook_active"`
 	TranscriptPath string `json:"transcript_path"`
 	Cwd            string `json:"cwd"`
 	SessionID      string `json:"session_id"`
@@ -130,9 +131,19 @@ func RunAnalyze(r io.Reader) {
 		return
 	}
 
-	n := bumpCounter(in.SessionID)
+	if in.StopHookActive {
+		return
+	}
+	n, window := completeAdvisorWindow("claude", continuityHookInput{SessionID: in.SessionID, Cwd: in.Cwd})
+	session := in.SessionID
+	if pane := os.Getenv("CULLY_PANE_SESSION"); pane != "" {
+		session = pane
+	}
+	snap := readSnapshot(session)
+	snap.AdvisorPrompts, snap.AdvisorCadence = n, analyzeCadence(n)
+	writeSnapshot(session, snap)
 	k := analyzeCadence(n)
-	if n > 3 && n%k != 0 {
+	if window == "" {
 		logf(in.SessionID, "analyze: turn %d (cadence k=%d) — skip", n, k)
 		// Analysing every prompt would resend the instructions and signals each time.
 		recordImpact(in.SessionID, impactAnalysisSkipped, "", approxTokens(len(sharedAdvisorInstructions))+typicalSignalTokens)
@@ -144,27 +155,24 @@ func RunAnalyze(r io.Reader) {
 	if sig.WasteTokens > 0 {
 		recordImpact(in.SessionID, impactWasteFlagged, "", sig.WasteTokens)
 	}
-	writeSnapshot(in.SessionID, buildSnapshot(sig, "", in.SessionID, in.Cwd))
-	spawnWorker(formatSignals(sig), in.SessionID, in.Cwd)
+	writeSnapshot(session, buildSnapshot(sig, "", session, in.Cwd))
+	tools := 0
+	for _, n := range sig.ToolHistogram {
+		tools += n
+	}
+	window += advisorWindowEvidence(continuitySessionRef("claude", continuityHookInput{SessionID: in.SessionID}), os.Getenv("CULLY_PANE_SESSION"), in.Cwd, advisorWindowCounts{Tools: tools, Searches: sig.Searches, Errors: sig.ToolErrors})
+	spawnWorker(formatSignals(sig)+window, session, in.Cwd)
 }
 
-// analyzeCadence returns how many turns should elapse between advisor runs once
-// the early-fire window (n <= 3) has passed. CULLY_ANALYZE_CADENCE overrides
-// the default schedule outright; otherwise cadence tightens as the session goes on.
+// analyzeCadence uses twelve completed user prompts throughout a session.
+// Immediate local warnings do not wait for the model-analysis cadence.
 func analyzeCadence(n int) int {
 	if v := os.Getenv("CULLY_ANALYZE_CADENCE"); v != "" {
 		if k, err := strconv.Atoi(v); err == nil && k > 0 {
 			return k
 		}
 	}
-	switch {
-	case n >= 25:
-		return 2
-	case n >= 10:
-		return 5
-	default:
-		return 10
-	}
+	return 12
 }
 
 func gatherSignals(in stopInput, turns int) string {

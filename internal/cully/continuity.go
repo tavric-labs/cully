@@ -22,6 +22,7 @@ const continuityFinish = "Cully check: If this turn produced substantive work, a
 var substantiveResponse = regexp.MustCompile(`(?i)\b(implement(?:ed)?|fix(?:ed)?|chang(?:e|ed)|add(?:ed)?|remov(?:e|ed)|refactor(?:ed)?|test(?:ed|s)?|deploy(?:ed)?|publish(?:ed)?|document(?:ed)?|decid(?:e|ed)|block(?:ed|er)?|discover(?:ed)?|learn(?:ed|t)|investigat(?:e|ed)|resolv(?:e|ed)|updat(?:e|ed))\b`)
 
 type continuityHookInput struct {
+	TurnID               string `json:"turn_id"`
 	Cwd                  string `json:"cwd"`
 	StopHookActive       bool   `json:"stop_hook_active"`
 	LastAssistantMessage string `json:"last_assistant_message"`
@@ -98,6 +99,12 @@ func RunContinuityHook(agent, event string, r io.Reader, w io.Writer) {
 	}
 	var out any
 	switch event {
+	case "prompt":
+		noteAdvisorPrompt(agent, in)
+	case "turn":
+		if !in.StopHookActive {
+			dispatchCompletedAdvisorWindow(agent, in)
+		}
 	case "start":
 		switch agent {
 		case "claude":
@@ -121,14 +128,6 @@ func RunContinuityHook(agent, event string, r io.Reader, w io.Writer) {
 			}
 		}
 	case "stop":
-		if agent == "cursor" && in.Status == "completed" && in.LoopCount == 0 && in.Cwd != "" {
-			if ref := continuitySessionRef(agent, in); ref != "" {
-				n := bumpCounter("advisor-" + ref)
-				if n == 1 || n%3 == 0 {
-					dispatchAdvisor(fmt.Sprintf("agent=cursor\nturns=%d\nsignal_scope=completed_turns_only\ncontext=unknown tools=unknown verification=unknown\n", n), ref, in.Cwd)
-				}
-			}
-		}
 		switch agent {
 		case "claude":
 			if !in.StopHookActive && usefulResponse(in.LastAssistantMessage) {
@@ -137,6 +136,9 @@ func RunContinuityHook(agent, event string, r io.Reader, w io.Writer) {
 		case "cursor":
 			useful := takeCursorContinuityState(in)
 			isFollowup := takeCursorFollowup(in)
+			if in.Status == "completed" && in.LoopCount == 0 && !isFollowup {
+				dispatchCompletedAdvisorWindow(agent, in)
+			}
 			if in.Status == "completed" && useful && !isFollowup {
 				writeCursorFollowup(in)
 				out = map[string]any{"followup_message": continuityPrompt(continuityFinish, agent, in)}

@@ -171,100 +171,134 @@ if [ "$1" -lt 33 ]; then exit 2; fi
 	}
 }
 
-func TestWarpPaneDefersMouseTrackingUntilAdvisorOpens(t *testing.T) {
+func TestWarpPaneWheelReachesHistoryBeforeAndAfterAdvisor(t *testing.T) {
 	t.Setenv("CULLY_ANALYZE_DISABLE", "1")
 	t.Setenv("TERM_PROGRAM", "WarpTerminal")
 	dir := t.TempDir()
 	t.Setenv("CLAUDE_CONFIG_DIR", dir)
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	script := `#!/bin/sh
-printf 'warp child ready\n'
-sleep 2
+stty raw -echo
+i=1
+while [ "$i" -le 80 ]; do printf 'warp line %02d\r\n' "$i"; i=$((i+1)); done
+while :; do
+  c=$(dd bs=1 count=1 2>/dev/null)
+  case "$c" in n) printf 'new tail\r\n';; q) exit 0;; esac
+done
 `
-	if err := os.WriteFile(filepath.Join(dir, "codex"), []byte(script), 0o755); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "codex"), []byte(script), 0755); err != nil {
 		t.Fatal(err)
 	}
 	master, slave, err := pty.Open()
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer master.Close()
 	defer slave.Close()
 	if err := pty.Setsize(slave, &pty.Winsize{Rows: 40, Cols: 120}); err != nil {
 		t.Fatal(err)
 	}
+	host := vt.NewEmulator(120, 40)
 	var mu sync.Mutex
 	var captured strings.Builder
-	snapshot := func() string {
-		mu.Lock()
-		defer mu.Unlock()
-		return captured.String()
-	}
-	ready := make(chan struct{})
+	snapshot := func() (string, string) { mu.Lock(); defer mu.Unlock(); return captured.String(), host.String() }
+	readDone := make(chan struct{})
 	go func() {
+		defer close(readDone)
 		buf := make([]byte, 4096)
-		notified := false
 		for {
-			n, readErr := master.Read(buf)
+			n, err := master.Read(buf)
 			mu.Lock()
 			captured.Write(buf[:n])
-			got := captured.String()
+			_, _ = host.Write(buf[:n])
+			restored := strings.Contains(captured.String(), "\x1b[?1049l")
 			mu.Unlock()
-			if !notified && strings.Contains(got, "warp child ready") {
-				close(ready)
-				notified = true
-			}
-			if strings.Contains(got, "\x1b[?1049l") || readErr != nil {
+			if err != nil || restored {
 				return
 			}
 		}
 	}()
+	defer func() {
+		_, _ = master.Write([]byte("q"))
+		_ = slave.Close()
+		_ = master.Close()
+		select {
+		case <-readDone:
+			_ = host.Close()
+		case <-time.After(time.Second):
+		}
+	}()
 	done := make(chan error, 1)
 	go func() { done <- RunPane("codex", nil, slave, slave) }()
-	select {
-	case <-ready:
-	case <-time.After(5 * time.Second):
-		t.Fatal("warp child did not start")
-	}
-	startup := snapshot()
-	if strings.Contains(startup, "\x1b[?1000h") || strings.Contains(startup, "\x1b[?1006h") {
-		t.Fatal("Warp must not enable mouse tracking at startup; that steals scroll mode")
-	}
-	if !strings.Contains(startup, "\x1b[?1049h") {
-		t.Fatal("Warp pane still uses the alternate screen")
-	}
-	_, _ = master.Write([]byte{0x1d}) // Ctrl+] opens advisor
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
-		got := snapshot()
-		if strings.Contains(got, "\x1b[?1000h") && strings.Contains(got, "\x1b[?1006h") {
-			break
+	wait := func(check func(string, string) bool) {
+		t.Helper()
+		deadline := time.Now().Add(4 * time.Second)
+		for time.Now().Before(deadline) {
+			raw, screen := snapshot()
+			if check(raw, screen) {
+				return
+			}
+			time.Sleep(10 * time.Millisecond)
 		}
-		time.Sleep(20 * time.Millisecond)
+		_, screen := snapshot()
+		t.Fatalf("terminal state did not arrive: %s", screen)
 	}
-	got := snapshot()
-	if !strings.Contains(got, "\x1b[?1000h") || !strings.Contains(got, "\x1b[?1006h") {
-		t.Fatal("opening the advisor in Warp must enable mouse tracking")
+	wait(func(_, screen string) bool { return strings.Contains(screen, "warp line 80") })
+	raw, _ := snapshot()
+	if !strings.Contains(raw, "\x1b[?1000h") || !strings.Contains(raw, "\x1b[?1006h") || strings.Contains(raw, "\x1b[?1003h") {
+		t.Fatal("Warp needs wheel reports, with continuous motion deferred")
 	}
-	_, _ = master.Write([]byte{0x1b}) // Esc closes advisor
-	deadline = time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
-		if strings.Contains(snapshot(), "\x1b[?1000l") {
-			break
+	wheel := func(up bool, y int) {
+		t.Helper()
+		button := 65
+		if up {
+			button = 64
 		}
-		time.Sleep(20 * time.Millisecond)
+		_, err := master.Write([]byte(strings.Repeat(fmt.Sprintf("\x1b[<%d;5;%dM", button, y), 40)))
+		if err != nil {
+			t.Fatal(err)
+		}
 	}
-	if !strings.Contains(snapshot(), "\x1b[?1000l") {
-		t.Fatal("closing the advisor in Warp must release mouse tracking for scroll mode")
+	wheel(true, 1)
+	wait(func(_, screen string) bool {
+		return strings.Contains(screen, "warp line 01") && strings.Contains(screen, "lines back") && !strings.Contains(screen, "warp line 80")
+	})
+	_, _ = master.Write([]byte("n"))
+	wait(func(_, screen string) bool {
+		return strings.Contains(screen, "new tail") && !strings.Contains(screen, "lines back")
+	})
+	wheel(true, 40) // the compact panel must not swallow conversation scrolling
+	wait(func(_, screen string) bool {
+		return strings.Contains(screen, "warp line 01") && strings.Contains(screen, "lines back")
+	})
+	wheel(false, 40)
+	wait(func(_, screen string) bool {
+		return strings.Contains(screen, "new tail") && !strings.Contains(screen, "lines back")
+	})
+	_, _ = master.Write([]byte{0x1d})
+	wait(func(raw, _ string) bool { return strings.Contains(raw, "\x1b[?1003h") })
+	before, _ := snapshot()
+	_, _ = master.Write([]byte{0x1b})
+	wait(func(raw, _ string) bool { return strings.Contains(raw[len(before):], "\x1b[?1003l") })
+	raw, _ = snapshot()
+	if strings.Contains(raw, "\x1b[?1000l") || strings.Contains(raw, "\x1b[?1006l") {
+		t.Fatal("closing advisor disabled wheel reports")
 	}
+	wheel(true, 1)
+	wait(func(_, screen string) bool {
+		return strings.Contains(screen, "warp line 01") && strings.Contains(screen, "lines back")
+	})
+	_, _ = master.Write([]byte("q"))
 	select {
 	case err := <-done:
 		if err != nil {
 			t.Fatal(err)
 		}
 	case <-time.After(5 * time.Second):
-		t.Fatal("warp pane did not exit")
+		t.Fatal("pane did not exit")
 	}
+	wait(func(raw, _ string) bool {
+		return strings.Contains(raw, "\x1b[?1000l") && strings.Contains(raw, "\x1b[?1006l") && strings.Contains(raw, "\x1b[?1049l")
+	})
 }
 
 func TestCodexPaneAdvisorControlsDoNotReachChild(t *testing.T) {

@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 0.26.0
+
+- Analyse completed user-prompt windows every 12 prompts by default, then scout current Claude Code, Codex or Cursor documentation, practical articles and primary research papers. Filter findings against the task and remembered workflows; keep immediate local warnings active between analyses.
+
+- Remember repeated procedures across sessions with owner-scoped optimization evidence and saved skill, workflow, plugin, tool, process or harness plans. Add `cully_optimization_save`, `cully_optimizations` and versioned `cully_optimization_decide`; deduplicate observations by session/window, preserve user decisions and project source notes through Mem0. Schema version 10 adds pattern/evidence storage; migrate before starting matching data/MCP services.
+
+- Restore Warp conversation scrolling before and after opening the advisor, including over the compact panel. Scope Codex workers to real Cully MCP registrations instead of creating an invalid synthetic server, isolate public scouts from configured MCP tools, and report pattern recall alongside memory and research.
+
 - Stop creating duplicate plugin marketplace submission issues on every release; keep one ongoing checklist in #72 for the latest release.
 
 ## 0.25.1

@@ -21,26 +21,33 @@ var ErrConflict = errors.New("record version conflict")
 var IST = time.FixedZone("Asia/Kolkata", 19800)
 
 type Entry struct {
-	ID             string    `json:"id"`
-	SessionRef     *string   `json:"session_ref"`
-	AgentSessionID *string   `json:"agent_session_id"`
-	EntryType      string    `json:"entry_type"`
-	Summary        string    `json:"summary"`
-	Approach       *string   `json:"approach"`
-	Outcome        *string   `json:"outcome"`
-	Issue          *string   `json:"issue"`
-	Learning       *string   `json:"learning"`
-	NextSteps      *string   `json:"next_steps"`
-	Assistant      string    `json:"assistant"`
-	OccurredAt     time.Time `json:"occurred_at"`
-	CreatedAt      time.Time `json:"created_at"`
-	UpdatedAt      time.Time `json:"updated_at"`
+	Optimization   *Optimization `json:"optimization,omitempty"`
+	ID             string        `json:"id"`
+	SessionRef     *string       `json:"session_ref"`
+	AgentSessionID *string       `json:"agent_session_id"`
+	EntryType      string        `json:"entry_type"`
+	Summary        string        `json:"summary"`
+	Approach       *string       `json:"approach"`
+	Outcome        *string       `json:"outcome"`
+	Issue          *string       `json:"issue"`
+	Learning       *string       `json:"learning"`
+	NextSteps      *string       `json:"next_steps"`
+	Assistant      string        `json:"assistant"`
+	OccurredAt     time.Time     `json:"occurred_at"`
+	CreatedAt      time.Time     `json:"created_at"`
+	UpdatedAt      time.Time     `json:"updated_at"`
 }
 
 func (e *Entry) NormalizeTimes() {
 	e.OccurredAt = e.OccurredAt.In(IST)
 	e.CreatedAt = e.CreatedAt.In(IST)
 	e.UpdatedAt = e.UpdatedAt.In(IST)
+	if o := e.Optimization; o != nil {
+		o.FirstSeen, o.LastSeen = o.FirstSeen.In(IST), o.LastSeen.In(IST)
+		for i := range o.Evidence {
+			o.Evidence[i].ObservedAt = o.Evidence[i].ObservedAt.In(IST)
+		}
+	}
 }
 
 type LogInput struct {
@@ -109,15 +116,18 @@ type Session struct {
 	LastSeenAt     time.Time `json:"last_seen_at"`
 }
 type Request struct {
-	Workspace  *workspace.Input `json:"workspace,omitempty"`
-	Operation  string           `json:"operation"`
-	Session    *SessionInput    `json:"session,omitempty"`
-	SessionGet *SessionRefInput `json:"session_get,omitempty"`
-	Log        *LogInput        `json:"log,omitempty"`
-	Search     *SearchInput     `json:"search,omitempty"`
-	Recent     *RecentInput     `json:"recent,omitempty"`
-	ID         *IDInput         `json:"id,omitempty"`
-	Update     *UpdateInput     `json:"update,omitempty"`
+	OptimizationSave   *OptimizationSaveInput   `json:"optimization_save,omitempty"`
+	OptimizationQuery  *OptimizationQueryInput  `json:"optimization_query,omitempty"`
+	OptimizationDecide *OptimizationDecideInput `json:"optimization_decide,omitempty"`
+	Workspace          *workspace.Input         `json:"workspace,omitempty"`
+	Operation          string                   `json:"operation"`
+	Session            *SessionInput            `json:"session,omitempty"`
+	SessionGet         *SessionRefInput         `json:"session_get,omitempty"`
+	Log                *LogInput                `json:"log,omitempty"`
+	Search             *SearchInput             `json:"search,omitempty"`
+	Recent             *RecentInput             `json:"recent,omitempty"`
+	ID                 *IDInput                 `json:"id,omitempty"`
+	Update             *UpdateInput             `json:"update,omitempty"`
 }
 type Result struct {
 	Since     string            `json:"since,omitempty"` // verified recent-store bounds
@@ -177,7 +187,7 @@ func text(v *string, required bool) error {
 const taskNameLimit = 60
 
 func entryType(v *string) error {
-	if v != nil && *v != "work" && *v != "issue" && *v != "learning" && *v != "decision" && *v != "task" {
+	if v != nil && *v != "work" && *v != "issue" && *v != "learning" && *v != "decision" && *v != "task" && *v != "optimization" {
 		return fmt.Errorf("%w: invalid entry_type", ErrInvalid)
 	}
 	return nil
@@ -229,13 +239,22 @@ func limit(v *int, max int) {
 }
 func (r *Request) Validate() error {
 	n := 0
-	for _, b := range []bool{r.Workspace != nil, r.Log != nil, r.Search != nil, r.Recent != nil, r.ID != nil, r.Update != nil, r.Session != nil, r.SessionGet != nil} {
+	for _, b := range []bool{r.Workspace != nil, r.Log != nil, r.Search != nil, r.Recent != nil, r.ID != nil, r.Update != nil, r.Session != nil, r.SessionGet != nil, r.OptimizationSave != nil, r.OptimizationQuery != nil, r.OptimizationDecide != nil} {
 		if b {
 			n++
 		}
 	}
 	if n != 1 {
 		return fmt.Errorf("%w: provide exactly one operation input", ErrInvalid)
+	}
+	if r.Operation == "optimization_save" && r.OptimizationSave != nil {
+		return r.OptimizationSave.Validate()
+	}
+	if r.Operation == "optimization_list" && r.OptimizationQuery != nil {
+		return r.OptimizationQuery.Validate()
+	}
+	if r.Operation == "optimization_decide" && r.OptimizationDecide != nil {
+		return r.OptimizationDecide.Validate()
 	}
 	if r.Workspace != nil {
 		if r.Operation != "workspace" {
@@ -275,6 +294,9 @@ func (r *Request) Validate() error {
 		}
 		if v.EntryType == "task" {
 			return fmt.Errorf("%w: save tasks through cully_session, not cully_log", ErrInvalid)
+		}
+		if v.EntryType == "optimization" {
+			return fmt.Errorf("%w: save workflow patterns through cully_optimization_save", ErrInvalid)
 		}
 		v.Assistant = strings.ToLower(strings.TrimSpace(v.Assistant))
 		if !assistantRE.MatchString(v.Assistant) {

@@ -31,6 +31,7 @@ func pluginClaudeHooks() []pluginHook {
 	return []pluginHook{
 		{event: "Stop", command: "cully _internal analyze"},
 		{event: "SessionStart", command: "cully _internal continuity claude start"},
+		{event: "UserPromptSubmit", command: "cully _internal continuity claude prompt"},
 		{event: "Stop", command: "cully _internal continuity claude stop"},
 		{event: "SessionEnd", command: "cully _internal cleanup"},
 		{event: "PostToolUse", command: "cully _internal pane-signal claude", async: true},
@@ -41,6 +42,8 @@ func pluginClaudeHooks() []pluginHook {
 func pluginCodexHooks() []pluginHook {
 	return []pluginHook{
 		{event: "SessionStart", command: "cully _internal continuity codex start"},
+		{event: "UserPromptSubmit", command: "cully _internal continuity codex prompt"},
+		{event: "Stop", command: "cully _internal continuity codex turn"},
 		{event: "PostToolUse", command: "cully _internal codex-signal", async: true},
 		{event: "PreToolUse", command: "cully _internal guard codex", matcher: codexGuardMatcher, timeout: 5},
 	}
@@ -49,6 +52,7 @@ func pluginCodexHooks() []pluginHook {
 func pluginCursorHooks() []pluginHook {
 	hooks := []pluginHook{
 		{event: "sessionStart", command: "cully _internal continuity cursor start"},
+		{event: "beforeSubmitPrompt", command: "cully _internal continuity cursor prompt"},
 		{event: "afterAgentResponse", command: "cully _internal continuity cursor response"},
 		{event: "stop", command: "cully _internal continuity cursor stop", noLoop: true},
 		{event: "sessionEnd", command: "cully _internal continuity cursor end"},
