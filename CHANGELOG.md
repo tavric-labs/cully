@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.27.0
+
 - Make the session sidebar opt-in with `cully run --sidebar AGENT` (`CULLY_SIDEBAR=1` still opts in); the list costs 24 columns, so plain runs keep the full width.
 - Support Ghostty, iTerm2, Kitty, WezTerm and Alacritty in the Cully terminal. They speak the mouse, keyboard and sync protocols Cully needs, so the brand allowlist is now capability-based; Warp stays unsupported with its own guidance. Ghostty's embedded Nerd symbols are accepted as-is, while the other added terminals get manual Nerd Font guidance instead of a rewrite of their settings.
 - Reject session renames that duplicate another session's name, keeping the numbered sidebar unambiguous; session creation already guaranteed unique names.
