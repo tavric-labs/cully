@@ -9,6 +9,12 @@ description: Run Claude Code, Codex, Cursor or any coding agent in one terminal 
 
 It is an observation surface, not another terminal emulator you have to learn. You use your agent exactly as before.
 
+## Supported environment
+
+Cully supports **macOS and Linux**, using **zsh + Oh My Zsh** in the OS-provided terminal. Native font configuration targets [macOS Terminal](https://support.apple.com/guide/terminal/welcome/mac), GNOME Terminal, Ptyxis and GNOME Console on Linux. Warp and other third-party terminal apps are outside support; identified unsupported apps receive an instruction to use a native terminal. Unidentified client metadata does not prove support.
+
+Setup applies a consistent preset automatically: MesloLGS Nerd Font Mono at **14 pt on macOS** or **12 pt on Linux**, plus the stock `robbyrussell` prompt for a new Oh My Zsh configuration. An existing Oh My Zsh configuration is reused. Bash, fish and other interactive shells are outside the supported setup. This does not restrict a coding agent's own shell tools.
+
 ## Start an agent
 
 ```sh
@@ -55,7 +61,7 @@ The first row under the agent is a one-line health bar. Every value is measured.
 
 ## The advisor panel
 
-Below the health bar, the panel shows session instruments and two prioritized advisor comments. Click below the divider in the panel, or press `Ctrl+]` or `F6`, to open the full advisor. Select with the mouse or Up and Down, press Enter to add the suggestion to your prompt, and press Tab for every instrument. See the [advisor](/advisor) for what it analyzes and how you apply a suggestion. Mouse and wheel reporting stay enabled; Warp defers continuous pointer motion until the advisor or divider needs it.
+Below the health bar, the panel shows session instruments and two prioritized advisor comments. Click below the divider in the panel, or press `Ctrl+]` or `F6`, to open the full advisor. Select with the mouse or Up and Down, press Enter to add the suggestion to your prompt, and press Tab for every instrument. See the [advisor](/advisor) for what it analyzes and how you apply a suggestion. Mouse, wheel and pointer reporting stay enabled.
 
 At 120 columns or wider, two columns show **Harness** and **Session**. Narrow screens stack the groups. Harness shows which setup components were found, gaps, recent oversized tool-output estimates, the model and pending checks. Session keeps the project, context, token counts, quota, Fast mode and Git changes together with observed memory use, analyses avoided, loops caught, estimated net tokens, MCP health and authentication. Open Tab details for tool counters.
 
@@ -67,7 +73,7 @@ The divider grip highlights when the pointer is over it, and Cully requests a ve
 
 Scroll back through the agent's output with the mouse wheel over the agent or compact panel. Cully draws the agent from its own terminal emulator, which keeps the last 10,000 lines, because your terminal never receives that output and has no scrollback of it. Page Up and Page Down also read this history when the agent uses the normal screen. The panel shows how many lines back you are; typing, or scrolling down to the bottom, returns to the live screen, and new output does not move the lines you are reading. A fullscreen agent using the alternate screen receives wheel and page keys to navigate its own history.
 
-Drag the divider directly in any supported terminal. Warp enables pointer motion during the drag and disables it on release or Esc, preserving mouse and wheel reporting. `Ctrl+\` toggles explicit resize mode when needed. Click below the divider to open the advisor.
+Drag the divider directly in a supported native terminal. `Ctrl+\` toggles explicit resize mode when needed. Click below the divider to open the advisor.
 
 Before your first drag, the panel grows only as far as its content needs. It always leaves the agent at least 12 rows on a normal screen (8 on a short one). Terminals shorter than 12 rows give the agent the whole screen.
 
@@ -94,34 +100,31 @@ The hooks are inactive outside the Cully terminal, so an ordinary agent session 
 
 The mouse wheel reads Cully's emulator history over the agent or compact panel. Cully requests SGR mouse reporting and accepts legacy mouse reports from terminals that do not support it. Modified vertical wheel events keep their direction; fullscreen agents receive the original modifiers with coordinates constrained to their viewport. New output keeps the history view anchored; typing returns to live output. Page Up and Page Down provide access to emulator history when wheel events are unavailable; fullscreen agents retain their own page-key handling. Opening and closing the advisor, ending a drag or resizing the terminal preserves wheel reporting.
 
-Enable mouse and scroll reporting in your terminal application. Cully can request these protocols but cannot override the terminal's user settings. In Warp, enable both **Mouse Reporting** and **Scroll Reporting** under **Settings → Features → Terminal**; a saved `scroll_reporting_enabled = false` prevents wheel events from reaching Cully even when mouse reporting is on. Hold Shift for Warp text selection, or use `CULLY_NO_PANE=1` for native agent IO. Restart a running Cully session after installing a new binary to use its fixes.
+While the panel is active, Cully uses an alternate screen and owns the conversation history. Your OS terminal's scrollbar does not represent that history; use the wheel or Page Up/Down. Selection/copy still uses the host terminal's controls and needs a manual check with mouse reporting enabled. Set `CULLY_NO_PANE=1` for native agent I/O, including native scrollback behavior. The panel does not override the host's clipboard shortcuts or keymap.
 
-### Visible scrollbar in Warp
-
-Warp sessions reserve a gutter on the right of the conversation, outside the agent's text width. Its vertical thumb shows the visible fraction and current position in Cully's normal-screen history. Click the track to jump to that position, or drag the thumb up or down. A drag continues if the pointer leaves the gutter; release or Esc ends it. The advisor and horizontal divider keep their own input handling. The scrollbar uses the terminal's default colors and does not change Warp's theme, fonts, opacity or padding.
-
-Cully retains up to 10,000 lines of **normal-screen** output. **Alternate-screen** agents manage their own history internally; Cully receives only their currently painted screen, so it cannot calculate a reliable thumb or implement a history drag for them. The gutter shows a dim track without a thumb in that mode and the divider says that the agent owns history. Wheel events still reach the agent, including over the panel and gutter. To use Codex with Cully's draggable scrollbar, select scrollback mode with Codex's `/tui` command and restart, or launch:
-
-```sh
-cully run codex --no-alt-screen
-# Continue an existing conversation:
-cully run codex --no-alt-screen resume SESSION_ID
-```
-
-The wrapper keeps keyboard and mouse input in one ordered stream, so typing or pressing page keys cannot overtake a wheel event.
+Cully retains up to 10,000 lines of normal-screen history. Alternate-screen agents own their private history and receive wheel and page-key events inside their viewport. Page Up and Page Down navigate Cully's normal-screen history when wheel events are unavailable. Cully uses the terminal's existing colors and preserves input event order.
 
 ### Configure and verify your terminal
 
 ```sh
-cully setup --terminal-only    # repair required settings, then run a live check
-cully terminal check          # inspect saved settings without changing them
-cully terminal configure --dry-run
-cully terminal configure      # repair only required mouse/scroll preferences
-cully terminal test           # repeat live verification without changing settings
+cully setup --terminal-only    # install required shell/font preset, then verify
+cully terminal check          # read-only diagnostics and shell setup preview
+cully terminal shell --dry-run # preview required shell changes
+cully terminal configure --dry-run # preview native font settings
+cully terminal shell          # install/configure required zsh + Oh My Zsh
+cully terminal configure      # install and select the Nerd Font preset
+cully terminal test           # verify icons, colors, wheel, divider and advisor
+cully terminal restore --backup /absolute/path/to/native-font-backup.json
 ```
 
-Regular `cully setup --all` and `cully setup --mcp-url URL` also configure the detected terminal and offer the live exercise when stdin and stdout are terminals. Add `--skip-terminal-test` to configure without that exercise; redirected setup skips it and labels live checks as untested. `--prepare` skips the live exercise as well.
+Regular `cully setup --all` and `cully setup --mcp-url URL` also apply the required shell and font configuration. These explicit commands authorize installation; Cully prints the changes and does not add confirmation prompts for each component. Package managers, `chsh` or macOS automation may request OS authentication or permission. If zsh is missing, setup uses the existing supported package manager; it does not install a package manager. Oh My Zsh comes from its [official repository](https://github.com/ohmyzsh/ohmyzsh). The font download is pinned to Nerd Fonts v3.4.0 and checked against its SHA-256 before installation.
 
-The live check uses sample output instead of starting a coding agent. Scroll up and down, drag the divider both ways, open and close the advisor, and in Warp move the right scrollbar. Resize the window if desired, then press `q`. It reports observed history movement, agent viewport resizing and status rendering; incomplete checks remain **NOT VERIFIED**. Check selection/copy manually using the terminal's selection modifier. Model, token and tool statistics need a real coding-agent session; the exercise verifies their display area, not unavailable agent signals.
+Setup backs up an existing `.zshrc`, preserves its content and symlink, and adds initialization only when Oh My Zsh is not already sourced. It honors `ZDOTDIR` and `ZSH`. It selects zsh as the login shell with `chsh` when necessary; reopen the terminal afterwards. There is no Bash fallback. A download, syntax or shell-change failure reports an actionable error instead of claiming the setup completed.
 
-Warp's adapter enables only `terminal.mouse_reporting_enabled` and `terminal.scroll_reporting_enabled`. It preserves other settings and comments, writes a private backup before changing an existing file, and prints an exact `cully terminal restore --backup PATH` command. Current Warp versions hot-reload the file. Use `--channel preview` for Warp Preview or `--terminal WarpTerminal` when terminal metadata is missing. Other terminals use standard mouse protocols; Cully does not guess at unsupported host preferences. Over SSH, configure the terminal on the client's local machine. Ordinary agent launches do not rewrite host preferences.
+Font settings are backed up separately in `~/.cully/terminal/`. Setup changes font family, size and the native terminal's custom-font switch; themes, keymaps, padding and other preferences stay intact. It prints the exact font restore command and, when needed, a shell backup restore command. Font restoration keeps the downloaded font available. Restoring a previous login shell uses the OS account settings or `chsh`.
+
+The home icon `` (U+F015), folder and Git icons use Nerd Font glyphs. Installing Oh My Zsh alone does not provide those glyphs: the terminal must select the patched font. The live exercise prints these icons, accented/wide text and color samples. Press `u` only if all text and icons look correct, and `c` only if the color labels match. Then scroll up/down, drag the divider both ways, open/close the advisor, and press `q`. Missing confirmations and gestures remain **NOT VERIFIED**; Cully cannot infer correct glyph appearance from writing text successfully.
+
+Interactive setup runs the exercise. `--skip-terminal-test` skips only the exercise, while keeping required shell/font provisioning. Redirected setup labels visual checks as untested; `--prepare` prepares services without changing the terminal or shell. Font selection needs the local desktop session, so run terminal setup on the client outside SSH. Ordinary launches never install software or rewrite preferences.
+
+When Linux terminal metadata is missing, identify the app with `cully setup --terminal-only --terminal gnome-terminal` (or `ptyxis` / `gnome-console`). Do not use an override to claim a different terminal is supported. Model, token and tool statistics still need a real coding-agent session; the exercise verifies their display area only.

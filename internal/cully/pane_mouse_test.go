@@ -5,7 +5,6 @@ package cully
 import (
 	"bytes"
 	"fmt"
-	"strings"
 	"testing"
 )
 
@@ -66,38 +65,18 @@ func TestPanelMouseWheelModifiers(t *testing.T) {
 	}
 }
 
-func TestPaneMouseTrackingSurvivesExclusiveHostModes(t *testing.T) {
-	// Warp-style hosts store one tracking mode: resetting a tracking mode can
-	// clear that slot even when a different tracking mode was previously set.
-	tracking, sgr := 0, false
-	apply := func(data string) {
-		for _, sequence := range strings.Split(data, "\x1b[?")[1:] {
-			var mode int
-			var operation rune
-			if _, err := fmt.Sscanf(sequence, "%d%c", &mode, &operation); err != nil {
-				t.Fatal(err)
-			}
-			switch mode {
-			case 1000, 1002, 1003:
-				tracking = 0
-				if operation == 'h' {
-					tracking = mode
-				}
-			case 1006:
-				sgr = operation == 'h'
-			}
+func TestEscBeforeWheelIsNotLost(t *testing.T) {
+	for _, wheel := range [][]byte{[]byte("\x1b[<64;5;1M"), {'\x1b', '[', 'M', 96, 37, 33}} {
+		var input panelInput
+		if keys := input.feed([]byte{0x1b}, false); len(keys) != 0 {
+			t.Fatal("standalone Esc must await disambiguation")
 		}
-	}
-	for _, motion := range []bool{false, true, false, true, false} {
-		var output bytes.Buffer
-		writeMouseMotion(&output, motion)
-		apply(output.String())
-		want := 1000
-		if motion {
-			want = 1003
+		keys := input.feed(wheel, false)
+		if len(keys) != 2 || keys[0].Action != "escape" || keys[1].Mouse == nil {
+			t.Fatalf("Esc followed by wheel lost its action: %+v", keys)
 		}
-		if tracking != want || !sgr {
-			t.Fatalf("motion=%t: tracking=%d sgr=%t after %q", motion, tracking, sgr, output.String())
+		if up, ok := keys[1].Mouse.verticalWheel(); !ok || !up {
+			t.Fatal("wheel gesture changed after Esc")
 		}
 	}
 }

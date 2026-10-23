@@ -17,7 +17,7 @@ import (
 )
 
 func TestPaneDividerResizesRealChildAndPreservesInput(t *testing.T) {
-	for _, program := range []string{"xterm", "WarpTerminal"} {
+	for _, program := range []string{"Apple_Terminal", "gnome-terminal"} {
 		t.Run(program, func(t *testing.T) {
 			t.Setenv("TERM_PROGRAM", program)
 			t.Setenv("CULLY_ANALYZE_DISABLE", "1")
@@ -78,17 +78,10 @@ func TestPaneDividerResizesRealChildAndPreservesInput(t *testing.T) {
 				t.Fatalf("initial child size missing: %q", got)
 			}
 			initial, _ := strconv.Atoi(match[1])
-			if program == "WarpTerminal" {
-				if strings.Contains(got, "\x1b[?1002h") {
-					t.Fatal("Warp motion reporting enabled at startup")
-				}
-			} else {
-				// Continuous hover is available outside Warp.
-				_, _ = master.Write([]byte(fmt.Sprintf("\x1b[<35;10;%dM", initial+1)))
-				waitFor("\x1b]22;ns-resize\x1b\\")
-				_, _ = master.Write([]byte("\x1b[<35;10;1M"))
-				waitFor("\x1b]22;default\x1b\\")
-			}
+			_, _ = master.Write([]byte(fmt.Sprintf("\x1b[<35;10;%dM", initial+1)))
+			waitFor("\x1b]22;ns-resize\x1b\\")
+			_, _ = master.Write([]byte("\x1b[<35;10;1M"))
+			waitFor("\x1b]22;default\x1b\\")
 			// Split drag reports across reads, then send ordinary input to the child.
 			_, _ = master.Write([]byte(fmt.Sprintf("\x1b[<0;10;%dM", initial+1)))
 			// A real host will not send motion until Cully asks for it. No resize
@@ -105,23 +98,10 @@ func TestPaneDividerResizesRealChildAndPreservesInput(t *testing.T) {
 			// into the agent or requiring a mouse release outside the window.
 			before := len(snapshot())
 			_, _ = master.Write([]byte("\x1b[<0;10;39M"))
-			if program == "WarpTerminal" {
-				waitFor("\x1b[?1002h", before)
-			}
 			_, _ = master.Write([]byte{0x1b})
 			waitFor("\x1b]22;default\x1b\\", before)
 			_, _ = master.Write([]byte("c"))
 			waitFor("ACK3 rows=38")
-			if program == "WarpTerminal" {
-				got = snapshot()
-				lastOn := strings.LastIndex(got, "\x1b[?1002h")
-				if !strings.Contains(got[lastOn:], "\x1b[?1002l") {
-					t.Fatal("releasing divider left continuous motion enabled")
-				}
-				if strings.Contains(got, "\x1b[?1000l") || strings.Contains(got, "\x1b[?1006l") {
-					t.Fatal("releasing divider disabled scrolling")
-				}
-			}
 			_, _ = master.Write([]byte("q"))
 			select {
 			case err := <-done:

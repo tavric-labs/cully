@@ -13,6 +13,7 @@ type panelKey struct {
 	Data   []byte
 	Action string
 	Mouse  *panelMouse
+	Pasted bool
 }
 type panelMouse struct {
 	Button, X, Y int
@@ -29,7 +30,7 @@ func (p *panelInput) feed(data []byte, flush bool) []panelKey {
 	p.pending = append(p.pending, data...)
 	var keys []panelKey
 	forward := func(n int) {
-		keys = append(keys, panelKey{Data: bytes.Clone(p.pending[:n])})
+		keys = append(keys, panelKey{Data: bytes.Clone(p.pending[:n]), Pasted: p.paste})
 		p.pending = p.pending[n:]
 	}
 	sequences := []struct{ value, action string }{
@@ -60,7 +61,7 @@ func (p *panelInput) feed(data []byte, flush bool) []panelKey {
 			}
 			break
 		}
-		if p.pending[0] == 0x1c { // Ctrl+\ toggles divider dragging in Warp
+		if p.pending[0] == 0x1c { // Ctrl+\ toggles explicit divider resize mode
 			keys = append(keys, panelKey{Data: []byte{0x1c}, Action: "resize"})
 			p.pending = p.pending[1:]
 			continue
@@ -143,9 +144,11 @@ func (p *panelInput) feed(data []byte, flush bool) []panelKey {
 		if partial && !flush {
 			break
 		}
-		if len(p.pending) == 1 {
+		if len(p.pending) == 1 || p.pending[1] == 0x1b {
+			// A standalone Esc may be followed immediately by a separate
+			// mouse/keyboard escape sequence before the flush timer fires.
 			keys = append(keys, panelKey{Data: []byte{0x1b}, Action: "escape"})
-			p.pending = nil
+			p.pending = p.pending[1:]
 		} else {
 			forward(1)
 		}

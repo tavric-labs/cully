@@ -28,11 +28,11 @@ for automatic latest-release selection, file paths, examples and links to mcp-au
 
 ## macOS
 
-For the full local memory stack, install and start Docker Desktop before running the installer from the [quickstart](/quickstart). The [remote MCP path](#connect-to-a-remote-memory-stack) does not need Docker. The installer clears the download quarantine flag on the `cully` binary. Open a new terminal afterwards so your zsh startup file is reloaded.
+For the full local memory stack, install and start Docker Desktop before running the installer from the [quickstart](/quickstart). The [remote MCP path](#connect-to-a-remote-memory-stack) does not need Docker. The installer clears the download quarantine flag on the `cully` binary. Run setup to install the required zsh + Oh My Zsh and Nerd Font preset, then reopen macOS Terminal.
 
 ## Linux
 
-For the full local memory stack, install Docker Engine with the Compose plugin and make sure your user can run `docker` without `sudo`. The [remote MCP path](#connect-to-a-remote-memory-stack) does not need Docker. Run the installer, then open a new terminal so your Bash startup file is reloaded.
+For the full local memory stack, install Docker Engine with the Compose plugin and make sure your user can run `docker` without `sudo`. The [remote MCP path](#connect-to-a-remote-memory-stack) does not need Docker. Run the installer and setup, then reopen your native terminal using the configured zsh login shell. Bash and other shells are outside the supported terminal setup.
 
 Windows is not supported by the installer.
 
@@ -50,7 +50,7 @@ The installer creates links for selected agents and existing agent directories, 
 
 Install logs show the previous PATH selection, downloaded version, each link created or migrated, preserved paths, and the next setup command. Download or checksum mismatches leave existing installations in place.
 
-The installer adds `~/.local/bin` to the zsh or Bash startup file, preserving existing settings. A piped installer cannot change its parent terminal's PATH or command cache. It explicitly prints the refresh and verification commands:
+The installer adds `~/.local/bin` to the zsh startup file (`${ZDOTDIR:-$HOME}/.zshrc`), preserving existing settings. A piped installer cannot change its parent terminal's PATH or command cache. It explicitly prints the refresh and verification commands:
 
 ```sh
 export PATH="$HOME/.local/bin:$PATH"

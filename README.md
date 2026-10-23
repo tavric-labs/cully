@@ -31,12 +31,14 @@ cully run codex        # or claude, cursor, another executable
 
 Setup is user-wide: run it once, then use Cully in any project. No project `.cully` folder is required. The local memory stack requires Docker. For an existing server, use `cully setup --mcp-url URL`. See the [quickstart](https://docs.cully.net/quickstart) for prerequisites and other agents.
 
+Cully supports native terminals on macOS and Linux with **zsh + Oh My Zsh**. Setup installs the required shell and Nerd Font preset automatically, with backups. Use macOS Terminal or a supported GNOME terminal on Linux; Warp and other third-party terminals are outside support. See [terminal setup](https://docs.cully.net/terminal#configure-and-verify-your-terminal).
+
 ## What you get
 
 | Capability | What it helps with |
 | --- | --- |
 | [Live guidance](https://docs.cully.net/advisor) | Notice context pressure, repeated failures and edits awaiting checks. |
-| [Terminal compatibility](https://docs.cully.net/terminal#configure-and-verify-your-terminal) | Configure required mouse/scroll settings, verify live wheel/divider/advisor behavior, and drag a visible Warp scrollbar through normal-screen history. |
+| [Terminal compatibility](https://docs.cully.net/terminal#configure-and-verify-your-terminal) | Install zsh/Oh My Zsh and a Nerd Font preset; verify icons, colors, wheel, divider and advisor behavior. |
 | [Technique discovery](https://docs.cully.net/advisor#discover-current-techniques) | Hourly, bounded public research on current agent releases, workflows, skills and hooks, filtered against your task. Opt out with `CULLY_DISCOVERY=off`. |
 | [Harness audit](https://docs.cully.net/harness) | Find setup gaps in instructions, permissions, memory, skills and hooks. |
 | [Token impact](https://docs.cully.net/token-impact) | Inspect lookup overhead, oversized output and observational savings estimates. |

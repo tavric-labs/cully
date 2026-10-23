@@ -2,131 +2,166 @@ package cully
 
 import (
 	"bytes"
+	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/pelletier/go-toml/v2"
 )
 
-func TestEnableWarpReportingPreservesPreferences(t *testing.T) {
-	for _, data := range []string{
-		"# My theme\n[appearance.text]\nfont_size = 17.5\nfont_name = 'custom'\n[terminal]\nmouse_reporting_enabled = false # keep comment\nscroll_reporting_enabled = false\n",
-		"[terminal]\nmouse_reporting_enabled = false\n[appearance]\ntheme = 'dark'\n",
-		"[terminal]",
-		"[\"terminal\"]\n\"mouse_reporting_enabled\" = false\n\"scroll_reporting_enabled\" = false\n",
-		"terminal.mouse_reporting_enabled = false\nterminal.scroll_reporting_enabled = false\n",
-		"terminal = {mouse_reporting_enabled=false, scroll_reporting_enabled=false}\n",
-		"[appearance]\ntext = '''\n[terminal]\nmouse_reporting_enabled = false\n'''\n",
-		"",
-	} {
-		t.Run(data, func(t *testing.T) {
-			result, err := enableWarpReporting([]byte(data))
-			if err != nil {
-				t.Fatal(err)
-			}
-			var before, after map[string]any
-			if err := toml.Unmarshal([]byte(data), &before); err != nil {
-				t.Fatal(err)
-			}
-			if err := toml.Unmarshal(result, &after); err != nil {
-				t.Fatal(err)
-			}
-			terminal := after["terminal"].(map[string]any)
-			if terminal["mouse_reporting_enabled"] != true || terminal["scroll_reporting_enabled"] != true {
-				t.Fatal(string(result))
-			}
-			if strings.Contains(data, "# keep comment") && !strings.Contains(string(result), "# keep comment") {
-				t.Fatal("comment lost")
-			}
-			if data != "" && before["appearance"] != nil {
-				a, _ := toml.Marshal(before["appearance"])
-				b, _ := toml.Marshal(after["appearance"])
-				if !bytes.Equal(a, b) {
-					t.Fatal("appearance changed")
-				}
-			}
-			again, err := enableWarpReporting(result)
-			if err != nil || !bytes.Equal(again, result) {
-				t.Fatalf("not idempotent: %s %v", again, err)
-			}
-		})
-	}
-	for _, bad := range []string{"[terminal\n", "terminal = false", "[terminal]\nmouse_reporting_enabled = 'false'", "terminal={mouse_reporting_enabled=false}"} {
-		if _, err := enableWarpReporting([]byte(bad)); err == nil {
-			t.Fatalf("accepted unsafe layout %q", bad)
-		}
-	}
-}
+func shellTestLookup(name string) (string, error) { return "/usr/bin/" + name, nil }
 
-func TestTerminalConfigurationBackupDryRunAndSSH(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "settings.toml")
-	before := []byte("[terminal]\nmouse_reporting_enabled=true\nscroll_reporting_enabled=false\n[appearance]\ntheme='mine'\n")
-	if err := os.WriteFile(path, before, 0640); err != nil {
+func TestRequiredShellSetupPreservesConfigAndIsRepeatable(t *testing.T) {
+	home := t.TempDir()
+	dotdir := filepath.Join(home, "dot files")
+	root := filepath.Join(home, "oh my ' zsh")
+	if err := os.Mkdir(dotdir, 0700); err != nil {
 		t.Fatal(err)
+	}
+	rc := filepath.Join(dotdir, ".zshrc")
+	before := []byte("# my settings\nexport EDITOR=vim\nalias ll='ls -l'\n")
+	if err := os.WriteFile(rc, before, 0640); err != nil {
+		t.Fatal(err)
+	}
+	profile := terminalProfile{OS: "linux", Shell: "bash"}
+	plan, err := planShellSetup(home, dotdir, root, profile, shellTestLookup)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !plan.clone || !plan.changeShell || !bytes.HasPrefix(plan.after, before) {
+		t.Fatalf("invalid required setup: %+v", plan)
+	}
+	var commands []string
+	run := func(command []string) error {
+		commands = append(commands, strings.Join(command, " "))
+		if command[0] == "git" {
+			dest := command[len(command)-1]
+			if err := os.Mkdir(dest, 0700); err != nil {
+				return err
+			}
+			return os.WriteFile(filepath.Join(dest, "oh-my-zsh.sh"), nil, 0600)
+		}
+		if command[1] == "-f" {
+			if zsh, err := exec.LookPath("zsh"); err == nil {
+				return exec.Command(zsh, command[1:]...).Run()
+			}
+		}
+		return nil
 	}
 	var output bytes.Buffer
-	profile := terminalProfile{Program: "WarpTerminal", Connection: "local"}
-	if err := configureTerminalSettings(&output, profile, path, false); err != nil {
+	if err := applyShellSetup(plan, &output, nil, shellTestLookup, run); err != nil {
 		t.Fatal(err)
 	}
-	data, _ := os.ReadFile(path)
-	if !bytes.Equal(data, before) {
-		t.Fatal("dry run modified settings")
+	data, err := os.ReadFile(rc)
+	if err != nil || !bytes.HasPrefix(data, before) || !strings.Contains(string(data), "source \"$ZSH/oh-my-zsh.sh\"") {
+		t.Fatalf("configuration: %q (%v)", data, err)
 	}
-	profile.Connection = "ssh"
-	if err := configureTerminalSettings(&output, profile, path, true); err != nil {
-		t.Fatal(err)
-	}
-	data, _ = os.ReadFile(path)
-	if !bytes.Equal(data, before) {
-		t.Fatal("SSH modified host preferences")
-	}
-	profile.Connection = "local"
-	if err := configureTerminalSettings(&output, profile, path, true); err != nil {
-		t.Fatal(err)
-	}
-	data, _ = os.ReadFile(path)
-	if bytes.Equal(data, before) {
-		t.Fatal("reporting not enabled")
-	}
-	info, _ := os.Stat(path)
+	info, _ := os.Stat(rc)
 	if info.Mode().Perm() != 0640 {
-		t.Fatal("file permissions changed")
+		t.Fatal("shell file permissions changed")
 	}
-	backups, _ := filepath.Glob(filepath.Join(filepath.Dir(path), "settings.toml.cully-backup-*"))
+	backups, _ := filepath.Glob(rc + ".cully-backup-*")
 	if len(backups) != 1 {
 		t.Fatalf("backups: %v", backups)
 	}
 	saved, _ := os.ReadFile(backups[0])
 	if !bytes.Equal(saved, before) {
-		t.Fatal("backup differs from original")
+		t.Fatal("original shell configuration not backed up")
 	}
-	if err := configureTerminalSettings(&output, profile, path, true); err != nil {
-		t.Fatal(err)
+	if !strings.Contains(strings.Join(commands, "\n"), "chsh -s /usr/bin/zsh") {
+		t.Fatal("did not select required login shell")
 	}
-	backups, _ = filepath.Glob(filepath.Join(filepath.Dir(path), "settings.toml.cully-backup-*"))
-	if len(backups) != 1 {
-		t.Fatal("repeat setup created duplicate backup")
-	}
-	if _, err := writeTerminalSettings(path, before, before); err == nil {
-		t.Fatal("overwrote concurrently changed settings")
+	profile.Shell = "zsh"
+	again, err := planShellSetup(home, dotdir, root, profile, shellTestLookup)
+	if err != nil || !again.ready() {
+		t.Fatalf("repeat setup should need no changes: %+v (%v)", again, err)
 	}
 }
 
-func TestWarpSettingsLocations(t *testing.T) {
-	for _, test := range []struct{ goos, channel, want string }{
-		{"darwin", "stable", "/home/.warp/settings.toml"}, {"darwin", "preview", "/home/.warp-preview/settings.toml"},
-		{"linux", "stable", "/config/warp-terminal/settings.toml"}, {"linux", "preview", "/config/warp-terminal-preview/settings.toml"},
-		{"windows", "stable", "/local/warp/Warp/config/settings.toml"}, {"windows", "preview", "/local/warp/WarpPreview/config/settings.toml"},
+func TestRequiredShellSetupFailurePreservesOriginal(t *testing.T) {
+	home := t.TempDir()
+	before := []byte("export EDITOR=vim\n")
+	rc := filepath.Join(home, ".zshrc")
+	if err := os.WriteFile(rc, before, 0600); err != nil {
+		t.Fatal(err)
+	}
+	plan, err := planShellSetup(home, "", "", terminalProfile{OS: "linux", Shell: "zsh"}, shellTestLookup)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = applyShellSetup(plan, &bytes.Buffer{}, nil, shellTestLookup, func([]string) error { return fmt.Errorf("network unavailable") })
+	if err == nil {
+		t.Fatal("download failure reported success")
+	}
+	data, _ := os.ReadFile(rc)
+	if !bytes.Equal(data, before) {
+		t.Fatal("failed download modified shell configuration")
+	}
+	if _, err := os.Stat(plan.root); !os.IsNotExist(err) {
+		t.Fatal("failed download left an installed framework")
+	}
+	if err := os.Mkdir(plan.root, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := planShellSetup(home, "", "", terminalProfile{OS: "linux"}, shellTestLookup); err == nil {
+		t.Fatal("accepted an unrelated existing framework directory")
+	}
+}
+
+func TestShellConfigSymlinkAndConcurrentChange(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "real-zshrc")
+	path := filepath.Join(dir, ".zshrc")
+	before := []byte("original\n")
+	if err := os.WriteFile(target, before, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, path); err != nil {
+		t.Fatal(err)
+	}
+	backup, err := writeTerminalSettings(path, before, []byte("updated\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if link, err := os.Readlink(path); err != nil || link != target {
+		t.Fatal("rewrote shell symlink")
+	}
+	saved, _ := os.ReadFile(backup)
+	if !bytes.Equal(saved, before) {
+		t.Fatal("backup lost original")
+	}
+	if _, err := writeTerminalSettings(path, before, before); err == nil {
+		t.Fatal("overwrote a concurrent shell edit")
+	}
+}
+
+func TestSupportedNativeTerminalsOnly(t *testing.T) {
+	for _, test := range []struct {
+		os, program string
+		allowed     bool
+	}{
+		{"darwin", "Apple_Terminal", true}, {"linux", "gnome-terminal", true}, {"linux", "ptyxis", true}, {"linux", "gnome-console", true},
+		{"linux", "", true}, {"darwin", "WarpTerminal", false}, {"linux", "Warp", false}, {"darwin", "iTerm.app", false}, {"windows", "", false},
 	} {
-		path, err := warpSettingsPath("/home", test.goos, "/config", "/local", test.channel)
-		if err != nil || filepath.ToSlash(path) != test.want {
-			t.Fatalf("%+v: %s %v", test, path, err)
+		if err := (terminalProfile{OS: test.os, Program: test.program}).requireNative(); (err == nil) != test.allowed {
+			t.Fatalf("%+v: %v", test, err)
 		}
 	}
-	if _, err := warpSettingsPath("/home", "darwin", "", "", "nightly"); err == nil {
-		t.Fatal("accepted unknown channel")
+}
+
+func TestShellDependencyPlans(t *testing.T) {
+	lookup := func(name string) (string, error) {
+		if name == "apt-get" || name == "sudo" {
+			return "/usr/bin/" + name, nil
+		}
+		return "", os.ErrNotExist
+	}
+	command, err := shellPackageCommand("linux", []string{"zsh", "git"}, lookup)
+	if err != nil || !strings.Contains(strings.Join(command, " "), "apt-get install -y zsh git") {
+		t.Fatalf("%v: %v", command, err)
+	}
+	if _, err := shellPackageCommand("darwin", []string{"zsh"}, lookup); err == nil {
+		t.Fatal("silently installed a new package manager")
 	}
 }

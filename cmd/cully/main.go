@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"runtime"
 	"strconv"
 
 	"github.com/mcp-runtime/cully/internal/cully"
@@ -23,8 +24,8 @@ Usage:
   cully setup [--agent AGENT] --mcp-url URL [--oauth]
                                          Use an existing server; set up integrations and advisor
   cully setup --terminal-only [--skip-terminal-test]
-                                         Configure terminal settings and verify wheel/divider/advisor
-  cully terminal check|configure|test|restore
+                                         Install zsh/Oh My Zsh, select a Nerd Font and verify the terminal
+  cully terminal check|configure|shell|test|restore
                                          Inspect, repair, exercise or restore terminal preferences
   cully uninstall [--purge-data]           Stop local stack and remove managed agent setup
   cully uninstall [claude|codex|cursor|all] Remove one or all agent integrations
@@ -188,13 +189,16 @@ func run(args []string) error {
 }
 
 func runSetup(args []string) error {
+	if runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
+		return fmt.Errorf("Cully setup supports macOS and Linux only")
+	}
 	options, err := parseSetup(args)
 	if err != nil {
 		return err
 	}
 	fmt.Printf("Cully %s setup\n", version)
 	if options.terminalOnly {
-		return cully.SetupTerminal(os.Stdin, os.Stdout, options.skipTerminalTest)
+		return cully.SetupTerminal(os.Stdin, os.Stdout, options.skipTerminalTest, options.terminal)
 	}
 	if options.endpoint != "" {
 		fmt.Println("Setting up Cully with an existing MCP server")
@@ -208,15 +212,21 @@ func runSetup(args []string) error {
 		if err := checkSetupMCP(os.Stdout, options.endpoint, options.oauth); err != nil {
 			return err
 		}
+		if err := cully.SetupTerminal(os.Stdin, os.Stdout, options.skipTerminalTest, options.terminal); err != nil {
+			return err
+		}
 		fmt.Println("Setup complete. Restart your coding agent to load the Cully skill, hooks and MCP tools.")
 		printT3CodeHint(os.Stdout, exec.LookPath)
-		return cully.SetupTerminal(os.Stdin, os.Stdout, options.skipTerminalTest)
+		return nil
 	}
 	if err := runSelfHost(options.target, options.oauth, options.prepare, options.auth); err != nil {
 		return err
 	}
 	printT3CodeHint(os.Stdout, exec.LookPath)
-	return cully.SetupTerminal(os.Stdin, os.Stdout, options.skipTerminalTest || options.prepare)
+	if options.prepare {
+		return nil
+	}
+	return cully.SetupTerminal(os.Stdin, os.Stdout, options.skipTerminalTest, options.terminal)
 }
 
 // printT3CodeHint tells T3 Code users that Cully already works in it. T3 Code
@@ -233,6 +243,7 @@ type setupOptions struct {
 	target, endpoint               string
 	oauth, prepare                 bool
 	terminalOnly, skipTerminalTest bool
+	terminal                       string
 	auth                           mcpAuthOptions
 }
 
@@ -244,7 +255,8 @@ func parseSetup(args []string) (setupOptions, error) {
 	fs.StringVar(&options.endpoint, "mcp-url", "", "connect to an already deployed Cully MCP server")
 	fs.BoolVar(&options.oauth, "oauth", false, "server uses OAuth; print sign-in instructions")
 	fs.BoolVar(&options.prepare, "prepare", false, "with --all, prepare local configuration without starting services")
-	fs.BoolVar(&options.terminalOnly, "terminal-only", false, "configure terminal compatibility and check live features without services or agent setup")
+	fs.BoolVar(&options.terminalOnly, "terminal-only", false, "install the required zsh/Oh My Zsh and font setup without services or agents")
+	fs.StringVar(&options.terminal, "terminal", "", "native terminal program; default: detect")
 	fs.BoolVar(&options.skipTerminalTest, "skip-terminal-test", false, "configure terminal settings without the interactive wheel/divider/advisor exercise")
 	fs.StringVar(&options.auth.Image, "mcp-auth-image", "", "testing only: override the automatically selected latest mcp-auth release image")
 	fs.StringVar(&options.auth.ConfigDir, "mcp-auth-config-dir", "", "mount this directory of mcp-auth configuration files read-only at /etc/mcp-auth")

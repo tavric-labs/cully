@@ -82,73 +82,18 @@ func TestRenderTerminalPaneViewShowsScrollback(t *testing.T) {
 	}
 }
 
-func TestPaneScrollbarThumbAndGestures(t *testing.T) {
-	var s paneScroll
-	if start, size := s.thumb(90, 10); start != 9 || size != 1 {
-		t.Fatalf("live thumb=%d,%d", start, size)
-	}
-	s.Offset = 90
-	if start, size := s.thumb(90, 10); start != 0 || size != 1 {
-		t.Fatalf("oldest thumb=%d,%d", start, size)
-	}
-	if !s.scrollbar(&panelMouse{Button: 0, X: 39, Y: 1}, 39, 10, 90) || !s.Dragging {
-		t.Fatal("thumb press did not start drag")
-	}
-	// Dragging outside the gutter still owns the pointer and reaches live output.
-	if !s.scrollbar(&panelMouse{Button: 32, X: 2, Y: 50}, 39, 10, 90) || s.Offset != 0 {
-		t.Fatalf("drag to bottom: %+v", s)
-	}
-	s.scrollbar(&panelMouse{Button: 0, Release: true, X: 2, Y: 1}, 39, 10, 90)
-	if s.Dragging || s.Offset != 90 {
-		t.Fatalf("release at top: %+v", s)
-	}
-	// Track clicks jump to that position, keeping the thumb under the pointer.
-	s.scrollbar(&panelMouse{Button: 0, X: 39, Y: 6}, 39, 10, 90)
-	if !s.Dragging || s.Offset != 40 {
-		t.Fatalf("track click: %+v", s)
-	}
-	s.reset()
-	if s.Dragging || s.Offset != 0 {
-		t.Fatal("reset left a drag active")
-	}
-	for _, mouse := range []*panelMouse{{Button: 64, X: 39, Y: 1}, {Button: 0, X: 38, Y: 1}, {Button: 0, X: 39, Y: 11}, {Button: 0, Release: true, X: 39, Y: 1}} {
-		if s.scrollbar(mouse, 39, 10, 90) {
-			t.Fatalf("unowned input consumed: %+v", mouse)
+// A font fix cannot help if the wrapper corrupts UTF-8 on PTY chunk boundaries.
+func TestPanePreservesNerdFontIconsAcrossUTF8Chunks(t *testing.T) {
+	text := " ~      café  漢字  é"
+	data := []byte(text + "\r\n")
+	for split := 0; split <= len(data); split++ {
+		emulator := vt.NewEmulator(80, 6)
+		_, _ = emulator.Write(data[:split])
+		_, _ = emulator.Write(data[split:])
+		frame := ansi.Strip(renderTerminalPane(emulator, 80, 8, nil, false, ""))
+		_ = emulator.Close()
+		if !strings.Contains(frame, text) {
+			t.Fatalf("split %d corrupted Unicode: %q", split, frame)
 		}
-	}
-	if !s.scrollbar(&panelMouse{Button: 0, X: 39, Y: 1}, 39, 10, 0) || s.Dragging {
-		t.Fatal("empty history must consume gutter click without dragging")
-	}
-	if start, size := s.thumb(0, 10); start != 0 || size != 10 {
-		t.Fatalf("empty thumb=%d,%d", start, size)
-	}
-	if start, size := s.thumb(90, 0); start != 0 || size != 0 {
-		t.Fatalf("zero-height thumb=%d,%d", start, size)
-	}
-}
-
-func TestPaneScrollbarReservesTextAndKeepsCursorAndTheme(t *testing.T) {
-	agent := vt.NewEmulator(38, 6)
-	defer agent.Close()
-	_, _ = agent.Write([]byte(strings.Repeat("x", 37) + "Z"))
-	var s paneScroll
-	frame := renderTerminalPaneView(agent, 0, 40, 8, []string{"status"}, false, "", gripIdle) + renderPaneScrollbar(&s, 90, 6, 39, false)
-	host := vt.NewEmulator(40, 8)
-	defer host.Close()
-	_, _ = host.Write([]byte(frame))
-	if cell := host.CellAt(37, 0); cell == nil || cell.Content != "Z" {
-		t.Fatal("scrollbar overwrote final text column")
-	}
-	if cell := host.CellAt(38, 5); cell == nil || cell.Content != "┃" {
-		t.Fatalf("live thumb missing: %+v", cell)
-	}
-	if host.CursorPosition() != agent.CursorPosition() {
-		t.Fatal("scrollbar moved the agent cursor")
-	}
-	if strings.Contains(frame, "\x1b[48;") || strings.Contains(frame, "\x1b]10;") || strings.Contains(frame, "\x1b]11;") {
-		t.Fatal("scrollbar changed terminal appearance")
-	}
-	if got := renderPaneScrollbar(&s, 90, 6, 39, true); strings.Contains(got, "┃") {
-		t.Fatal("alternate-screen private history has a fictitious thumb")
 	}
 }

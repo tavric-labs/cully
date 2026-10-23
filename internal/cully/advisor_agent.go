@@ -127,7 +127,7 @@ Use a focused task query and the supplied session_ref for memory recall. Never i
 If task_intent is unknown, focus recall on evidenced workflow problems, never guess the task.
 Match command syntax and paths to execution_os and login_shell when supplied.
 terminal_program describes the client terminal, not the machine executing commands:
-Warp over SSH does not imply macOS commands work on the remote host. Do not invent client OS.
+Terminal client metadata over SSH does not imply macOS commands work on the remote host. Do not invent client OS.
 For Cully pane focus recommend Ctrl+] or F6; Option/Alt+A requires Option-as-Meta.
 Never recommend changing zsh/bash configuration merely to fix terminal key forwarding.`
 

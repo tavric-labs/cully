@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -22,6 +23,14 @@ func TestMain(m *testing.M) {
 	// Set the fixture timezone before tests start background panel workers.
 	// Per-test writes race with time.Now in those workers.
 	time.Local = time.UTC
+	// PTY fixtures must not inherit an unsupported terminal from the developer
+	// running the suite. Rejection tests supply their own terminal profile.
+	program := "gnome-terminal"
+	if runtime.GOOS == "darwin" {
+		program = "Apple_Terminal"
+	}
+	os.Setenv("TERM_PROGRAM", program)
+	os.Setenv("SHELL", "/bin/zsh")
 	// Run in a clean Cully environment. From inside a Cully terminal, or an
 	// agent Cully wraps, these are set, and some behavior depends on them: a
 	// statusline prints nothing inside a pane, and measurements follow the agent.

@@ -172,7 +172,7 @@ if [ "$1" -lt 33 ]; then exit 2; fi
 }
 
 func TestPaneWheelReachesHistoryBeforeAndAfterAdvisor(t *testing.T) {
-	for _, program := range []string{"WarpTerminal", "iTerm.app", "vscode", ""} {
+	for _, program := range []string{"Apple_Terminal", "gnome-terminal", "ptyxis", ""} {
 		for _, legacy := range []bool{false, true} {
 			t.Run(fmt.Sprintf("%s/legacy=%t", program, legacy), func(t *testing.T) {
 				testPaneWheelReachesHistoryBeforeAndAfterAdvisor(t, program, legacy)
@@ -190,7 +190,7 @@ func testPaneWheelReachesHistoryBeforeAndAfterAdvisor(t *testing.T, program stri
 	script := `#!/bin/sh
 stty raw -echo
 i=1
-while [ "$i" -le 80 ]; do printf 'warp line %02d\r\n' "$i"; i=$((i+1)); done
+while [ "$i" -le 80 ]; do printf 'history line %02d\r\n' "$i"; i=$((i+1)); done
 while :; do
   c=$(dd bs=1 count=1 2>/dev/null)
   case "$c" in
@@ -275,10 +275,10 @@ done
 		_, screen := snapshot()
 		t.Fatalf("terminal state did not arrive: %s", screen)
 	}
-	wait(func(_, screen string) bool { return strings.Contains(screen, "warp line 80") })
+	wait(func(_, screen string) bool { return strings.Contains(screen, "history line 80") })
 	raw, _ := snapshot()
-	if !strings.Contains(raw, "\x1b[?1000h") || !strings.Contains(raw, "\x1b[?1006h") || strings.Contains(raw, "\x1b[?1003h") == (program == "WarpTerminal") {
-		t.Fatal("wheel reports must be enabled; only Warp defers continuous motion")
+	if !strings.Contains(raw, "\x1b[?1000h") || !strings.Contains(raw, "\x1b[?1006h") || !strings.Contains(raw, "\x1b[?1003h") {
+		t.Fatal("mouse, wheel and hover reporting must be enabled")
 	}
 	encodeWheel := func(button, x, y int) string {
 		if legacy {
@@ -299,7 +299,7 @@ done
 	}
 	wheel(true, 1)
 	wait(func(_, screen string) bool {
-		return strings.Contains(screen, "warp line 01") && strings.Contains(screen, "lines back") && !strings.Contains(screen, "warp line 80")
+		return strings.Contains(screen, "history line 01") && strings.Contains(screen, "lines back") && !strings.Contains(screen, "history line 80")
 	})
 	_, _ = master.Write([]byte("n"))
 	wait(func(_, screen string) bool {
@@ -307,7 +307,7 @@ done
 	})
 	wheel(true, 40) // the compact panel must not swallow conversation scrolling
 	wait(func(_, screen string) bool {
-		return strings.Contains(screen, "warp line 01") && strings.Contains(screen, "lines back")
+		return strings.Contains(screen, "history line 01") && strings.Contains(screen, "lines back")
 	})
 	wheel(false, 40)
 	wait(func(_, screen string) bool {
@@ -321,41 +321,13 @@ done
 	wait(func(_, screen string) bool {
 		return strings.Contains(screen, "new tail") && !strings.Contains(screen, "lines back")
 	})
-	if program == "WarpTerminal" {
-		_, screen := snapshot()
-		top := -1
-		for y, line := range strings.Split(screen, "\n") {
-			if strings.Contains(line, "━━ Codex") {
-				top = y
-				break
-			}
-		}
-		if top < 1 || !strings.Contains(screen, "┃") {
-			t.Fatal("visible scrollbar or divider missing")
-		}
-		before, _ := snapshot()
-		// Pick up the visible bottom thumb, drag outside the gutter to the
-		// top, then release. Warp must get motion enabled on the press.
-		_, _ = master.Write([]byte(fmt.Sprintf("\x1b[<0;119;%dM", top)))
-		wait(func(raw, _ string) bool { return strings.Contains(raw[len(before):], "\x1b[?1002h") })
-		_, _ = master.Write([]byte("\x1b[<32;5;1M\x1b[<0;5;1m"))
-		wait(func(raw, screen string) bool {
-			return strings.Contains(screen, "warp line 01") && strings.Contains(screen, "lines back") && strings.Contains(raw[len(before):], "\x1b[?1002l")
-		})
-		// Track clicks jump to the bottom without covering any agent text.
-		_, _ = master.Write([]byte(fmt.Sprintf("\x1b[<0;119;%dM\x1b[<0;119;%dm", top, top)))
-		wait(func(_, screen string) bool {
-			return strings.Contains(screen, "new tail") && !strings.Contains(screen, "lines back")
-		})
-	}
 	_, _ = master.Write([]byte{0x1d})
 	wait(func(raw, screen string) bool {
 		return strings.Contains(raw, "\x1b[?1003h") && strings.Contains(screen, "Cully Advisor")
 	})
-	before, _ := snapshot()
 	_, _ = master.Write([]byte{0x1b})
 	wait(func(raw, screen string) bool {
-		return strings.Contains(screen, "new tail") && (program != "WarpTerminal" || strings.Contains(raw[len(before):], "\x1b[?1003l"))
+		return strings.Contains(screen, "new tail") && !strings.Contains(screen, "Cully Advisor")
 	})
 	raw, _ = snapshot()
 	if strings.Contains(raw, "\x1b[?1000l") || strings.Contains(raw, "\x1b[?1006l") {
@@ -363,7 +335,7 @@ done
 	}
 	wheel(true, 1)
 	wait(func(_, screen string) bool {
-		return strings.Contains(screen, "warp line 01") && strings.Contains(screen, "lines back")
+		return strings.Contains(screen, "history line 01") && strings.Contains(screen, "lines back")
 	})
 	// Alternate-screen agents scroll themselves, including when the pointer is
 	// over Cully's compact panel rather than over the agent viewport.
@@ -378,9 +350,6 @@ done
 	wait(func(_, screen string) bool { return strings.Contains(screen, "ALT wheel received") })
 	received, err := os.ReadFile(filepath.Join(dir, "alt-wheel"))
 	agentCols := 120
-	if program == "WarpTerminal" {
-		agentCols -= 2
-	}
 	if want := fmt.Sprintf("\x1b[<80;5;1M\x1b[<81;%d;%dM\x1b[5~\x1b[6~", agentCols, altRows); err != nil || string(received) != want {
 		t.Fatalf("alternate-screen wheel reports=%q, want %q (%v)", received, want, err)
 	}
@@ -396,7 +365,7 @@ done
 	wait(func(raw, _ string) bool {
 		return strings.Contains(raw, "\x1b[?1000l") && strings.Contains(raw, "\x1b[?1006l") && strings.Contains(raw, "\x1b[?1049l")
 	})
-	if !exercise.WheelUp || !exercise.WheelDown || !exercise.AdvisorOpen || !exercise.AdvisorClose || !exercise.Status || (program == "WarpTerminal" && !exercise.Scrollbar) {
+	if !exercise.WheelUp || !exercise.WheelDown || !exercise.AdvisorOpen || !exercise.AdvisorClose || !exercise.Status {
 		t.Fatalf("live check missed observed features: %+v", exercise)
 	}
 }

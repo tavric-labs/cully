@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -120,7 +121,29 @@ esac
 				// Exercise the actual CLI without querying an external release service.
 				args = append(args, "--mcp-auth-image", "example/auth:ci", "--mcp-auth-config-dir", source, "--mcp-auth-env", provider)
 			}
-			env := append(os.Environ(), "HOME="+root, "PATH="+bin,
+			// Model an already configured native terminal. No test may download
+			// software, change the test runner's login shell or launch its GUI.
+			if err := os.Mkdir(filepath.Join(root, ".oh-my-zsh"), 0700); err != nil {
+				t.Fatal(err)
+			}
+			write(filepath.Join(root, ".oh-my-zsh", "oh-my-zsh.sh"), "# fixture")
+			write(filepath.Join(root, ".zshrc"), "source \"$ZSH/oh-my-zsh.sh\"\n")
+			write(filepath.Join(bin, "zsh"), "#!/bin/sh\nexit 0\n")
+			write(filepath.Join(bin, "tty"), "#!/bin/sh\necho /dev/ttys123\n")
+			write(filepath.Join(bin, "osascript"), "#!/bin/sh\nprintf 'Basic\\tMesloLGSNFM-Regular\\t14\\n'\n")
+			write(filepath.Join(bin, "gsettings"), `#!/bin/sh
+case "$*" in
+ *use-system-font) echo false ;;
+ *default) echo "'b1dcc9dd-5262-4d8d-a863-c897e6d979b9'" ;;
+ *) echo "'MesloLGS Nerd Font Mono 12'" ;;
+esac
+`)
+			write(filepath.Join(bin, "fc-match"), "#!/bin/sh\nprintf 'MesloLGS Nerd Font Mono'\n")
+			terminalProgram := "gnome-terminal"
+			if runtime.GOOS == "darwin" {
+				terminalProgram = "Apple_Terminal"
+			}
+			env := append(os.Environ(), "HOME="+root, "PATH="+bin, "SHELL=/bin/zsh", "TERM_PROGRAM="+terminalProgram, "ZSH="+filepath.Join(root, ".oh-my-zsh"), "ZDOTDIR="+root, "SSH_CONNECTION=", "SSH_TTY=", "GNOME_TERMINAL_PROFILE=",
 				"CLAUDE_CONFIG_DIR="+filepath.Join(root, ".claude"),
 				"CODEX_HOME="+filepath.Join(root, ".codex"),
 				"CURSOR_CONFIG_DIR="+filepath.Join(root, ".cursor"),

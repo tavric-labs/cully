@@ -34,6 +34,10 @@ func RunPane(agentName string, args []string, input, output *os.File) error {
 }
 
 func runPane(agent paneAgent, args []string, input, output *os.File, exercise *terminalExercise) error {
+	profile := detectTerminalProfile()
+	if err := profile.requireNative(); err != nil {
+		return err
+	}
 	if !term.IsTerminal(int(input.Fd())) || !term.IsTerminal(int(output.Fd())) {
 		return fmt.Errorf("cully %s requires an interactive terminal", agent.Name)
 	}
@@ -49,17 +53,12 @@ func runPane(agent paneAgent, args []string, input, output *os.File, exercise *t
 		return err
 	}
 	defer term.Restore(int(input.Fd()), state) //nolint:errcheck
-	// The host alternate screen has no agent history: the wheel must reach
-	// Cully's emulator even in Warp. Only motion reporting is deferred there
-	// until the advisor or divider needs it.
-	profile := detectTerminalProfile()
-	startup := "\x1b[?1049h\x1b[?25l\x1b[?1000h\x1b[?1006h"
+	// Conversation history belongs to the emulator while Cully owns the screen.
+	startup := "\x1b[?1049h\x1b[?25l\x1b[?1000h\x1b[?1006h\x1b[?1002h\x1b[?1003h"
 	if _, err := io.WriteString(output, startup); err != nil {
 		return err
 	}
 	defer io.WriteString(output, "\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b[0m\x1b[?25h\x1b[?1049l") //nolint:errcheck
-	mouseMotion := !profile.isWarp()
-	writeMouseMotion(output, mouseMotion)
 	reviewContext, cancelReviews := context.WithCancel(context.Background())
 	defer cancelReviews()
 
@@ -124,13 +123,7 @@ func runPane(agent paneAgent, args []string, input, output *os.File, exercise *t
 	statusRows := func() []string { return compactSessionStatusRows(cols, panelBudget(), advice, stats, view) }
 	content := statusRows()
 	top := divider.top(rows, len(content))
-	agentCols := func() int {
-		if profile.isWarp() {
-			return max(1, cols-2)
-		} // scrollbar and right margin
-		return cols
-	}
-	child, err := pty.StartWithSize(cmd, &pty.Winsize{Rows: uint16(top), Cols: uint16(agentCols())})
+	child, err := pty.StartWithSize(cmd, &pty.Winsize{Rows: uint16(top), Cols: uint16(cols)})
 	if err != nil {
 		return fmt.Errorf("start %s: %w", agent.Name, err)
 	}
@@ -143,7 +136,7 @@ func runPane(agent paneAgent, args []string, input, output *os.File, exercise *t
 		close(waitDone)
 	}()
 	readerDone := make(chan struct{})
-	emulator := vt.NewEmulator(agentCols(), top)
+	emulator := vt.NewEmulator(cols, top)
 	readFooter := func() {
 		if agent.NativeFooter {
 			rows, base := footerRows(emulator)
@@ -231,21 +224,11 @@ func runPane(agent paneAgent, args []string, input, output *os.File, exercise *t
 	resizeMode := false
 	resizeChild := func() {
 		nextTop := divider.top(rows, len(content))
-		if nextTop != top || agentCols() != emulator.Width() {
+		if nextTop != top || cols != emulator.Width() {
 			top = nextTop
-			emulator.Resize(agentCols(), top)
-			_ = pty.Setsize(child, &pty.Winsize{Rows: uint16(top), Cols: uint16(agentCols())})
+			emulator.Resize(cols, top)
+			_ = pty.Setsize(child, &pty.Winsize{Rows: uint16(top), Cols: uint16(cols)})
 		}
-	}
-	// Keep wheel reporting active when the drawer closes; disabling it would
-	// strand Warp on the alternate screen without any reachable scrollback.
-	syncMouseTracking := func() {
-		want := !profile.isWarp() || drawer.Open || resizeMode || divider.Dragging || scroll.Dragging
-		if mouseMotion == want {
-			return
-		}
-		writeMouseMotion(output, want)
-		mouseMotion = want
 	}
 	// OSC 22 asks the terminal for a vertical-resize pointer over the divider;
 	// terminals without support ignore it.
@@ -275,20 +258,13 @@ func runPane(agent paneAgent, args []string, input, output *os.File, exercise *t
 		}
 		hud := paneHUD(cols, stats, view, time.Now())
 		hint := " drag ↕ · Ctrl+] advisor "
-		if profile.isWarp() && !resizeMode {
-			hint = " Ctrl+\\ resize · Ctrl+] advisor "
-		} else if resizeMode {
+		if resizeMode {
 			hint = " drag ↕ · Esc ends resize "
 		}
 		if scroll.active() {
 			hint = fmt.Sprintf(" ↑ %d lines back · type or scroll down to return ", scroll.Offset)
-		} else if profile.isWarp() && emulator.IsAltScreen() {
-			hint = " agent owns history · wheel to scroll · Ctrl+] advisor "
 		}
 		frame := renderTerminalPaneView(emulator, scroll.Offset, cols, rows, content, agent.NativeFooter, hud, divider.grip(), hint)
-		if profile.isWarp() {
-			frame += renderPaneScrollbar(&scroll, emulator.ScrollbackLen(), top, cols-1, emulator.IsAltScreen())
-		}
 		return frame
 	}
 	// Enter pastes a request into the agent's input instead of submitting it, so
@@ -306,19 +282,11 @@ func runPane(agent paneAgent, args []string, input, output *os.File, exercise *t
 		request := terminalSafeText(advisorRequest(line, readSessionSignals(session)))
 		emulator.SendText("\x1b[200~\n" + request + "\x1b[201~")
 		drawer.close()
-		syncMouseTracking()
 		dirty = true
 	}
 	handleKeys := func(keys []panelKey) {
 		for _, key := range keys {
-			if key.Action == "escape" && scroll.Dragging {
-				scroll.Dragging = false
-				syncMouseTracking()
-				dirty = true
-				continue
-			}
 			if key.Action == "resize" {
-				scroll.Dragging = false
 				if drawer.Open {
 					drawer.close()
 				}
@@ -326,7 +294,6 @@ func runPane(agent paneAgent, args []string, input, output *os.File, exercise *t
 				divider.Dragging = false
 				divider.Hover = false
 				setPointer(false)
-				syncMouseTracking()
 				dirty = true
 				continue
 			}
@@ -335,12 +302,10 @@ func runPane(agent paneAgent, args []string, input, output *os.File, exercise *t
 				divider.Dragging = false
 				divider.Hover = false
 				setPointer(false)
-				syncMouseTracking()
 				dirty = true
 				continue
 			}
 			if key.Action == "focus" {
-				scroll.Dragging = false
 				divider.Dragging = false
 				divider.Hover = false
 				setPointer(false)
@@ -349,7 +314,6 @@ func runPane(agent paneAgent, args []string, input, output *os.File, exercise *t
 				} else {
 					drawer.open(advice)
 				}
-				syncMouseTracking()
 				dirty = true
 				continue
 			}
@@ -377,21 +341,6 @@ func runPane(agent paneAgent, args []string, input, output *os.File, exercise *t
 					}
 					continue
 				}
-				if !drawer.Open && profile.isWarp() {
-					beforeOffset := scroll.Offset
-					if !emulator.IsAltScreen() && scroll.scrollbar(mouse, cols-1, top, emulator.ScrollbackLen()) {
-						if exercise != nil && beforeOffset != scroll.Offset {
-							exercise.Scrollbar = true
-						}
-						setPointer(false)
-						syncMouseTracking()
-						dirty = true
-						continue
-					}
-					if mouse.X > emulator.Width() && mouse.Y <= top {
-						continue
-					}
-				}
 				if !drawer.Open {
 					if motion, changed := divider.hover(mouse, rows, top); motion {
 						setPointer(divider.Hover || divider.Dragging)
@@ -400,7 +349,6 @@ func runPane(agent paneAgent, args []string, input, output *os.File, exercise *t
 					}
 				}
 				if !drawer.Open && divider.handle(mouse, rows, top) {
-					syncMouseTracking()
 					content = statusRows()
 					beforeTop := top
 					resizeChild()
@@ -426,7 +374,6 @@ func runPane(agent paneAgent, args []string, input, output *os.File, exercise *t
 						drawer.open(advice)
 						divider.Hover = false
 						setPointer(false)
-						syncMouseTracking()
 					} else if drawer.Open {
 						switch mouse.Button &^ (4 | 8 | 16) {
 						case 64:
@@ -451,7 +398,6 @@ func runPane(agent paneAgent, args []string, input, output *os.File, exercise *t
 				switch key.Action {
 				case "escape":
 					drawer.escape()
-					syncMouseTracking()
 				case "up":
 					drawer.move(-1)
 				case "down":
@@ -472,11 +418,13 @@ func runPane(agent paneAgent, args []string, input, output *os.File, exercise *t
 				default:
 					if bytes.Equal(key.Data, []byte{3}) {
 						drawer.close()
-						syncMouseTracking()
 					} // return control without killing Codex
 				}
 				dirty = true
 				continue
+			}
+			if exercise != nil {
+				exercise.confirmInput(key)
 			}
 			// Normal-screen agents leave history in the emulator. Page keys
 			// keep it reachable even if the host withholds mouse reports.
@@ -494,7 +442,6 @@ func runPane(agent paneAgent, args []string, input, output *os.File, exercise *t
 			if scroll.reset() {
 				dirty = true // typing returns to the live screen
 			}
-			syncMouseTracking()
 			// Mouse events and terminal replies use the emulator's input pipe.
 			// Keep keys in that same stream so they cannot overtake a wheel.
 			emulator.SendText(string(key.Data))
@@ -563,8 +510,6 @@ func runPane(agent paneAgent, args []string, input, output *os.File, exercise *t
 				cols, rows = width, height
 				content = statusRows()
 				divider.Dragging = false
-				scroll.Dragging = false
-				syncMouseTracking()
 				resizeChild()
 				dirty = true
 			}
@@ -634,18 +579,6 @@ func currentDir() string {
 	return cwd
 }
 
-// writeMouseMotion toggles drag/hover reports without disabling the basic
-// button and wheel reports needed to read the virtual terminal's history.
-func writeMouseMotion(w io.Writer, on bool) {
-	if on {
-		_, _ = io.WriteString(w, "\x1b[?1002h\x1b[?1003h\x1b[?1006h")
-		return
-	}
-	// Tracking modes can be mutually exclusive in the host. Reassert basic
-	// reporting after turning motion off so the wheel continues to arrive.
-	_, _ = io.WriteString(w, "\x1b[?1002l\x1b[?1003l\x1b[?1000h\x1b[?1006h")
-}
-
 func renderTerminalPane(emulator *vt.Emulator, cols, rows int, content []string, nativeFooter bool, hud string, hints ...string) string {
 	return renderTerminalPaneGrip(emulator, cols, rows, content, nativeFooter, hud, gripIdle, hints...)
 }
@@ -658,7 +591,7 @@ func renderTerminalPaneGrip(emulator *vt.Emulator, cols, rows int, content []str
 // the same window that many lines further back in the emulator's scrollback.
 func renderTerminalPaneView(emulator *vt.Emulator, offset, cols, rows int, content []string, nativeFooter bool, hud string, grip gripState, hints ...string) string {
 	var out strings.Builder
-	limit := max(0, min(cols-1, emulator.Width())) // leave the reserved gutter clear
+	limit := max(0, min(cols-1, emulator.Width())) // avoid automatic terminal wrap
 	top := min(emulator.Height(), rows)
 	scrollbackLen := emulator.ScrollbackLen()
 	offset = min(max(offset, 0), scrollbackLen)
@@ -690,7 +623,14 @@ func renderTerminalPaneView(emulator *vt.Emulator, offset, cols, rows int, conte
 		line := uv.NewLine(limit)
 		for x := 0; x < limit; x++ {
 			if cell := cellAt(x, y); cell != nil {
+				// Set already fills the continuation columns of a wide glyph.
+				// Copying their placeholder cells would erase that glyph again.
+				width := max(1, cell.Width)
+				if x+width > limit {
+					break
+				}
 				line.Set(x, cell)
+				x += width - 1
 			}
 		}
 		out.WriteString(line.Render())
