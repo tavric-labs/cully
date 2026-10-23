@@ -145,14 +145,14 @@ func TestSupportedNativeTerminalsOnly(t *testing.T) {
 		{"linux", "", true},
 		{"darwin", "ghostty", true}, {"darwin", "iTerm.app", true}, {"darwin", "kitty", true}, {"darwin", "wezterm", true}, {"darwin", "alacritty", true},
 		{"linux", "ghostty", true}, {"linux", "kitty", true}, {"linux", "wezterm", true}, {"linux", "alacritty", true},
-		{"darwin", "WarpTerminal", false}, {"linux", "Warp", false}, {"windows", "", false},
+		{"darwin", "WarpTerminal", true}, {"linux", "Warp", true}, {"darwin", "SomeOtherTerm", false}, {"windows", "", false},
 	} {
 		if err := (terminalProfile{OS: test.os, Program: test.program}).requireNative(); (err == nil) != test.allowed {
 			t.Fatalf("%+v: %v", test, err)
 		}
 	}
-	if err := (terminalProfile{OS: "darwin", Program: "Warp"}).requireNative(); err == nil || !strings.Contains(err.Error(), "Warp") {
-		t.Fatalf("Warp rejection must name Warp: %v", err)
+	if err := (terminalProfile{OS: "darwin", Program: "SomeOtherTerm"}).requireNative(); err == nil || !strings.Contains(err.Error(), "SomeOtherTerm") {
+		t.Fatalf("rejection must name the terminal: %v", err)
 	}
 }
 
@@ -217,7 +217,7 @@ func TestHeadlessServiceSetupDoesNotProvisionDesktop(t *testing.T) {
 	defer output.Close()
 	// An unsupported profile and missing tools would fail explicit terminal
 	// setup. Headless service setup must never reach those mutations.
-	t.Setenv("TERM_PROGRAM", "WarpTerminal")
+	t.Setenv("TERM_PROGRAM", "SomeOtherTerm")
 	t.Setenv("PATH", t.TempDir())
 	if err := SetupInteractiveTerminal(input, output, false, ""); err != nil {
 		t.Fatal(err)

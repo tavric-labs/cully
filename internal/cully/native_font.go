@@ -154,10 +154,12 @@ func nativeFontSettings(profile terminalProfile, run nativeCommand) ([]nativeFon
 // speaks the needed protocols, but its font lives in its own UI or text
 // config, so setup guides instead of rewriting.
 var manualFontTerminals = map[string]string{
-	"iterm.app": "iTerm2 (Preferences → Profiles → Text)",
-	"kitty":     "Kitty (font_family in kitty.conf)",
-	"wezterm":   "WezTerm (font in wezterm.lua)",
-	"alacritty": "Alacritty (font in alacritty.toml)",
+	"iterm.app":    "iTerm2 (Preferences → Profiles → Text)",
+	"kitty":        "Kitty (font_family in kitty.conf)",
+	"wezterm":      "WezTerm (font in wezterm.lua)",
+	"alacritty":    "Alacritty (font in alacritty.toml)",
+	"warpterminal": "Warp (Settings → Appearance → Text)",
+	"warp":         "Warp (Settings → Appearance → Text)",
 }
 
 // ghosttyFontSettings accepts Ghostty's default font (Nerd symbols are

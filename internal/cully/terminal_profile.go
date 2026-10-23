@@ -52,21 +52,19 @@ func terminalField(value string) string {
 // The allowlist is capability-based, not brand-based. Cully owns the screen
 // and needs SGR mouse reporting, standard modified-key encodings and
 // synchronized output: Ghostty, iTerm2, Kitty, WezTerm and Alacritty all
-// answer those protocols on factory settings, while Warp intercepts input
-// through its own block model and has a history of breaking cursor-position
-// TUI apps, so it stays rejected with its own guidance.
+// answer those protocols on factory settings. Warp is allowed so
+// `cully run claude` works there; it reports TERM_PROGRAM=WarpTerminal and,
+// like the others, owns its font settings, so setup gives manual guidance.
 func (p terminalProfile) requireNative() error {
 	if p.OS != "darwin" && p.OS != "linux" {
 		return fmt.Errorf("Cully supports macOS and Linux only")
 	}
 	switch strings.ToLower(p.Program) {
 	case "", "apple_terminal", "gnome-terminal", "ptyxis", "gnome-console", "kgx", "vte",
-		"ghostty", "iterm.app", "kitty", "wezterm", "alacritty":
+		"ghostty", "iterm.app", "kitty", "wezterm", "alacritty", "warpterminal", "warp", "warp-terminal":
 		return nil
-	case "warp", "warp-terminal":
-		return fmt.Errorf("Warp is not supported; its input model conflicts with Cully owning the screen — use macOS Terminal, Ghostty, iTerm2, Kitty, WezTerm or Alacritty, or your Linux desktop's native terminal, with zsh + Oh My Zsh")
 	default:
-		return fmt.Errorf("%s is not supported; use macOS Terminal, Ghostty, iTerm2, Kitty, WezTerm or Alacritty, or your Linux desktop's native terminal, with zsh + Oh My Zsh", p.Program)
+		return fmt.Errorf("%s is not supported; use macOS Terminal, Ghostty, iTerm2, Kitty, WezTerm, Alacritty or Warp, or your Linux desktop's native terminal, with zsh + Oh My Zsh", p.Program)
 	}
 }
 
