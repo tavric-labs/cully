@@ -74,7 +74,9 @@ What the terminal can know differs by agent:
 - Cursor supplies shell, file-edit and MCP events. Its shell hook reports no exit code, so a failed Cursor command is not marked failed. Model, context, tokens and rate limits have no Cursor feed, so the panel shows them as unavailable rather than waiting.
 - Other agents get the health bar and Git state, and tool events only if they can run Cully's hook.
 
-In Warp, wheel reports stay enabled so you can read Cully's emulator history over the agent or compact panel. Drag/hover reporting is enabled only for the advisor or explicit divider resizing. Open the advisor with Ctrl+] or F6; Esc closes it while preserving scrolling. Warp's Shift modifier keeps text selection with Warp.
+In Warp, enable Mouse Reporting and Scroll Reporting in Settings → Features → Terminal. Wheel reports stay enabled so you can read the session over the agent or compact panel, including when an alternate-screen agent handles its own scrolling. Drag the divider directly to resize the panel; motion reporting activates on press and ends on release or Esc. Open the advisor with Ctrl+] or F6; Esc closes it while preserving scrolling. Warp's Shift modifier keeps text selection with Warp.
+
+Use `cully setup --terminal-only` to repair required terminal settings with a backup and verify actual wheel, scrollbar, divider, advisor and status-display behavior. `cully terminal check` is read-only; `configure`, `test` and `restore --backup PATH` handle explicit repair, live verification and rollback. Warp's right scrollbar navigates normal-screen emulator history; alternate-screen agents keep private history and receive wheel events instead. Use `cully run codex --no-alt-screen` for Cully's draggable Codex history. Ordinary launches never rewrite host preferences. Do not claim a physical terminal was tested from synthetic PTY checks or infer model/token statistics from a terminal exercise.
 
 Loop detection reports what repeated, for example that the same command failed three times after edits. It never states a cause. When it fires, read the first failure before editing again.
 
