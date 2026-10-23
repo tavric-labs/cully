@@ -145,3 +145,13 @@ func SetupTerminal(input, output *os.File, skipLive bool, program string) error 
 	}
 	return RunTerminalExercise(input, output)
 }
+
+// Service setup also runs in CI and on remote hosts. A headless invocation
+// must not install a desktop font or attempt to change the login shell.
+func SetupInteractiveTerminal(input, output *os.File, skipLive bool, program string) error {
+	if !term.IsTerminal(int(input.Fd())) || !term.IsTerminal(int(output.Fd())) || detectTerminalProfile().Connection == "ssh" {
+		fmt.Fprintln(output, "Desktop shell/font setup and live checks: not run (no local interactive terminal). Run cully setup --terminal-only in your native desktop terminal.")
+		return nil
+	}
+	return SetupTerminal(input, output, skipLive, program)
+}

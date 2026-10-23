@@ -121,9 +121,9 @@ cp "$TEST_ROOT/cully" "$GOBIN/cully"
         self.assertIn("cannot change the PATH or command cache", result.stdout)
         self.assertIn('export PATH="$HOME/.local/bin:$PATH"; hash -r', result.stdout)
         self.assertIn("command -v cully; cully version", result.stdout)
-        self.assertIn("cully setup --all", result.stdout)
-        self.assertIn("cully setup --mcp-url URL", result.stdout)
-        self.assertNotIn("cully setup --agent codex --all", result.stdout)
+        self.assertIn(f'"{installed}" setup --all', result.stdout)
+        self.assertIn(f'"{installed}" setup --mcp-url URL', result.stdout)
+        self.assertNotIn("setup --agent codex --all", result.stdout)
         self.assertFalse((self.root / "setup").exists())
         self.assertEqual((self.root / "daemon-call").read_text().strip(), "_internal stop-daemon")
 
@@ -135,7 +135,8 @@ cp "$TEST_ROOT/cully" "$GOBIN/cully"
                 result = self.run_installer("--agent", agent)
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertTrue((self.root / ".local" / "bin" / "cully").exists())
-                self.assertIn(f"cully setup --agent {agent} --all", result.stdout)
+                installed = self.root / ".local" / "bin" / "cully"
+                self.assertIn(f'"{installed}" setup --agent {agent} --all', result.stdout)
                 for copy in copies:
                     self.assertTrue(copy.is_symlink())
                     self.assertEqual(copy.readlink(), self.root / ".local" / "bin" / "cully")

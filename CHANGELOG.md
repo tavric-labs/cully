@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Keep headless/SSH service setup from installing desktop fonts or changing the account's login shell; direct users to local terminal setup. Verify the installer's quoted absolute setup commands.
 - Focus the supported UI on macOS/Linux native terminals with required zsh + Oh My Zsh. Remove Warp's preference adapter, custom scrollbar and conditional mouse workarounds; identified third-party terminals receive native-terminal guidance.
 - Apply the required shell and Nerd Font preset automatically during setup, with private backups and restore instructions. Select MesloLGS Nerd Font Mono at 14 pt on macOS or 12 pt on Linux to render icons such as the home glyph U+F015. Preserve unrelated preferences and reuse existing shell installations.
 - Add terminal-only setup and check/configure/shell/test/restore commands. Verify Unicode/icons and colors through explicit visual confirmation; observe wheel, divider and advisor gestures and report incomplete checks honestly. Keep SGR/legacy wheel routing, modified gestures, ordered input and Page Up/Down history access. Preserve Esc immediately followed by mouse input so closing the advisor cannot swallow the next scroll gesture.

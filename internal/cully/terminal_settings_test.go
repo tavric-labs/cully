@@ -165,3 +165,27 @@ func TestShellDependencyPlans(t *testing.T) {
 		t.Fatal("silently installed a new package manager")
 	}
 }
+
+func TestHeadlessServiceSetupDoesNotProvisionDesktop(t *testing.T) {
+	input, err := os.Open(os.DevNull)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer input.Close()
+	output, err := os.Create(filepath.Join(t.TempDir(), "setup-output"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer output.Close()
+	// An unsupported profile and missing tools would fail explicit terminal
+	// setup. Headless service setup must never reach those mutations.
+	t.Setenv("TERM_PROGRAM", "WarpTerminal")
+	t.Setenv("PATH", t.TempDir())
+	if err := SetupInteractiveTerminal(input, output, false, ""); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(output.Name())
+	if err != nil || !strings.Contains(string(data), "not run") {
+		t.Fatalf("missing honest desktop-setup result: %q %v", data, err)
+	}
+}

@@ -212,7 +212,7 @@ func runSetup(args []string) error {
 		if err := checkSetupMCP(os.Stdout, options.endpoint, options.oauth); err != nil {
 			return err
 		}
-		if err := cully.SetupTerminal(os.Stdin, os.Stdout, options.skipTerminalTest, options.terminal); err != nil {
+		if err := cully.SetupInteractiveTerminal(os.Stdin, os.Stdout, options.skipTerminalTest, options.terminal); err != nil {
 			return err
 		}
 		fmt.Println("Setup complete. Restart your coding agent to load the Cully skill, hooks and MCP tools.")
@@ -226,7 +226,7 @@ func runSetup(args []string) error {
 	if options.prepare {
 		return nil
 	}
-	return cully.SetupTerminal(os.Stdin, os.Stdout, options.skipTerminalTest, options.terminal)
+	return cully.SetupInteractiveTerminal(os.Stdin, os.Stdout, options.skipTerminalTest, options.terminal)
 }
 
 // printT3CodeHint tells T3 Code users that Cully already works in it. T3 Code
