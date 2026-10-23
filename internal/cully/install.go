@@ -165,6 +165,7 @@ func installClaude() error {
 	}
 	setEventHook(m, "Stop", quote(exe)+" _internal analyze", "analyze")
 	setEventHook(m, "SessionStart", quote(exe)+" _internal continuity claude start", "continuity claude start")
+	setEventHook(m, "UserPromptSubmit", quote(exe)+" _internal continuity claude prompt", "continuity claude prompt")
 	setEventHook(m, "Stop", quote(exe)+" _internal continuity claude stop", "continuity claude stop")
 	setEventHook(m, "SessionEnd", quote(exe)+" _internal cleanup", "cleanup")
 	setClaudePaneSignalHook(m, exe)
@@ -291,6 +292,7 @@ func uninstallClaude() error {
 			}
 		}
 		removeEventHook(m, "Stop", quote(exe)+" _internal analyze", "analyze")
+		removeEventHook(m, "UserPromptSubmit", "", "continuity claude prompt")
 		removeEventHook(m, "SessionStart", quote(exe)+" _internal continuity claude start", "continuity claude start")
 		removeEventHook(m, "Stop", quote(exe)+" _internal continuity claude stop", "continuity claude stop")
 		removeEventHook(m, "SessionEnd", quote(exe)+" _internal cleanup", "cleanup")

@@ -89,3 +89,7 @@ Cost and cache values are shown only when an agent reports them. Cully never inv
 Hooks send each tool call to a local [session journal](/session-intelligence#the-session-journal). The journal powers loop detection, `cully timeline`, `cully replay`, `cully handoff`, `cully rescue` and `cully status`. It is stored in your Cully directory with owner-only permissions and pruned after 30 days. See [privacy](/privacy) for exactly what it holds.
 
 The hooks are inactive outside the Cully terminal, so an ordinary agent session leaves no advisor files.
+
+## Scroll the conversation
+
+The mouse wheel reads Cully's emulator history over the agent or compact panel, including in Warp. New output keeps the history view anchored; typing returns to live output. An agent using its own alternate screen receives its own mouse events. Opening and closing the advisor preserves wheel reporting. Warp users can hold Shift for terminal text selection, or use `CULLY_NO_PANE=1` for native agent IO. Mouse and scroll reporting must be enabled in Warp for it to deliver wheel events to full-screen applications.

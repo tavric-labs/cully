@@ -53,7 +53,7 @@ With this set, the journal still records the kind of tool and whether it passed.
 
 The journal is local and automatic. Project memory is different: your connected agent chooses what is worth keeping and saves a short summary through its own MCP connection. Hooks do not upload transcripts. See [memory](/memory) for what a saved note contains.
 
-The local advisor does not hold your agent's OAuth credentials.
+The local advisor does not hold your agent's OAuth credentials. Its worker may save a concise workflow observation or researched plan through the agent's authenticated `cully_optimization_save` tool. Stored evidence contains a summary, opaque session/window links and timestamps, not a transcript or tool payload. User decisions remain foreground-only. Deleting a pattern removes its observation records and queues removal of its semantic projection.
 
 ## Explicit team sharing
 
@@ -69,7 +69,7 @@ The optional `dev-workflow-rules` skill is a private file under `~/.cully/skills
 
 ## Public advisor discovery
 
-The periodic public scout receives only the active agent's name and the current date. Cully does not include the project, accepted task title, private memory, workflow profile or transcript in that prompt. The scout is instructed to use public web tools only. Dated findings enter the private analysis, which determines relevance to the current task; web content remains untrusted evidence. The local cooldown stores only a timestamp. The session report can retain relevant recommendations with their public source links, not fetched articles. Set `CULLY_DISCOVERY=off` to disable periodic discovery. See [the advisor](/advisor#discover-current-techniques) for cadence and limitations.
+The periodic public scout receives only the active agent's name and the current date. Cully does not include the project, accepted task title, private memory, workflow profile or transcript in that prompt. The scout is instructed to use public web tools only. After private analysis, dated documentation, article and research-paper findings enter a private synthesis, which determines relevance to the current task; web content remains untrusted evidence. The local cooldown stores only a timestamp. The session report can retain relevant recommendations with their public source links, not fetched articles. Set `CULLY_DISCOVERY=off` to disable periodic discovery. See [the advisor](/advisor#discover-current-techniques) for cadence and limitations.
 
 ## Harness measurements
 

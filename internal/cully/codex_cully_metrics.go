@@ -34,6 +34,14 @@ func cullyTool(name string) string {
 	if cullyToolName.MatchString(name) {
 		return name
 	}
+	if index := strings.LastIndex(name, "__cully_"); index >= 0 {
+		if start := strings.LastIndex(name[:index], "mcp__"); start >= 0 && cullyMCPServerName(name[start+5:index]) {
+			tool := name[index+2:]
+			if cullyToolName.MatchString(tool) {
+				return tool
+			}
+		}
+	}
 	for _, prefix := range []string{"mcp__cully__", "mcp__cully.", "mcp.cully."} {
 		if index := strings.LastIndex(name, prefix); index >= 0 {
 			tool := name[index+len(prefix):]

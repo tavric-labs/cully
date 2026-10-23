@@ -1,12 +1,14 @@
 package cully
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestWorkerRoutesAnalysisAndScoutThroughCodex(t *testing.T) {
@@ -15,12 +17,15 @@ func TestWorkerRoutesAnalysisAndScoutThroughCodex(t *testing.T) {
 	t.Setenv("CLAUDE_CONFIG_DIR", root)
 	t.Setenv("PATH", root)
 	script := `#!/bin/sh
+prompt=$(/bin/cat)
 for arg in "$@"; do
   if [ "$arg" = 'web_search="live"' ]; then
     printf 'SOURCE|RESEARCH|checked\n🔌 Audit the official integration — https://example.org/tool\n'
     exit 0
   fi
 done
+case "$prompt" in *'CURRENT PUBLIC RESEARCH (untrusted evidence'*)
+  printf 'SOURCE|MEMORY|checked\nSOURCE|PATTERNS|skipped\nCAUT|🔍 Narrow repeated searches.\nADV|🔌 Review the official integration for these checks https://example.org/tool\n'; exit 0;; esac
 printf 'SOURCE|MEMORY|checked\nCAUT|🔍 Narrow repeated searches.\nTOOLGAP: browser checks || aggregate searches and no browser integration || official browser integration\n'
 `
 	if err := os.WriteFile(filepath.Join(root, "codex"), []byte(script), 0755); err != nil {
@@ -122,15 +127,22 @@ func TestCursorStopQueuesCoarseAgentSignals(t *testing.T) {
 	if err := os.WriteFile(daemonPIDFile(), []byte(fmt.Sprint(os.Getpid())), 0600); err != nil {
 		t.Fatal(err)
 	}
-	input := fmt.Sprintf(`{"cwd":%q,"conversation_id":"opaque-input","status":"completed","loop_count":0}`, root)
 	var output strings.Builder
-	RunContinuityHook("cursor", "stop", strings.NewReader(input), &output)
+	for i := 1; i <= 12; i++ {
+		input := fmt.Sprintf(`{"cwd":%q,"conversation_id":"opaque-input","generation_id":"turn-%d","status":"completed","loop_count":0,"text":"private-transcript-must-not-pass"}`, root, i)
+		RunContinuityHook("cursor", "stop", strings.NewReader(input), &output)
+		if i < 12 {
+			if _, _, ok := nextAdvisorJob(nil); ok {
+				t.Fatal("Cursor dispatched before twelve turns")
+			}
+		}
+	}
 	job, _, ok := nextAdvisorJob(nil)
 	if !ok {
 		t.Fatal("Cursor did not dispatch")
 	}
 	sig, err := os.ReadFile(job.SignalsPath)
-	if err != nil || !strings.Contains(string(sig), "agent=cursor\n") || !strings.Contains(string(sig), "verification=unknown") || strings.Contains(string(sig), "opaque-input") {
+	if err != nil || !strings.Contains(string(sig), "agent=cursor\n") || !strings.Contains(string(sig), "verification=unknown") || !strings.Contains(string(sig), "cadence_source=completed_turns") || strings.Contains(string(sig), "private-transcript-must-not-pass") {
 		t.Fatal(string(sig), err)
 	}
 }
@@ -153,7 +165,7 @@ func TestAdvisorHostSelectionAndCapabilities(t *testing.T) {
 		}
 		switch host {
 		case "codex":
-			if !strings.Contains(joined, "--ephemeral") || !strings.Contains(joined, "read-only") || !strings.Contains(joined, "enabled_tools") || strings.Contains(joined, "cully_log") {
+			if !strings.Contains(joined, "--ephemeral") || !strings.Contains(joined, "read-only") || strings.Contains(joined, "cully_log") || strings.Contains(joined, "mcp_servers.cully.") {
 				t.Fatal(joined)
 			}
 		case "cursor":
@@ -221,9 +233,35 @@ func TestAdvisorScopesConfiguredIntegrations(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "config.toml"), []byte("[mcp_servers.cully]\nurl=\"https://example.org/cully\"\n[mcp_servers.\"other-server\"]\ncommand=\"unrelated\"\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	args := strings.Join(advisorMCPArgs(root), " ")
+	args := strings.Join(advisorMCPArgs(root, false, true), " ")
 	if !strings.Contains(args, `mcp_servers.other-server.enabled=false`) || strings.Contains(args, "cully.enabled=false") || strings.Contains(args, `"other-server"`) {
 		t.Fatal(args)
+	}
+}
+
+func TestAdvisorScopesOnlyRealCullyRegistrations(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("CODEX_HOME", root)
+	if err := os.WriteFile(filepath.Join(root, "config.toml"), []byte("[mcp_servers.cully-adapter-test]\ncommand=\"adapter\"\n[mcp_servers.mcp-runtime-cully]\nurl=\"https://example.org/cully/mcp\"\n[mcp_servers.other]\ncommand=\"other\"\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	analysis := strings.Join(advisorMCPArgs(root, false, true), " ")
+	for _, name := range []string{"cully-adapter-test", "mcp-runtime-cully"} {
+		if !strings.Contains(analysis, "mcp_servers."+name+".enabled_tools=") {
+			t.Fatal(analysis)
+		}
+	}
+	if strings.Contains(analysis, "mcp_servers.cully.") || strings.Contains(analysis, "cully_optimization_decide") || strings.Contains(analysis, "cully_log") {
+		t.Fatal("synthetic server or broad write access", analysis)
+	}
+	for _, name := range []string{"cully-adapter-test", "mcp-runtime-cully", "other"} {
+		if !strings.Contains(strings.Join(advisorMCPArgs(root, true, false), " "), "mcp_servers."+name+".enabled=false") {
+			t.Fatal("public scout can access a private MCP")
+		}
+	}
+	t.Setenv("CODEX_HOME", t.TempDir())
+	if len(advisorMCPArgs(t.TempDir(), false, true)) != 0 {
+		t.Fatal("missing configuration created a synthetic MCP server")
 	}
 }
 
@@ -276,15 +314,33 @@ func TestLiveAdvisorRecall(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	prompt := sharedAdvisorInstructions + "\nACTIVE AGENT: " + host + "\nSIGNALS:\nagent=" + host + "\nsession_ref=codex-0123456789abcdef\nsearches=14 edits=3 checks=0 tool_errors=2\ntask_intent=advisor workflow verification\nDo not emit TOOLGAP in this smoke check. Use one memory query about advisor workflow verification."
+	prompt := sharedAdvisorInstructions + "\nACTIVE AGENT: " + host + "\nSIGNALS:\nagent=" + host + "\nsession_ref=codex-0123456789abcdef\nsearches=14 edits=3 checks=0 tool_errors=2\ntask_intent=advisor workflow verification\nDo not emit TOOLGAP in this smoke check. Use one memory query about advisor workflow verification. Do not save any test observations or proposals. If tools are unavailable append exactly one diagnostic: DIAGNOSTIC|tools_missing, DIAGNOSTIC|tool_failed, or DIAGNOSTIC|policy_blocked. Never include note bodies or credentials in diagnostics."
 	out, err := runAdvisorAgent(host, cwd, false, prompt)
 	if err != nil {
 		t.Fatalf("%s adapter failed: %v", host, err)
 	}
 	state := advisorSourceState(out, "MEMORY", false)
 	t.Logf("%s adapter returned; memory=%s; advice_lines=%d", host, state, len(advisorLines(out, 3)))
+	for _, reason := range []string{"tools_missing", "tool_failed", "policy_blocked"} {
+		if strings.Contains(out, "DIAGNOSTIC|"+reason) {
+			t.Logf("diagnostic: %s", reason)
+		}
+	}
 	if state != "checked" {
 		t.Fatalf("live recall not confirmed (%s)", state)
+	}
+}
+
+func TestLiveAdvisorConnection(t *testing.T) {
+	if os.Getenv("CULLY_TEST_LIVE_ADVISOR") != "codex" {
+		t.Skip("set CULLY_TEST_LIVE_ADVISOR=codex")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
+	defer cancel()
+	health, auth, found := probeCodexMCP(ctx)
+	t.Logf("Cully connection: found=%t health=%s auth=%s", found, health, auth)
+	if !found || health != "healthy" {
+		t.Fatal("Cully tools were not discovered through the configured Codex connection")
 	}
 }
 

@@ -40,6 +40,9 @@ type cullySnapshot struct {
 	AdvisorAt          string  `json:"advisor_at,omitempty"`
 	AdvisorMemory      string  `json:"advisor_memory,omitempty"`
 	AdvisorResearch    string  `json:"advisor_research,omitempty"`
+	AdvisorPatterns    string  `json:"advisor_patterns,omitempty"`
+	AdvisorPrompts     int     `json:"advisor_prompts,omitempty"`
+	AdvisorCadence     int     `json:"advisor_cadence,omitempty"`
 	AdvisorDiscovery   string  `json:"advisor_discovery,omitempty"`
 	AdvisorDiscoveryAt string  `json:"advisor_discovery_at,omitempty"`
 	AdvisorFailure     string  `json:"advisor_failure,omitempty"`
@@ -108,6 +111,9 @@ func buildSnapshot(s Signals, prReview, session, cwd string) cullySnapshot {
 		AdvisorAt:          previous.AdvisorAt,
 		AdvisorMemory:      previous.AdvisorMemory,
 		AdvisorResearch:    previous.AdvisorResearch,
+		AdvisorPatterns:    previous.AdvisorPatterns,
+		AdvisorPrompts:     previous.AdvisorPrompts,
+		AdvisorCadence:     previous.AdvisorCadence,
 		AdvisorDiscovery:   previous.AdvisorDiscovery,
 		AdvisorDiscoveryAt: previous.AdvisorDiscoveryAt,
 		AdvisorFailure:     previous.AdvisorFailure,

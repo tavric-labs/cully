@@ -32,7 +32,7 @@ func add[I any](server *sdk.Server, service memory.Service, identity func(contex
 		}
 		req := request(input)
 		out, err := service.Execute(ctx, owner, req)
-		if err == nil && (req.Operation == "log" || req.Operation == "update") {
+		if err == nil && (req.Operation == "log" || req.Operation == "update" || req.Operation == "optimization_save" || req.Operation == "optimization_decide") {
 			out = acknowledgeWrite(out)
 		}
 		return nil, out, err
@@ -49,6 +49,9 @@ func acknowledgeWrite(out memory.Result) memory.Result {
 	}
 	e := out.Entry
 	out.Entry = &memory.Entry{ID: e.ID, SessionRef: e.SessionRef, AgentSessionID: e.AgentSessionID, EntryType: e.EntryType, OccurredAt: e.OccurredAt, CreatedAt: e.CreatedAt, UpdatedAt: e.UpdatedAt}
+	if o := e.Optimization; o != nil {
+		out.Entry.Optimization = &memory.Optimization{PatternKey: o.PatternKey, Status: o.Status, Version: o.Version, ObservationCount: o.ObservationCount, SessionCount: o.SessionCount, FirstSeen: o.FirstSeen, LastSeen: o.LastSeen}
+	}
 	return out
 }
 
@@ -63,6 +66,21 @@ type toolRegistration struct {
 
 func toolRegistrations() []toolRegistration {
 	return []toolRegistration{
+		{name: "cully_optimization_save", description: "Save a concise, private observation of repeated work and an optional researched optimization plan. Reuse a stable pattern_key and session/window pair for retry-safe deduplication. Counts track distinct observations and sessions. Never save transcripts or credentials. A background advisor may save evidence and proposals, but cannot accept, dismiss or implement them. Existing user decisions are preserved.", write: true, register: func(t toolRegistration, server *sdk.Server, service memory.Service, identity func(context.Context, bool) (string, error)) {
+			add(server, service, identity, t.name, t.description, t.write, func(v memory.OptimizationSaveInput) memory.Request {
+				return memory.Request{Operation: "optimization_save", OptimizationSave: &v}
+			})
+		}},
+		{name: "cully_optimizations", description: "Retrieve private workflow patterns and saved plans across sessions. Defaults to three active patterns. Use a focused text query, then semantic mode for Mem0 recall if needed, or recent mode without a query. Status all includes accepted, implemented and dismissed plans so the advisor can avoid repeating them. Counts and evidence describe recorded observations, not complete session history or proven savings.", register: func(t toolRegistration, server *sdk.Server, service memory.Service, identity func(context.Context, bool) (string, error)) {
+			add(server, service, identity, t.name, t.description, t.write, func(v memory.OptimizationQueryInput) memory.Request {
+				return memory.Request{Operation: "optimization_list", OptimizationQuery: &v}
+			})
+		}},
+		{name: "cully_optimization_decide", description: "Record the user's explicit decision about a saved workflow plan: accepted, dismissed, implemented, or observing to reopen. Supply its current version. This records a decision; it does not install a tool or create/edit a skill, workflow or plugin. Background advisors must never call this tool.", write: true, register: func(t toolRegistration, server *sdk.Server, service memory.Service, identity func(context.Context, bool) (string, error)) {
+			add(server, service, identity, t.name, t.description, t.write, func(v memory.OptimizationDecideInput) memory.Request {
+				return memory.Request{Operation: "optimization_decide", OptimizationDecide: &v}
+			})
+		}},
 		{name: "cully_workspace_read", description: "Read an authorized team workspace: whoami, projects, board, inbox, task_get (portable checkpoint/review packet), lessons (up to three). Requires OAuth; private memory remains separate.", register: registerWorkspace},
 		{name: "cully_workspace_write", description: "Explicit team changes: team_create, team_member, project_create, project_member, task_create, task_claim, task_checkpoint, task_release, task_state, task_submit, task_approve, learning_draft, learning_publish, learning_unshare, learning_edit, learning_delete, playbook_adopt. Requires OAuth and project roles. Supply the current version for task and learning changes. Use manual agent launch; evidence is reported, never an independent attestation. Publishing a lesson is an explicit sharing action.", write: true, register: registerWorkspace},
 		{name: "cully_log", description: "Save a private, authenticated-owner-scoped work record.", write: true, register: func(t toolRegistration, server *sdk.Server, service memory.Service, identity func(context.Context, bool) (string, error)) {

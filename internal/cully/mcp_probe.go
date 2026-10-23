@@ -177,7 +177,7 @@ func parseCodexMCPStatus(raw json.RawMessage) (string, string, bool) {
 	}
 	var failedHealth, failedAuth string
 	for _, server := range result.Data {
-		if server.Name != "cully" && !strings.HasPrefix(server.Name, "cully-") {
+		if !cullyMCPServerName(server.Name) {
 			continue
 		}
 		if server.RuntimeStatus == "authenticationRequired" {

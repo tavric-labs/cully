@@ -33,6 +33,26 @@
           }
         ]
       }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "command": "cully _internal continuity codex turn",
+            "type": "command"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "command": "cully _internal continuity codex prompt",
+            "type": "command"
+          }
+        ]
+      }
     ]
   }
 }

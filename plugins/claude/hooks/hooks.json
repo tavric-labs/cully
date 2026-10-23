@@ -61,6 +61,16 @@
           }
         ]
       }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "command": "cully _internal continuity claude prompt",
+            "type": "command"
+          }
+        ]
+      }
     ]
   }
 }

@@ -33,15 +33,30 @@ Ownership is assigned by the server: a fixed configured owner in Solo, or the ve
 | `cully_delete` | Delete an owned note and queue removal of its semantic projection. |
 | `cully_session` | Link a session to a task or explicitly clear that link. |
 | `cully_session_get` | Read an owned session and its current task. |
+| `cully_optimization_save` | Save idempotent workflow evidence and an optional reviewable plan. |
+| `cully_optimizations` | Recall private patterns/plans with text, semantic or recent lookup. |
+| `cully_optimization_decide` | Record a versioned, explicit user decision about a plan. |
 
 Start substantive work with `cully_context` and a focused query. Use semantic mode if text lookup misses, then fetch only needed details with `cully_get`. Save one concise note before finishing. If MCP is unavailable, continue the task and report that the note was not saved.
 
 Search and recall require query text and accept an optional `session_ref`, entry type and `since`. Recent records also accept `until`; time windows are inclusive at `since` and exclusive at `until`. Limits are capped at 50. `cully_context` accepts text, semantic or recent mode, with time windows in recent mode. Times use RFC3339; omitted `occurred_at` uses the current time. Stored instants use PostgreSQL `timestamptz`, returned in Asia/Kolkata (`+05:30`).
 
-Entry types are `work`, `issue`, `learning` and `decision`; `work` is the default. `task` records are created only by `cully_session`. Missing or differently owned IDs return no entry, and deletion reports whether an owned record was removed. Read tools require `tools:read`; mutations require `tools:write` in IC.
+Entry types are `work`, `issue`, `learning` and `decision`; `work` is the default. `task` records are created only by `cully_session`; `optimization` records only by `cully_optimization_save`. Use the optimization tools to change a pattern rather than `cully_update`. Missing or differently owned IDs return no entry, and deletion reports whether an owned record was removed. Read tools require `tools:read`; mutations require `tools:write` in IC.
 
 ## Upgrade the private schema
 
 Schema version 8 removes the obsolete classification columns and `cully_projects` tool, while preserving note IDs, authenticated owners, content, timestamps and session/task links. It adds a native agent session ID to session records. Back up the database, stop old data-service writers, run the new `cully-data migrate`, then start matching data/MCP versions and refresh agent integrations with `cully setup` using your existing options. Old clients that send removed fields must be refreshed. Migration is explicit; normal startup refuses an outdated database.
 
-The migration queues a rebuild of each owner's Mem0 metadata. PostgreSQL text lookup remains available while the worker catches up; semantic recall may lag. Mem0 owns embeddings, and no extraction model is used (`infer=false`). The advisor only recalls notes; the foreground agent owns durable writes. See [Mem0](/mem0) and [privacy](/privacy).
+The migration queues a rebuild of each owner's Mem0 metadata. PostgreSQL text lookup remains available while the worker catches up; semantic recall may lag. Mem0 owns embeddings, and no extraction model is used (`infer=false`). The advisor may save bounded workflow evidence and proposals; ordinary task notes and explicit decisions remain with the foreground agent. See [Mem0](/mem0) and [privacy](/privacy).
+
+## Remember workflow patterns across days
+
+`cully_optimization_save` requires a stable `pattern_key`, a concise `summary` (up to 600 characters), `evidence` (up to 1,000), `assistant`, supplied opaque `session_ref`, and stable `window_id`, such as `prompts-1-12`. Include the native `agent_session_id` when supplied. Saving the same pattern/session/window again does not increase its observation count. Distinct session counts come from recorded evidence, not a model-supplied number. Only three recent evidence summaries are returned; the source retains deduplication records until deleted.
+
+An optional `proposal` has `kind` (skill, workflow, plugin, tool, process or harness), `title`, `benefit`, 1–12 actionable `steps`, up to five HTTPS `sources`, and a `validation` plan. Research papers should state limitations and propose a comparison against a baseline. Never save raw prompts, transcripts, commands, copied notes or credentials. A proposal with one observation is a new idea, not a proven cross-session habit.
+
+`cully_optimizations` defaults to three active records, at most ten. It accepts `query`, `mode` (text, semantic or recent) and `status` (active, all, observing, proposed, accepted, dismissed or implemented). Semantic candidates come from Mem0 and are checked against the current owner-scoped source and decision state. Use `cully_get` for the full saved plan.
+
+`cully_optimization_decide` takes `entry_id`, its current `version`, `status` and an optional reason. Record accepted/dismissed only from the user's decision, implemented only after verification, or observing to explicitly reopen it. A stale version conflicts; another owner's ID returns no record. Observation writes preserve these decisions. Deleting the source through `cully_delete` also deletes its evidence and queues Mem0 cleanup.
+
+Schema version 10 adds these records and their observation deduplication table without moving or reclassifying existing notes. Back up the database, run the new `cully-data migrate` before starting matching data/MCP services, and refresh managed hooks with `cully setup` using your existing options. Normal startup requires the current schema. The new tools need matching MCP/data services; older servers can still support ordinary work notes but cannot store pattern proposals.

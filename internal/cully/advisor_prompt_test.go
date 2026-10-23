@@ -128,3 +128,13 @@ func TestSuggestionsRequestPrintsGuardedRequestForNumberedFix(t *testing.T) {
 		t.Fatalf("%v\n%s", err, list.String())
 	}
 }
+
+func TestSavedOptimizationRequestRetrievesPlanBeforeActing(t *testing.T) {
+	id := "00000000-0000-0000-0000-000000000001"
+	request := advisorRequest("ADV|Review a saved workflow [cully-plan:"+id+"]", "")
+	for _, want := range []string{"cully_get", id, "validation steps", "cully_optimization_decide", "current version", "implemented only after", "dismissed only if I explicitly decline"} {
+		if !strings.Contains(request, want) {
+			t.Error("missing", want)
+		}
+	}
+}

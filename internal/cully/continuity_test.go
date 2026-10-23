@@ -107,9 +107,9 @@ func TestContinuityHookConfigPreservesForeignHooks(t *testing.T) {
 	}
 	for _, path := range []string{codexHooksPath(), cursorHooksPath()} {
 		b, err := os.ReadFile(path)
-		want := 1
+		want := 3
 		if path == cursorHooksPath() {
-			want = 4
+			want = 5
 		}
 		if err != nil || strings.Count(string(b), "_internal continuity") != want {
 			t.Fatalf("duplicate/missing continuity hooks in %s: %v %s", path, err, b)

@@ -37,7 +37,9 @@ func installCodexContinuityHooks() error {
 		return err
 	}
 	setEventHook(m, "SessionStart", continuityCommand(exe, "codex", "start"), "continuity codex start")
+	setEventHook(m, "UserPromptSubmit", continuityCommand(exe, "codex", "prompt"), "continuity codex prompt")
 	removeEventHook(m, "Stop", "", "continuity codex stop") // migrate older blocking installs
+	setEventHook(m, "Stop", continuityCommand(exe, "codex", "turn"), "continuity codex turn")
 	setEventHook(m, "PostToolUse", quote(exe)+" _internal codex-signal", "codex-signal")
 	hooks := m["hooks"].(map[string]any)
 	groups := toList(hooks["PostToolUse"])
@@ -60,6 +62,8 @@ func uninstallCodexContinuityHooks() error {
 	}
 	removeEventHook(m, "PreToolUse", "", "guard codex")
 	removeEventHook(m, "SessionStart", "", "continuity codex start")
+	removeEventHook(m, "UserPromptSubmit", "", "continuity codex prompt")
+	removeEventHook(m, "Stop", "", "continuity codex turn")
 	removeEventHook(m, "Stop", "", "continuity codex stop")
 	removeEventHook(m, "PostToolUse", "", "codex-signal")
 	return writeSettings(path, m)
@@ -80,6 +84,7 @@ func installCursorContinuityHooks() error {
 	}
 	m["version"] = 1
 	setCursorHook(m, "sessionStart", continuityCommand(exe, "cursor", "start"), "continuity cursor start")
+	setCursorHook(m, "beforeSubmitPrompt", continuityCommand(exe, "cursor", "prompt"), "continuity cursor prompt")
 	setCursorHook(m, "afterAgentResponse", continuityCommand(exe, "cursor", "response"), "continuity cursor response")
 	setCursorHook(m, "stop", continuityCommand(exe, "cursor", "stop"), "continuity cursor stop")
 	setCursorHook(m, "sessionEnd", continuityCommand(exe, "cursor", "end"), "continuity cursor end")
@@ -102,6 +107,7 @@ func uninstallCursorContinuityHooks() error {
 		return err
 	}
 	removeCursorHook(m, "sessionStart", "continuity cursor start")
+	removeCursorHook(m, "beforeSubmitPrompt", "continuity cursor prompt")
 	removeCursorHook(m, "afterAgentResponse", "continuity cursor response")
 	removeCursorHook(m, "stop", "continuity cursor stop")
 	removeCursorHook(m, "sessionEnd", "continuity cursor end")

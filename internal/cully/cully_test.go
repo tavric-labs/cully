@@ -1257,56 +1257,50 @@ func TestWriteSkillSharedForAllAgents(t *testing.T) {
 }
 
 func TestAnalyzeCadence(t *testing.T) {
-	if got := analyzeCadence(1); got != 10 {
-		t.Errorf("analyzeCadence(1)=%d want 10 (default)", got)
-	}
-	if got := analyzeCadence(12); got != 5 {
-		t.Errorf("analyzeCadence(12)=%d want 5", got)
-	}
-	if got := analyzeCadence(30); got != 2 {
-		t.Errorf("analyzeCadence(30)=%d want 2", got)
+	t.Setenv("CULLY_ANALYZE_CADENCE", "")
+	for _, n := range []int{1, 12, 30, 100} {
+		if got := analyzeCadence(n); got != 12 {
+			t.Fatalf("cadence at %d = %d, want 12", n, got)
+		}
 	}
 	t.Setenv("CULLY_ANALYZE_CADENCE", "7")
 	if got := analyzeCadence(1); got != 7 {
-		t.Errorf("env override ignored: got %d want 7", got)
+		t.Fatal("env override ignored")
 	}
 }
 
-// Regression: a short session (fewer than 10 turns) must still get advice —
-// previously the advisor only fired on n%10==0, so it never fired at all.
-func TestRunAnalyzeFiresEarlyInShortSession(t *testing.T) {
+func TestRunAnalyzeWaitsForTwelveCompletedPrompts(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("CLAUDE_CONFIG_DIR", dir)
-	// Pretend the advisor daemon is already running (our own pid, which is
-	// alive) so RunAnalyze enqueues a job instead of spawning a real worker
-	// that would shell out to `claude`.
-	if err := os.WriteFile(daemonPIDFile(), []byte(strconv.Itoa(os.Getpid())), 0o644); err != nil {
+	t.Setenv("CULLY_ANALYZE_CADENCE", "")
+	t.Setenv("CULLY_ANALYZE_DISABLE", "")
+	t.Setenv("MODEL_HINT_GUARD", "")
+	if err := os.WriteFile(daemonPIDFile(), []byte(strconv.Itoa(os.Getpid())), 0600); err != nil {
 		t.Fatal(err)
 	}
-
 	tp := filepath.Join(dir, "t.jsonl")
-	if err := os.WriteFile(tp, []byte(`{"message":{"role":"user","content":"hello"}}`+"\n"), 0o644); err != nil {
+	if err := os.WriteFile(tp, []byte(`{"message":{"role":"user","content":"hello"}}`+"\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	in := stopInput{TranscriptPath: tp, SessionID: "short-session"}
+	in := stopInput{TranscriptPath: tp, SessionID: "cadence-session"}
 	b, _ := json.Marshal(in)
-
-	for i := 0; i < 3; i++ {
+	for i := 0; i < 11; i++ {
 		RunAnalyze(bytes.NewReader(b))
 	}
 	jobs, _ := filepath.Glob(filepath.Join(jobDir(), "*.job"))
-	if len(jobs) != 1 {
-		t.Fatalf("want one early job with rapid repeat analyses deferred by the request budget, got %d", len(jobs))
+	if len(jobs) != 0 {
+		t.Fatal("analysis fired before twelve prompts")
 	}
-	if readSnapshot("short-session").AdvisorDeferred == "" {
-		t.Fatal("rapid repeat analyses must report why they were deferred")
-	}
-
-	// Turn 4: past the early-fire window, default cadence k=10, 4%%10 != 0 -> throttled.
 	RunAnalyze(bytes.NewReader(b))
 	jobs, _ = filepath.Glob(filepath.Join(jobDir(), "*.job"))
 	if len(jobs) != 1 {
-		t.Fatalf("turn 4 should be throttled, got %d jobs", len(jobs))
+		t.Fatalf("expected one job after twelve prompts, got %d", len(jobs))
+	}
+	in.StopHookActive = true
+	b, _ = json.Marshal(in)
+	RunAnalyze(bytes.NewReader(b))
+	if state, _ := os.ReadFile(advisorTurnsFile(continuitySessionRef("claude", continuityHookInput{SessionID: in.SessionID}))); !strings.Contains(string(state), `"Completed":12`) {
+		t.Fatal("continuity follow-up counted as another user prompt")
 	}
 }
 
