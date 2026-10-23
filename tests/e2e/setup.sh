@@ -71,7 +71,7 @@ cd "$project_dir"
 "$cli" setup --all
 curl --fail --retry 12 --retry-delay 2 --retry-all-errors http://127.0.0.1:3393/healthz
 test -f "$CULLY_CONFIG_PATH"
-test -f "$CODEX_HOME/skills/cully/SKILL.md"
+test -f "$CODEX_HOME/.cully-runtime/skills/cully/SKILL.md"
 grep -Fq '[mcp_servers.cully]' "$CODEX_HOME/config.toml"
 grep -Fq 'http://127.0.0.1:3393/mcp' "$CODEX_HOME/config.toml"
 "$cli" status | tee "$e2e_root/status"
@@ -102,7 +102,7 @@ test -f "$HOME/.cully/self-hosted/config/.env"
 test ! -e "$cli"
 test ! -e "$CULLY_CONFIG_PATH"
 test ! -e "$HOME/.cully/self-hosted"
-test ! -e "$CODEX_HOME/skills/cully/SKILL.md"
+test ! -e "$CODEX_HOME/.cully-runtime/skills/cully/SKILL.md"
 test ! -e "$CODEX_HOME/AGENTS.md"
 if [[ -f "$CODEX_HOME/config.toml" ]]; then
   ! grep -Fq '[mcp_servers.cully]' "$CODEX_HOME/config.toml"

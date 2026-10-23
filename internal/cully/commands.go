@@ -82,9 +82,6 @@ func writeIntegrations(w io.Writer, cwd string) {
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "  Claude hooks:")
 	settings, _ := loadSettings(filepath.Join(ConfigDir(), "settings.json"))
-	statusLine, _ := settings["statusLine"].(map[string]any)
-	statusCommand, _ := statusLine["command"].(string)
-	printIntegrationLine(w, "statusline", isCullySubcommand(statusCommand, "statusline"))
 	printIntegrationLine(w, "Stop/analyze", hookConfigured(settings, "Stop", "analyze"))
 	printIntegrationLine(w, "SessionStart/continuity", hookConfigured(settings, "SessionStart", "continuity claude start"))
 	printIntegrationLine(w, "Stop/continuity", hookConfigured(settings, "Stop", "continuity claude stop"))
@@ -326,41 +323,6 @@ func writeSessionSummary(w io.Writer, session string) {
 	if n, cost, avgCtx, faults := baseline7d(); n > 0 {
 		fmt.Fprintf(w, "  baseline 7d: %d sessions · $%.2f · avg ctx %d%% · %d faults\n", n, cost, avgCtx, faults)
 	}
-}
-
-func buildMemoLine(snap cullySnapshot, st cullyState, dir string) string {
-	graph := "no"
-	if snap.GraphifyGraph || hasGraphifyGraph(dir) {
-		graph = "yes"
-	}
-	parts := []string{
-		sessionPhaseDisplay(snap.Phase),
-		"graphify " + graph,
-		"cost " + snap.CostIndex,
-	}
-	if snap.PendingSuggestions > 0 {
-		word := "fixes"
-		if snap.PendingSuggestions == 1 {
-			word = "fix"
-		}
-		parts = append(parts, fmt.Sprintf("%d %s", snap.PendingSuggestions, word))
-	}
-	if snap.Phase == string(PhaseEmergency) {
-		parts = append(parts, "pressure")
-	}
-	if isDaemonRunning() {
-		parts = append(parts, "advisor on")
-	} else {
-		parts = append(parts, "advisor off")
-	}
-	return strings.Join(parts, " · ")
-}
-
-func phaseLabel(p string) string {
-	if p == "" {
-		return sessionPhaseDisplay("cruise")
-	}
-	return sessionPhaseDisplay(p)
 }
 
 // stripSeverityPrefix returns display text for a stored suggestion line.

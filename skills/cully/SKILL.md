@@ -70,7 +70,7 @@ The advisor combines immediate local rules with an optional background worker th
 What the terminal can know differs by agent:
 
 - Codex supplies model, context, tokens and quota through its native footer.
-- Claude Code supplies context pressure through a hook-fed snapshot; its own status line stays silent inside the terminal.
+- Claude Code supplies tool events through hooks; Cully installs no status line.
 - Cursor supplies shell, file-edit and MCP events. Its shell hook reports no exit code, so a failed Cursor command is not marked failed. Model, context, tokens and rate limits have no Cursor feed, so the panel shows them as unavailable rather than waiting.
 - Other agents get the health bar and Git state, and tool events only if they can run Cully's hook.
 

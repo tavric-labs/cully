@@ -100,6 +100,9 @@ func guardSeen(session, key string) bool {
 
 // RunGuardHook implements `cully _internal guard AGENT` for PreToolUse.
 func RunGuardHook(agent string, r io.Reader, w io.Writer) {
+	if !wrappedSessionActive() {
+		return
+	}
 	if os.Getenv("MODEL_HINT_GUARD") != "" || strings.EqualFold(os.Getenv("CULLY_GUARD"), "off") {
 		return
 	}

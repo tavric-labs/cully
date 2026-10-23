@@ -1,5 +1,3 @@
-//go:build !windows
-
 package cully
 
 import (
@@ -13,10 +11,6 @@ import (
 
 	"github.com/charmbracelet/x/ansi"
 )
-
-// Request public native instruments for this child only. The user's config file
-// is untouched. Codex omits instruments it cannot supply (including rate limits).
-const codexStatusConfig = `tui.status_line=["model-with-reasoning","context-remaining","total-input-tokens","total-output-tokens","five-hour-limit","weekly-limit","fast-mode"]`
 
 type sessionView struct {
 	HealthBar                                                     bool // true only when rendered under the pane HUD

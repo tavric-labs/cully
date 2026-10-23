@@ -67,7 +67,7 @@ func pluginCursorHooks() []pluginHook {
 func groupedHooks(hooks []pluginHook) map[string]any {
 	events := map[string]any{}
 	for _, h := range hooks {
-		handler := map[string]any{"type": "command", "command": h.command}
+		handler := map[string]any{"type": "command", "command": scopedHookCommand(h.command)}
 		if h.async {
 			handler["async"] = true
 			handler["timeout"] = 5
@@ -88,7 +88,7 @@ func groupedHooks(hooks []pluginHook) map[string]any {
 func flatHooks(hooks []pluginHook) map[string]any {
 	events := map[string]any{}
 	for _, h := range hooks {
-		entry := map[string]any{"command": h.command}
+		entry := map[string]any{"command": scopedHookCommand(h.command)}
 		if h.async {
 			entry["timeout"] = 5
 		}

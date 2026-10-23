@@ -1,5 +1,3 @@
-//go:build !windows
-
 package cully
 
 import (
@@ -61,7 +59,7 @@ func TestRenderTerminalPaneViewShowsScrollback(t *testing.T) {
 		t.Fatal("emulator kept no scrollback")
 	}
 	frame := func(offset int) string {
-		return ansi.Strip(renderTerminalPaneView(emulator, offset, 40, 8, []string{"panel"}, false, "", gripIdle))
+		return ansi.Strip(renderTerminalPaneView(emulator, offset, 40, 8, []string{"panel"}, true, "", gripIdle))
 	}
 	live, back := frame(0), frame(emulator.ScrollbackLen())
 	if !strings.Contains(live, "line 30") || strings.Contains(live, "line 01") {
@@ -74,10 +72,10 @@ func TestRenderTerminalPaneViewShowsScrollback(t *testing.T) {
 	if strings.Contains(mid, "line 30") || !strings.Contains(mid, "line 1") {
 		t.Fatalf("scrolled frame wrong:\n%s", mid)
 	}
-	if strings.Contains(renderTerminalPaneView(emulator, 5, 40, 8, nil, false, "", gripIdle), "\x1b[?25h") {
+	if strings.Contains(renderTerminalPaneView(emulator, 5, 40, 8, nil, true, "", gripIdle), "\x1b[?25h") {
 		t.Fatal("cursor shown while reading history")
 	}
-	if !strings.Contains(renderTerminalPaneView(emulator, 0, 40, 8, nil, false, "", gripIdle), "\x1b[?25h") {
+	if !strings.Contains(renderTerminalPaneView(emulator, 0, 40, 8, nil, true, "", gripIdle), "\x1b[?25h") {
 		t.Fatal("cursor hidden on the live screen")
 	}
 }
@@ -90,7 +88,7 @@ func TestPanePreservesNerdFontIconsAcrossUTF8Chunks(t *testing.T) {
 		emulator := vt.NewEmulator(80, 6)
 		_, _ = emulator.Write(data[:split])
 		_, _ = emulator.Write(data[split:])
-		frame := ansi.Strip(renderTerminalPane(emulator, 80, 8, nil, false, ""))
+		frame := ansi.Strip(renderTerminalPane(emulator, 80, 8, nil, true, ""))
 		_ = emulator.Close()
 		if !strings.Contains(frame, text) {
 			t.Fatalf("split %d corrupted Unicode: %q", split, frame)

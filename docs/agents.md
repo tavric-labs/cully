@@ -36,8 +36,8 @@ All integrations live in the selected agent’s user configuration and work acro
 
 | Agent | Installed by `cully setup --all` |
 | --- | --- |
-| Claude Code | Session and stop hooks, a [PreToolUse guard](/advisor#the-pretooluse-guard), an asynchronous tool-event hook for the terminal, a status line that feeds the terminal panel (and shows itself when you run Claude outside the terminal), a `/cully` command and the Cully skill. |
-| Codex | A session-start hook, an asynchronous tool-event hook, a `/prompts:cully` prompt, managed user-level `AGENTS.md` guidance and the skill. Codex's native footer settings stay yours. |
+| Claude Code | Session and stop hooks, a [PreToolUse guard](/advisor#the-pretooluse-guard), an asynchronous tool-event hook for the terminal, a `/cully` command and the Cully skill. Hooks run only inside `cully run`. |
+| Codex | A session-start hook, an asynchronous tool-event hook, a `/prompts:cully` prompt, and the skill. Cully writes nothing to `AGENTS.md`, and Codex's native footer settings stay yours. |
 | Cursor | Continuity hooks, asynchronous shell, file-edit and MCP hooks for the terminal, a user-level `/cully` command and the skill. |
 
 The tool-event hooks send one small event per tool call to the local [session journal](/privacy), and only while the agent runs inside the Cully terminal. They store no prompts, commands or tool output. See [privacy](/privacy).
@@ -48,7 +48,7 @@ If the server uses OAuth, add `--oauth` to setup and sign in as shown in the tab
 
 Run `cully setup --agent claude --mcp-url URL`, using the URL printed by your private stack or supplied by your team. Restart Claude Code, then start it with `cully run claude`. Analysis jobs use the shared background worker through the Claude CLI. The worker consults configured Cully memory read-only and can research a concrete tool or documentation gap. The foreground session owns durable handoff writes.
 
-Inside the terminal Claude Code's own status line stays silent so there is one display. The terminal panel reads Claude's context pressure from the same data.
+Cully installs no status line for Claude Code. Its own status line, settings and shortcuts are unchanged.
 
 ## Codex
 

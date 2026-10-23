@@ -1,5 +1,3 @@
-//go:build !windows
-
 package cully
 
 // paneDivider remembers the requested height across terminal resizes. Automatic

@@ -148,21 +148,3 @@ func topTools(h map[string]int, n int) string {
 	}
 	return strings.Join(parts, " ")
 }
-
-// maybeChime rings the terminal bell once when this session's context crosses
-// into WARN. Chime state is per-session so a concurrent session's context level
-// cannot suppress (or double-fire) this one's alert.
-func maybeChime(session string, ctxPct int) string {
-	if os.Getenv("CULLY_ALERT_CHIME") != "1" || session == "" {
-		return ""
-	}
-	prev := 0
-	if b, err := os.ReadFile(sessionChimeFile(session)); err == nil {
-		prev, _ = strconv.Atoi(strings.TrimSpace(string(b)))
-	}
-	_ = os.WriteFile(sessionChimeFile(session), []byte(strconv.Itoa(ctxPct)), 0o644)
-	if prev < 90 && ctxPct >= 90 {
-		return "\a"
-	}
-	return ""
-}

@@ -36,8 +36,8 @@ cully suggestions
 
 | Agent | Installed local integration |
 | --- | --- |
-| Claude Code | Session and stop hooks, an asynchronous tool-event hook for the terminal, a status line that feeds the terminal panel (and displays itself outside it), `/cully` command and skill. |
-| Codex | `cully run codex` terminal, session-start and asynchronous tool-event hooks, `/prompts:cully`, managed user-level `AGENTS.md` pointer and skill. Setup leaves Codex's saved footer settings to the user. |
+| Claude Code | Session and stop hooks, an asynchronous tool-event hook for the terminal, `/cully` command and skill. |
+| Codex | `cully run codex` terminal, session-start and asynchronous tool-event hooks, `/prompts:cully`, and skill. Setup writes nothing to `AGENTS.md` and leaves Codex's saved footer settings to the user. |
 | Cursor | Session and response hooks, asynchronous shell, file-edit and MCP hooks for the terminal, user-level `/cully` command and skill. |
 
 The background advisor uses one shared analysis workflow with adapters for Claude Code, Codex and Cursor. The originating agent selects its own CLI adapter and configured MCP connection; it does not resume or take over the foreground conversation. Claude supplies its richer hook-derived signals, the Codex wrapper supplies bounded context/tool counters, and Cursor supplies coarse metadata through its continuity stop hook. Missing instruments remain unknown.
@@ -150,7 +150,7 @@ Set these environment variables only when you want to change the defaults:
 
 | Variable | Effect |
 | --- | --- |
-| `CULLY_ANALYZE_DISABLE=1` | Disable advisor analysis while keeping the status line. |
+| `CULLY_ANALYZE_DISABLE=1` | Disable advisor analysis. |
 | `CULLY_DISCOVERY=off` | Disable periodic public discovery of current coding-agent techniques; local warnings and tool-gap research remain. |
 | `CULLY_ANALYZE_PROMPTS=0` | Exclude recent prompt text from analyzer signals. |
 | `CULLY_DISPLAY` | Use `minimal`, `full` or `debug` display. |

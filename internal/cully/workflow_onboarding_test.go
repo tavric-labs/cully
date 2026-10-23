@@ -44,7 +44,7 @@ func TestWorkflowOnboardingInstallsStarterWithoutAsking(t *testing.T) {
 			t.Fatalf("reference %s: %v", ref, err)
 		}
 	}
-	if _, err := os.ReadFile(filepath.Join(CodexConfigDir(), "skills", "dev-workflow-rules", "SKILL.md")); err != nil {
+	if _, err := os.ReadFile(filepath.Join(CodexConfigDir(), ".cully-runtime", "skills", "dev-workflow-rules", "SKILL.md")); err != nil {
 		t.Fatalf("agent link: %v", err)
 	}
 	if state, _ := os.ReadFile(workflowOnboardingState()); string(state) != "created\n" {
@@ -70,7 +70,7 @@ func TestWorkflowOnboardingInstallsStarterWithoutAsking(t *testing.T) {
 	if err := installMemorySkill("cursor"); err != nil {
 		t.Fatal(err)
 	}
-	late, err := os.ReadFile(filepath.Join(CursorConfigDir(), "skills", "dev-workflow-rules", "SKILL.md"))
+	late, err := os.ReadFile(filepath.Join(CursorConfigDir(), ".cully-runtime", "skills", "dev-workflow-rules", "SKILL.md"))
 	if err != nil || string(late) != string(edited) {
 		t.Fatalf("late agent integration missed workflow skill: %v", err)
 	}
@@ -99,7 +99,7 @@ func TestWorkflowSkipAndNonInteractive(t *testing.T) {
 
 func TestWorkflowExistingSkillAndBoundedRedactedContext(t *testing.T) {
 	isolateWorkflow(t)
-	path := filepath.Join(CodexConfigDir(), "skills", "dev-workflow-rules", "SKILL.md")
+	path := filepath.Join(CodexConfigDir(), ".cully-runtime", "skills", "dev-workflow-rules", "SKILL.md")
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		t.Fatal(err)
 	}

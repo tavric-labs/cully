@@ -1,10 +1,9 @@
-//go:build !windows
-
 package cully
 
 import (
 	"bytes"
 	"fmt"
+	"unicode/utf8"
 
 	uv "github.com/charmbracelet/ultraviolet"
 )
@@ -34,8 +33,8 @@ func (p *panelInput) feed(data []byte, flush bool) []panelKey {
 		p.pending = p.pending[n:]
 	}
 	sequences := []struct{ value, action string }{
-		{"\x1ba", "focus"}, {"\x1bA", "focus"},
-		{"\x1b[17~", "focus"}, // F6, independent of Option/Meta settings
+		{"\x1b[17~", "focus"},    // F6, independent of Option/Meta settings
+		{"\x1b[18~", "sessions"}, // F7, only used when Cully shortcuts are enabled
 		{"\x1b[A", "up"}, {"\x1bOA", "up"}, {"\x1b[B", "down"}, {"\x1bOB", "down"},
 		{"\x1b[5~", "pageup"}, {"\x1b[6~", "pagedown"},
 		{"\x1b[H", "home"}, {"\x1bOH", "home"}, {"\x1b[1~", "home"},
@@ -144,6 +143,14 @@ func (p *panelInput) feed(data []byte, flush bool) []panelKey {
 		if partial && !flush {
 			break
 		}
+		// Preserve complete native key/reply sequences in one write. Sending
+		// Esc separately can make a TUI decode Shift+Right as Esc plus text.
+		if n, incomplete := nativeInputSequence(p.pending); n > 0 {
+			forward(n)
+			continue
+		} else if incomplete && !flush {
+			break
+		}
 		if len(p.pending) == 1 || p.pending[1] == 0x1b {
 			// A standalone Esc may be followed immediately by a separate
 			// mouse/keyboard escape sequence before the flush timer fires.
@@ -154,6 +161,40 @@ func (p *panelInput) feed(data []byte, flush bool) []panelKey {
 		}
 	}
 	return keys
+}
+
+func nativeInputSequence(data []byte) (size int, incomplete bool) {
+	if len(data) < 2 || data[0] != 0x1b || data[1] == 0x1b {
+		return 0, false
+	}
+	switch data[1] {
+	case '[', 'O':
+		for i := 2; i < len(data); i++ {
+			if data[i] >= 0x40 && data[i] <= 0x7e {
+				return i + 1, false
+			}
+			if data[i] < 0x20 || data[i] > 0x3f {
+				return 0, false
+			}
+		}
+		return 0, len(data) <= 256
+	case ']', 'P', '_', '^', 'X':
+		for i := 2; i < len(data); i++ {
+			if data[i] == 7 || data[i] == 0x1b && i+1 < len(data) && data[i+1] == '\\' {
+				if data[i] == 7 {
+					return i + 1, false
+				}
+				return i + 2, false
+			}
+		}
+		return 0, len(data) <= 1<<20
+	default:
+		if !utf8.FullRune(data[1:]) {
+			return 0, true
+		}
+		_, n := utf8.DecodeRune(data[1:])
+		return n + 1, false
+	}
 }
 
 // verticalWheel ignores modifier bits when identifying the wheel direction.

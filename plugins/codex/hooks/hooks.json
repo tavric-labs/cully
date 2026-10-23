@@ -5,7 +5,7 @@
         "hooks": [
           {
             "async": true,
-            "command": "cully _internal codex-signal",
+            "command": "if [ \"${CULLY_RUN_ACTIVE:-}\" = \"1\" ]; then cully _internal codex-signal; fi",
             "timeout": 5,
             "type": "command"
           }
@@ -16,7 +16,7 @@
       {
         "hooks": [
           {
-            "command": "cully _internal guard codex",
+            "command": "if [ \"${CULLY_RUN_ACTIVE:-}\" = \"1\" ]; then cully _internal guard codex; fi",
             "timeout": 5,
             "type": "command"
           }
@@ -28,7 +28,7 @@
       {
         "hooks": [
           {
-            "command": "cully _internal continuity codex start",
+            "command": "if [ \"${CULLY_RUN_ACTIVE:-}\" = \"1\" ]; then cully _internal continuity codex start; fi",
             "type": "command"
           }
         ]
@@ -38,7 +38,7 @@
       {
         "hooks": [
           {
-            "command": "cully _internal continuity codex turn",
+            "command": "if [ \"${CULLY_RUN_ACTIVE:-}\" = \"1\" ]; then cully _internal continuity codex turn; fi",
             "type": "command"
           }
         ]
@@ -48,7 +48,7 @@
       {
         "hooks": [
           {
-            "command": "cully _internal continuity codex prompt",
+            "command": "if [ \"${CULLY_RUN_ACTIVE:-}\" = \"1\" ]; then cully _internal continuity codex prompt; fi",
             "type": "command"
           }
         ]

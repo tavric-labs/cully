@@ -1,5 +1,3 @@
-//go:build !windows
-
 package cully
 
 import (
@@ -84,5 +82,23 @@ func TestPanelInputMouseEnterAndPaste(t *testing.T) {
 	}
 	if !bytes.Equal(text, forwarded) {
 		t.Fatal(string(forwarded))
+	}
+}
+
+func TestNativeModifiedKeysStayAtomicAcrossReads(t *testing.T) {
+	for _, sequence := range []string{
+		"\x1b[1;2C", "\x1b[1;2D", "\x1b[1;2A", "\x1b[1;2B",
+		"\x1b[1;5C", "\x1b[1;6D", "\x1b[1;3C", "\x1b[Z",
+		"\x1b[13;2u", "\x1b[27;2;13~", "\x1b\r", "\x1ba", "\x1bOQ",
+		"\x1b[99;5:3u", "\x1b]11;rgb:ffff/ffff/ffff\x1b\\",
+	} {
+		for split := 0; split <= len(sequence); split++ {
+			var input panelInput
+			keys := input.feed([]byte(sequence[:split]), false)
+			keys = append(keys, input.feed([]byte(sequence[split:]), false)...)
+			if len(keys) != 1 || keys[0].Action != "" || string(keys[0].Data) != sequence {
+				t.Fatalf("sequence %q split %d was consumed or fragmented: %+v", sequence, split, keys)
+			}
+		}
 	}
 }

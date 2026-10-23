@@ -1,5 +1,3 @@
-//go:build !windows
-
 package cully
 
 // paneScroll lets the mouse wheel read output that has scrolled off the agent's

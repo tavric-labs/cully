@@ -19,7 +19,7 @@ func TestApplyFlagsAfterNumber(t *testing.T) {
 }
 
 func TestRemovedCommands(t *testing.T) {
-	for _, name := range []string{"agent", "memory", "list", "systems", "plan", "checklist", "debrief", "daemon", "worker", "statusline", "analyze", "cleanup"} {
+	for _, name := range []string{"agent", "memory", "list", "systems", "plan", "checklist", "debrief", "daemon", "worker", "analyze", "cleanup"} {
 		if err := run([]string{name}); err == nil {
 			t.Fatalf("old public command %s still exists", name)
 		}

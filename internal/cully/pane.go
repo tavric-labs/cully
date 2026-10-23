@@ -1,5 +1,3 @@
-//go:build !windows
-
 package cully
 
 import (
@@ -8,32 +6,42 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"os/signal"
 	"strings"
 	"syscall"
 	"time"
+	"unicode/utf8"
 
 	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/charmbracelet/x/vt"
-	"github.com/creack/pty"
-	"github.com/google/uuid"
 	"golang.org/x/term"
 )
 
-// RunPane owns the physical terminal and gives a coding agent a smaller
+// paneOptions selects host features. The sidebar is a Cully control, so it is
+// on for `cully run` and off for the single-session terminal check.
+type paneOptions struct {
+	Sidebar bool
+}
+
+// RunPane owns the physical terminal and gives each coding agent a smaller
 // virtual terminal. The agent never writes directly to the parent screen, so its
 // clear and cursor sequences cannot erase the status area. Every agent uses this
-// same terminal; only its launch command and native footer differ.
+// same terminal; only its launch command and native footer differ. Several
+// named sessions can run in one window; they end with it.
 func RunPane(agentName string, args []string, input, output *os.File) error {
 	agent, err := lookupPaneAgent(agentName)
 	if err != nil {
 		return err
 	}
-	return runPane(agent, args, input, output, nil)
+	return runPaneOptions(agent, args, input, output, nil, paneOptions{Sidebar: os.Getenv("CULLY_SIDEBAR") != "0"})
 }
 
 func runPane(agent paneAgent, args []string, input, output *os.File, exercise *terminalExercise) error {
+	return runPaneOptions(agent, args, input, output, exercise, paneOptions{})
+}
+
+func runPaneOptions(agent paneAgent, args []string, input, output *os.File, exercise *terminalExercise, opts paneOptions) error {
+	shortcuts := os.Getenv("CULLY_SHORTCUTS") == "1"
 	profile := detectTerminalProfile()
 	if err := profile.requireNative(); err != nil {
 		return err
@@ -59,112 +67,86 @@ func runPane(agent paneAgent, args []string, input, output *os.File, exercise *t
 		return err
 	}
 	defer io.WriteString(output, "\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b[0m\x1b[?25h\x1b[?1049l") //nolint:errcheck
-	reviewContext, cancelReviews := context.WithCancel(context.Background())
-	defer cancelReviews()
+	hostContext, cancelHost := context.WithCancel(context.Background())
+	defer cancelHost()
+	hostDone := make(chan struct{})
+	defer close(hostDone)
+	events := make(chan paneEvent, 64)
 
-	session := uuid.NewString()
-	if err := registerPane(session, currentDir()); err != nil {
-		return fmt.Errorf("register %s advisor pane: %w", agent.Name, err)
-	}
-	defer os.Remove(paneRegistrationFile(session))      //nolint:errcheck
-	defer os.Remove(paneBindingFile(session))           //nolint:errcheck
-	defer os.Remove(signalFile(session))                //nolint:errcheck
-	defer os.Remove(sessionReportFile(session))         //nolint:errcheck
-	defer os.Remove(sessionSnapshotFile(session))       //nolint:errcheck
-	defer os.Remove(sessionSignalsFile(session))        //nolint:errcheck
-	defer os.Remove(sessionSeenFile(session))           //nolint:errcheck
-	defer os.Remove(discoveryFile(session, agent.Name)) //nolint:errcheck
-	defer clearCodexCullyStats(session)
-	if id := agent.resumeID(args); id != "" {
-		bindPane(currentDir(), id)
-	}
-	if _, err := exec.LookPath(agent.Binary); err != nil {
-		return fmt.Errorf("%s is not installed or not on PATH", agent.Binary)
-	}
-	appendJournal(currentDir(), session, journalEvent{Agent: agent.Name, Class: journalStart})
-	defer appendJournal(currentDir(), session, journalEvent{Agent: agent.Name, Class: journalEnd})
-	defer pruneJournals()
-	cmd := exec.Command(agent.Binary, agent.args(args)...)
-	cmd.Env = append(os.Environ(), "CULLY_PANE_SESSION="+session, "CULLY_SESSION="+session, "CULLY_AGENT="+agent.Name)
-	view := sessionView{HealthBar: true, Agent: agent.Name, Project: currentDir(), Branch: gitBranch(currentDir()), Started: time.Now(), Daemon: isDaemonRunning(), Terminal: profile}
-	restoredSession := false
-	lastSessionSave := time.Time{}
-	refreshSession := func() {
-		if !restoredSession {
-			restoredSession = restoreCodexSessionView(session, &view)
+	var (
+		sessions []*paneSession
+		active   int
+		sidebar  = sidebarState{Visible: opts.Sidebar}
+		divider  paneDivider
+		drawer   advisorDrawer
+		notice   string
+		noticeAt time.Time
+	)
+	defer func() {
+		for _, s := range sessions {
+			s.release()
 		}
-	}
-	persistSession := func() {
-		saveCodexSessionView(session, view)
-		lastSessionSave = time.Now()
-	}
-	refreshSession()
-	readGitChanges(&view)
-	var prober mcpProber
-	go runMCPProbe(reviewContext, agent.Name, &prober)
-	loadStats := func() toolStats {
-		s := readToolStats(session)
-		s.Impact = ImpactSince(view.Started)
-		if res, ok := prober.get(); ok {
-			overlayMCPProbe(&s.Cully, res)
+	}()
+	sideWidth := func() int {
+		if sidebar.Visible && cols >= sidebarMinCols {
+			return sidebarWidth
 		}
-		return s
+		return 0
 	}
-	stats := loadStats()
-	view.Loops, _ = sessionLoops(currentDir(), session)
-	advice := combinedAdvice(session, stats, view)
-	var divider paneDivider
+	agentCols := func() int { return cols - sideWidth() }
+	cur := func() *paneSession { return sessions[active] }
 	panelBudget := func() int {
 		if divider.Manual {
 			return max(0, rows-divider.top(rows, 0))
 		}
 		return rows - paneTop(rows, rows)
 	}
-	statusRows := func() []string { return compactSessionStatusRows(cols, panelBudget(), advice, stats, view) }
-	content := statusRows()
-	top := divider.top(rows, len(content))
-	child, err := pty.StartWithSize(cmd, &pty.Winsize{Rows: uint16(top), Cols: uint16(cols)})
+	statusRows := func(s *paneSession) []string {
+		return compactSessionStatusRows(cols, panelBudget(), s.advice, s.stats, s.view)
+	}
+	top := 0
+	resizeAll := func() {
+		top = divider.top(rows, len(cur().content))
+		for _, s := range sessions {
+			s.resize(agentCols(), top)
+		}
+	}
+	launch := func(base paneAgent, launchArgs []string, name string) (*paneSession, error) {
+		s, err := newPaneSession(hostContext, base, launchArgs, name, profile)
+		if err != nil {
+			return nil, err
+		}
+		s.content = statusRows(s)
+		return s, nil
+	}
+	nextName := func(base string) string {
+		for n := 1; ; n++ {
+			name := base
+			if n > 1 {
+				name = fmt.Sprintf("%s %d", base, n)
+			}
+			taken := false
+			for _, s := range sessions {
+				taken = taken || s.name == name
+			}
+			if !taken {
+				return name
+			}
+		}
+	}
+
+	first, err := launch(agent, args, nextName(agent.Name))
 	if err != nil {
-		return fmt.Errorf("start %s: %w", agent.Name, err)
+		return err
 	}
-	// Wait for the process itself, not PTY EOF: a descendant can retain the
-	// terminal after Codex exits. The wrapper must still release its session.
-	waitDone := make(chan struct{})
-	var waitErr error
-	go func() {
-		waitErr = cmd.Wait()
-		close(waitDone)
-	}()
-	readerDone := make(chan struct{})
-	emulator := vt.NewEmulator(cols, top)
-	readFooter := func() {
-		if agent.NativeFooter {
-			rows, base := footerRows(emulator)
-			upd, _ := parseFooterRows(rows, base)
-			view.mergeUpdate(upd)
-		}
+	sessions = append(sessions, first)
+	top = divider.top(rows, len(first.content))
+	if err := first.start(agentCols(), top, events, hostDone, output); err != nil {
+		first.release()
+		sessions = nil
+		return err
 	}
-	repliesDone := make(chan struct{})
-	defer func() {
-		close(readerDone)
-		// StartWithSize creates a child process group. Never leave that group
-		// running when the owning wrapper exits or loses its terminal.
-		_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGTERM)
-		_ = child.Close()
-		select {
-		case <-waitDone:
-		case <-time.After(2 * time.Second):
-			_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
-			<-waitDone
-		}
-		// Descendants may ignore TERM even after the main process has exited.
-		_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
-		if pipe, ok := emulator.InputPipe().(io.Closer); ok {
-			_ = pipe.Close()
-		}
-		<-repliesDone
-		_ = emulator.Close()
-	}()
+
 	inputChunks := make(chan []byte, 16)
 	go func() {
 		defer close(inputChunks)
@@ -174,30 +156,7 @@ func runPane(agent paneAgent, args []string, input, output *os.File, exercise *t
 			if n > 0 {
 				select {
 				case inputChunks <- bytes.Clone(buf[:n]):
-				case <-readerDone:
-					return
-				}
-			}
-			if err != nil {
-				return
-			}
-		}
-	}()
-	go func() {
-		_, _ = io.Copy(child, emulator) // terminal query replies
-		close(repliesDone)
-	}()
-
-	chunks := make(chan []byte, 16)
-	go func() {
-		defer close(chunks)
-		buf := make([]byte, 32*1024)
-		for {
-			n, err := child.Read(buf)
-			if n > 0 {
-				select {
-				case chunks <- bytes.Clone(buf[:n]):
-				case <-readerDone:
+				case <-hostDone:
 					return
 				}
 			}
@@ -214,22 +173,11 @@ func runPane(agent paneAgent, args []string, input, output *os.File, exercise *t
 	defer signal.Stop(stop)
 	ticker := time.NewTicker(80 * time.Millisecond)
 	defer ticker.Stop()
-	dirty, lastAdvice := true, ""
-	lastContent := ""
+	dirty := true
 	lastBeat := time.Now()
 	var keyFeed panelInput
 	lastInput := time.Now()
-	var drawer advisorDrawer
-	var scroll paneScroll
 	resizeMode := false
-	resizeChild := func() {
-		nextTop := divider.top(rows, len(content))
-		if nextTop != top || cols != emulator.Width() {
-			top = nextTop
-			emulator.Resize(cols, top)
-			_ = pty.Setsize(child, &pty.Winsize{Rows: uint16(top), Cols: uint16(cols)})
-		}
-	}
 	// OSC 22 asks the terminal for a vertical-resize pointer over the divider;
 	// terminals without support ignore it.
 	pointerOver := false
@@ -245,27 +193,102 @@ func runPane(agent paneAgent, args []string, input, output *os.File, exercise *t
 		_, _ = io.WriteString(output, "\x1b]22;"+shape+"\x1b\\")
 	}
 	defer func() { setPointer(false) }()
+	say := func(text string) {
+		notice, noticeAt = text, time.Now()
+		dirty = true
+	}
+	sessionNames := func() []string {
+		names := make([]string, len(sessions))
+		for i, s := range sessions {
+			names[i] = fmt.Sprintf("%d %s", i+1, s.name)
+		}
+		return names
+	}
 	paint := func() string {
+		s := cur()
 		if exercise != nil {
-			exercise.frame(drawer.Open, top < rows && len(content) > 0)
+			exercise.frame(drawer.Open, top < rows && len(s.content) > 0)
 		}
 		if drawer.Open {
-			return drawer.render(cols, rows, stats, view)
+			return drawer.render(cols, rows, s.stats, s.view)
 		}
-		scroll.anchor(emulator.ScrollbackLen())
-		if emulator.IsAltScreen() {
-			scroll.reset() // an agent on the alternate screen scrolls itself
+		s.scroll.anchor(s.emulator.ScrollbackLen())
+		if s.emulator.IsAltScreen() {
+			s.scroll.reset() // an agent on the alternate screen scrolls itself
 		}
-		hud := paneHUD(cols, stats, view, time.Now())
-		hint := " drag ↕ · Ctrl+] advisor "
+		hud := paneHUD(cols, s.stats, s.view, time.Now())
+		hint := " drag ↕ · click advisor "
+		if shortcuts {
+			hint = " drag ↕ · Ctrl+] advisor "
+			if opts.Sidebar {
+				hint += "· F7 sessions "
+			}
+		}
 		if resizeMode {
 			hint = " drag ↕ · Esc ends resize "
 		}
-		if scroll.active() {
-			hint = fmt.Sprintf(" ↑ %d lines back · type or scroll down to return ", scroll.Offset)
+		if sidebar.Renaming {
+			hint = " type a name · Enter saves · Esc cancels "
+		} else if sidebar.Focus {
+			hint = " sessions: ↑↓ move · Enter switch · n new · r rename · Esc back "
 		}
-		frame := renderTerminalPaneView(emulator, scroll.Offset, cols, rows, content, agent.NativeFooter, hud, divider.grip(), hint)
-		return frame
+		if s.scroll.active() {
+			hint = fmt.Sprintf(" ↑ %d lines back · type or scroll down to return ", s.scroll.Offset)
+		}
+		if notice != "" && time.Since(noticeAt) < 4*time.Second {
+			hint = " " + notice + " "
+		}
+		var side []string
+		if sideWidth() > 0 {
+			side = sidebarLines(sessionNames(), active, sidebar, top)
+		}
+		return renderTerminalPaneSide(s.emulator, s.scroll.Offset, cols, rows, s.content, s.native.Visible && !sidebar.Focus, hud, divider.grip(), side, hint)
+	}
+	switchTo := func(index int) {
+		if index < 0 || index >= len(sessions) || index == active {
+			return
+		}
+		cur().native.deactivate()
+		active = index
+		sidebar.Selected = index
+		cur().native.activate()
+		drawer.close()
+		cur().reload(statusRows)
+		resizeAll()
+		dirty = true
+	}
+	addSession := func() {
+		s, err := launch(cur().agent, nil, nextName(cur().agent.Name))
+		if err != nil {
+			say("new session failed: " + err.Error())
+			return
+		}
+		if err := s.start(agentCols(), top, events, hostDone, output); err != nil {
+			s.release()
+			say("new session failed: " + err.Error())
+			return
+		}
+		s.native.gate.on = false
+		sessions = append(sessions, s)
+		switchTo(len(sessions) - 1)
+	}
+	startRename := func(index int) {
+		sidebar.Selected = index
+		sidebar.Renaming = true
+		sidebar.Focus = true
+		sidebar.Input = nil // typing replaces the name; Enter on an empty field keeps it
+		dirty = true
+	}
+	finishRename := func(save bool) {
+		if save {
+			if name := cleanSessionName(sidebar.Input); name != "" {
+				sessions[sidebar.Selected].name = name
+			}
+		}
+		sidebar.Renaming = false
+		sidebar.Focus = false // the keyboard goes back to the agent
+		sidebar.Input = nil
+		dirty = true
 	}
 	// Enter pastes a request into the agent's input instead of submitting it, so
 	// the user keeps their draft, reads the request and decides whether to send.
@@ -273,20 +296,109 @@ func runPane(agent paneAgent, args []string, input, output *os.File, exercise *t
 		if drawer.Details || len(drawer.Items) == 0 {
 			return
 		}
+		s := cur()
 		line := drawer.Items[drawer.Selected]
 		if strings.HasPrefix(line, "MEMO|") {
 			drawer.Message = dim + "Informational tip · nothing to add to the prompt" + rst
 			dirty = true
 			return
 		}
-		request := terminalSafeText(advisorRequest(line, readSessionSignals(session)))
-		emulator.SendText("\x1b[200~\n" + request + "\x1b[201~")
+		request := terminalSafeText(advisorRequest(line, readSessionSignals(s.id)))
+		s.emulator.SendText("\x1b[200~\n" + request + "\x1b[201~")
 		drawer.close()
 		dirty = true
 	}
+	// sidebarKey handles a key while the session list has focus. Nothing reaches
+	// the agent: the list owns the keyboard until focus returns.
+	sidebarKey := func(key panelKey) {
+		dirty = true
+		if sidebar.Renaming {
+			switch {
+			case key.Action == "enter":
+				finishRename(true)
+			case key.Action == "escape" || bytes.Equal(key.Data, []byte{3}):
+				finishRename(false)
+			case bytes.Equal(key.Data, []byte{0x7f}) || bytes.Equal(key.Data, []byte{8}):
+				if len(sidebar.Input) > 0 {
+					sidebar.Input = sidebar.Input[:len(sidebar.Input)-1]
+				}
+			case key.Action == "":
+				for _, r := range string(key.Data) {
+					if r >= ' ' && r != 0x7f && r != utf8.RuneError && len(sidebar.Input) < sidebarMaxName {
+						sidebar.Input = append(sidebar.Input, r)
+					}
+				}
+			}
+			return
+		}
+		switch {
+		case key.Action == "up":
+			sidebar.Selected = max(0, sidebar.Selected-1)
+		case key.Action == "down" || key.Action == "details":
+			sidebar.Selected = min(len(sessions)-1, sidebar.Selected+1)
+		case key.Action == "enter":
+			sidebar.Focus = false
+			switchTo(sidebar.Selected)
+		case key.Action == "escape" || bytes.Equal(key.Data, []byte{3}):
+			sidebar.Focus = false
+		case bytes.Equal(key.Data, []byte("n")):
+			sidebar.Focus = false
+			addSession()
+		case bytes.Equal(key.Data, []byte("r")):
+			startRename(sidebar.Selected)
+		}
+	}
+	// sidebarMouse handles a pointer event over the session list.
+	sidebarMouse := func(mouse *panelMouse) {
+		dirty = true
+		if mouse.Release || mouse.Button != 0 {
+			return
+		}
+		if sidebar.Renaming {
+			finishRename(true)
+		}
+		switch kind, index := sidebarHit(mouse.X, mouse.Y, len(sessions), sidebar.Selected, top); kind {
+		case sidebarHitNew:
+			sidebar.Focus = false
+			addSession()
+		case sidebarHitRename:
+			startRename(active)
+		case sidebarHitSession:
+			sidebar.Focus = false
+			sidebar.Selected = index
+			switchTo(index)
+		}
+	}
 	handleKeys := func(keys []panelKey) {
 		for _, key := range keys {
-			if key.Action == "resize" {
+			s := cur()
+			if !key.Pasted && nativeTerminalReply(key.Data) {
+				s.emulator.SendText(string(key.Data))
+				continue
+			}
+			if shortcuts && opts.Sidebar && key.Action == "sessions" && !drawer.Open {
+				switch {
+				case !sidebar.Visible:
+					sidebar.Visible, sidebar.Focus = true, true
+					sidebar.Selected = active
+				case !sidebar.Focus:
+					sidebar.Focus = true
+					sidebar.Selected = active
+				default:
+					if sidebar.Renaming {
+						finishRename(false)
+					}
+					sidebar.Visible, sidebar.Focus = false, false
+				}
+				resizeAll()
+				dirty = true
+				continue
+			}
+			if sidebar.Focus && !drawer.Open && key.Mouse == nil {
+				sidebarKey(key)
+				continue
+			}
+			if shortcuts && key.Action == "resize" {
 				if drawer.Open {
 					drawer.close()
 				}
@@ -305,31 +417,53 @@ func runPane(agent paneAgent, args []string, input, output *os.File, exercise *t
 				dirty = true
 				continue
 			}
-			if key.Action == "focus" {
+			if (shortcuts || drawer.Open) && key.Action == "focus" {
 				divider.Dragging = false
 				divider.Hover = false
 				setPointer(false)
 				if drawer.Open {
 					drawer.close()
 				} else {
-					drawer.open(advice)
+					drawer.open(s.advice)
 				}
 				dirty = true
 				continue
 			}
 			if key.Mouse != nil {
 				mouse := key.Mouse
+				side := sideWidth()
+				overSidebar := side > 0 && !drawer.Open && mouse.X <= side && mouse.Y <= top && !divider.Dragging
+				if overSidebar {
+					if motion, changed := divider.hover(mouse, rows, top); motion {
+						setPointer(divider.Hover || divider.Dragging)
+						dirty = dirty || changed
+						continue
+					}
+					sidebarMouse(mouse)
+					continue
+				}
+				if side > 0 && !drawer.Open && mouse.Y <= top && sidebar.Focus && !mouse.Release && mouse.Button == 0 {
+					if sidebar.Renaming {
+						finishRename(true)
+					}
+					sidebar.Focus = false // a click in the agent returns the keyboard to it
+				}
+				// Agent coordinates start after the sidebar.
+				agentMouse := *mouse
+				if mouse.Y <= top && !drawer.Open {
+					agentMouse.X = mouse.X - side
+				}
 				// The panel belongs to the same conversation view. A wheel over
 				// it must read history too, rather than silently doing nothing.
-				if up, wheel := mouse.verticalWheel(); !drawer.Open && wheel {
-					if emulator.IsAltScreen() {
+				if up, wheel := agentMouse.verticalWheel(); !drawer.Open && wheel {
+					if s.emulator.IsAltScreen() || s.native.mouseRequested() {
 						// An alternate-screen agent owns its history. Wheel events over
 						// the compact panel must reach that agent inside its viewport.
-						forwarded := *mouse
-						forwarded.X = min(max(forwarded.X, 1), emulator.Width())
+						forwarded := agentMouse
+						forwarded.X = min(max(forwarded.X, 1), s.emulator.Width())
 						forwarded.Y = min(max(forwarded.Y, 1), top)
-						emulator.SendMouse(forwarded.event())
-					} else if scroll.wheel(up, emulator.ScrollbackLen()) {
+						s.emulator.SendMouse(forwarded.event())
+					} else if s.scroll.wheel(up, s.emulator.ScrollbackLen()) {
 						if exercise != nil {
 							if up {
 								exercise.WheelUp = true
@@ -349,9 +483,9 @@ func runPane(agent paneAgent, args []string, input, output *os.File, exercise *t
 					}
 				}
 				if !drawer.Open && divider.handle(mouse, rows, top) {
-					content = statusRows()
+					s.content = statusRows(s)
 					beforeTop := top
-					resizeChild()
+					resizeAll()
 					if exercise != nil {
 						if top < beforeTop {
 							exercise.DividerUp = true
@@ -366,12 +500,12 @@ func runPane(agent paneAgent, args []string, input, output *os.File, exercise *t
 					continue
 				}
 				if !drawer.Open && mouse.Y <= top {
-					emulator.SendMouse(mouse.event())
+					s.emulator.SendMouse(agentMouse.event())
 					continue
 				}
 				if !mouse.Release {
 					if !drawer.Open && mouse.Button == 0 && mouse.Y > top {
-						drawer.open(advice)
+						drawer.open(s.advice)
 						divider.Hover = false
 						setPointer(false)
 					} else if drawer.Open {
@@ -418,7 +552,7 @@ func runPane(agent paneAgent, args []string, input, output *os.File, exercise *t
 				default:
 					if bytes.Equal(key.Data, []byte{3}) {
 						drawer.close()
-					} // return control without killing Codex
+					} // return control without killing the agent
 				}
 				dirty = true
 				continue
@@ -429,33 +563,68 @@ func runPane(agent paneAgent, args []string, input, output *os.File, exercise *t
 			// Normal-screen agents leave history in the emulator. Page keys
 			// keep it reachable even if the host withholds mouse reports.
 			// Fullscreen agents keep their own page-key bindings and history.
-			if !emulator.IsAltScreen() && emulator.ScrollbackLen() > 0 && (key.Action == "pageup" || key.Action == "pagedown") {
+			if shortcuts && !s.emulator.IsAltScreen() && s.emulator.ScrollbackLen() > 0 && (key.Action == "pageup" || key.Action == "pagedown") {
 				lines := max(1, top-1)
 				if key.Action == "pagedown" {
 					lines = -lines
 				}
-				if scroll.move(lines, emulator.ScrollbackLen()) {
+				if s.scroll.move(lines, s.emulator.ScrollbackLen()) {
 					dirty = true
 				}
 				continue
 			}
-			if scroll.reset() {
+			if s.scroll.reset() {
 				dirty = true // typing returns to the live screen
 			}
 			// Mouse events and terminal replies use the emulator's input pipe.
 			// Keep keys in that same stream so they cannot overtake a wheel.
-			emulator.SendText(string(key.Data))
+			s.emulator.SendText(string(key.Data))
 		}
+	}
+	signalAll := func(sig syscall.Signal) {
+		for _, s := range sessions {
+			s.signal(sig)
+		}
+	}
+	remove := func(s *paneSession) {
+		index := 0
+		for i, other := range sessions {
+			if other == s {
+				index = i
+			}
+		}
+		wasActive := index == active
+		if wasActive {
+			s.native.deactivate()
+		}
+		sessions = append(sessions[:index], sessions[index+1:]...)
+		switch {
+		case index < active:
+			active--
+		case wasActive:
+			active = min(active, len(sessions)-1)
+			cur().native.activate()
+			drawer.close()
+		}
+		sidebar.Selected = min(sidebar.Selected, len(sessions)-1)
+		if sidebar.Renaming {
+			finishRename(false)
+		}
+		s.release()
+		cur().reload(statusRows)
+		resizeAll()
+		dirty = true
 	}
 	var shutdown <-chan time.Time
 	paintFinal := func() {
-		refreshSession()
-		readFooter()
-		persistSession()
-		stats = loadStats()
-		view.Loops, _ = sessionLoops(currentDir(), session)
-		advice = combinedAdvice(session, stats, view)
-		content = statusRows()
+		s := cur()
+		s.refresh()
+		s.readFooter()
+		s.persist()
+		s.stats = s.loadStats()
+		s.view.Loops, _ = sessionLoops(currentDir(), s.id)
+		s.advice = combinedAdvice(s.id, s.stats, s.view)
+		s.content = statusRows(s)
 		_, _ = io.WriteString(output, paint())
 	}
 	for {
@@ -464,7 +633,7 @@ func runPane(agent paneAgent, args []string, input, output *os.File, exercise *t
 			if !ok {
 				inputChunks = nil
 				handleKeys(keyFeed.feed(nil, true))
-				_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGTERM)
+				signalAll(syscall.SIGTERM)
 				if shutdown == nil {
 					shutdown = time.After(2 * time.Second)
 				}
@@ -472,94 +641,90 @@ func runPane(agent paneAgent, args []string, input, output *os.File, exercise *t
 			}
 			lastInput = time.Now()
 			handleKeys(keyFeed.feed(chunk, false))
-		case <-waitDone:
-			// Preserve any output already delivered before the child exited.
-			for {
-				select {
-				case chunk, ok := <-chunks:
-					if !ok {
-						paintFinal()
-						return waitErr
-					}
-					_, _ = emulator.Write(chunk)
-				default:
-					paintFinal()
-					return waitErr
-				}
-			}
-		case chunk, ok := <-chunks:
-			if !ok {
-				if dirty {
-					readFooter()
-					stats = loadStats()
-					view.Loops, _ = sessionLoops(currentDir(), session)
-					advice = combinedAdvice(session, stats, view)
-					content = statusRows()
-					_, _ = io.WriteString(output, paint())
-				}
-				chunks = nil
+		case event := <-events:
+			s := event.session
+			if s.exited {
 				continue
 			}
-			_, _ = emulator.Write(chunk)
-			dirty = true
+			switch event.kind {
+			case paneOutput:
+				_, _ = s.emulator.Write(event.data)
+				dirty = dirty || s == cur()
+			case paneEOF:
+				dirty = dirty || s == cur()
+			case paneExit:
+				s.exited = true
+				if len(sessions) == 1 {
+					// Preserve any output already delivered before the process exited.
+					s.drain(events)
+					paintFinal()
+					return s.waitErr
+				}
+				remove(s)
+			}
 		case <-resize:
 			if width, height, sizeErr := term.GetSize(int(output.Fd())); sizeErr == nil && width > 0 && height > 0 {
 				if exercise != nil {
 					exercise.Resize = true
 				}
 				cols, rows = width, height
-				content = statusRows()
+				for _, s := range sessions {
+					s.content = statusRows(s)
+				}
 				divider.Dragging = false
-				resizeChild()
+				resizeAll()
 				dirty = true
 			}
 		case sig := <-stop:
-			_ = syscall.Kill(-cmd.Process.Pid, sig.(syscall.Signal))
+			signalAll(sig.(syscall.Signal))
 			if sig != syscall.SIGINT && shutdown == nil {
 				shutdown = time.After(2 * time.Second)
 			}
 		case <-shutdown:
-			_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+			signalAll(syscall.SIGKILL)
 			shutdown = nil
 		case <-ticker.C:
-			refreshSession()
+			s := cur()
+			s.refresh()
 			if time.Since(lastInput) >= 80*time.Millisecond {
 				handleKeys(keyFeed.feed(nil, true))
+				s = cur()
 			}
 			if time.Since(lastBeat) >= 2*time.Second {
-				_ = os.Chtimes(paneRegistrationFile(session), time.Now(), time.Now())
-				view.Daemon = isDaemonRunning()
-				view.Branch = gitBranch(view.Project)
-				readGitChanges(&view)
+				for _, other := range sessions {
+					if other == s {
+						other.heartbeat()
+					} else {
+						_ = os.Chtimes(paneRegistrationFile(other.id), time.Now(), time.Now())
+					}
+				}
 				lastBeat = time.Now()
 			}
-			stats = loadStats()
-			readFooter()
-			if agent.Name == "claude" {
-				readClaudeContext(session, &view)
+			s.stats = s.loadStats()
+			s.readFooter()
+			if time.Since(s.lastSave) >= time.Second {
+				s.persist()
 			}
-			if time.Since(lastSessionSave) >= time.Second {
-				persistSession()
-			}
-			loops, journal := sessionLoops(currentDir(), session)
-			view.Loops, view.JournalCoverage = loops, journalCoverage(journal)
-			advice = combinedAdvice(session, stats, view)
-			joined := strings.Join(advice, "\n")
-			if joined != lastAdvice {
-				lastAdvice = joined
+			loops, journal := sessionLoops(currentDir(), s.id)
+			s.view.Loops, s.view.JournalCoverage = loops, journalCoverage(journal)
+			s.advice = combinedAdvice(s.id, s.stats, s.view)
+			joined := strings.Join(s.advice, "\n")
+			if joined != s.lastAdvice {
+				s.lastAdvice = joined
 				dirty = true
 			}
-			content = statusRows()
-			if joinedContent := strings.Join(content, "\n"); joinedContent != lastContent {
-				lastContent, dirty = joinedContent, true
+			s.content = statusRows(s)
+			if joinedContent := strings.Join(s.content, "\n"); joinedContent != s.lastContent {
+				s.lastContent, dirty = joinedContent, true
 			}
-			// Expand for new content, but do not keep reflowing Codex when
+			// Expand for new content, but do not keep reflowing the agent when
 			// temporary advice clears. A physical resize recalculates both areas.
-			if nextTop := divider.top(rows, len(content)); !divider.Manual && nextTop < top {
-				top = nextTop
-				emulator.Resize(cols, top)
-				_ = pty.Setsize(child, &pty.Winsize{Rows: uint16(top), Cols: uint16(cols)})
+			if nextTop := divider.top(rows, len(s.content)); !divider.Manual && nextTop < top {
+				resizeAll()
 				dirty = true
+			}
+			if notice != "" && time.Since(noticeAt) >= 4*time.Second {
+				notice, dirty = "", true
 			}
 			if dirty {
 				if _, err := io.WriteString(output, paint()); err != nil {
@@ -579,19 +744,30 @@ func currentDir() string {
 	return cwd
 }
 
-func renderTerminalPane(emulator *vt.Emulator, cols, rows int, content []string, nativeFooter bool, hud string, hints ...string) string {
-	return renderTerminalPaneGrip(emulator, cols, rows, content, nativeFooter, hud, gripIdle, hints...)
+func renderTerminalPane(emulator *vt.Emulator, cols, rows int, content []string, cursorVisible bool, hud string, hints ...string) string {
+	return renderTerminalPaneGrip(emulator, cols, rows, content, cursorVisible, hud, gripIdle, hints...)
 }
 
-func renderTerminalPaneGrip(emulator *vt.Emulator, cols, rows int, content []string, nativeFooter bool, hud string, grip gripState, hints ...string) string {
-	return renderTerminalPaneView(emulator, 0, cols, rows, content, nativeFooter, hud, grip, hints...)
+func renderTerminalPaneGrip(emulator *vt.Emulator, cols, rows int, content []string, cursorVisible bool, hud string, grip gripState, hints ...string) string {
+	return renderTerminalPaneView(emulator, 0, cols, rows, content, cursorVisible, hud, grip, hints...)
 }
 
 // renderTerminalPaneView draws the agent's screen, or, when offset is above 0,
 // the same window that many lines further back in the emulator's scrollback.
-func renderTerminalPaneView(emulator *vt.Emulator, offset, cols, rows int, content []string, nativeFooter bool, hud string, grip gripState, hints ...string) string {
+func renderTerminalPaneView(emulator *vt.Emulator, offset, cols, rows int, content []string, cursorVisible bool, hud string, grip gripState, hints ...string) string {
+	return renderTerminalPaneSide(emulator, offset, cols, rows, content, cursorVisible, hud, grip, nil, hints...)
+}
+
+// renderTerminalPaneSide also draws the session list down the left edge. The
+// agent's screen is then cols-sidebarWidth wide and starts after it, while the
+// Cully panel keeps the whole window width.
+func renderTerminalPaneSide(emulator *vt.Emulator, offset, cols, rows int, content []string, cursorVisible bool, hud string, grip gripState, side []string, hints ...string) string {
 	var out strings.Builder
-	limit := max(0, min(cols-1, emulator.Width())) // avoid automatic terminal wrap
+	x0 := 0
+	if len(side) > 0 {
+		x0 = sidebarWidth
+	}
+	limit := max(0, min(cols-x0, emulator.Width()))
 	top := min(emulator.Height(), rows)
 	scrollbackLen := emulator.ScrollbackLen()
 	offset = min(max(offset, 0), scrollbackLen)
@@ -608,17 +784,14 @@ func renderTerminalPaneView(emulator *vt.Emulator, offset, cols, rows int, conte
 		}
 		return emulator.CellAt(x, index-scrollbackLen)
 	}
-	footerRow := -1
-	if nativeFooter && offset == 0 {
-		rows, base := footerRows(emulator)
-		_, match := parseFooterRows(rows, base)
-		footerRow = match.Row
-	}
-	out.WriteString("\x1b[?25l")
+	out.WriteString("\x1b[?7l\x1b[?25l")
 	for y := 0; y < top; y++ {
 		fmt.Fprintf(&out, "\x1b[%d;1H\x1b[0m\x1b[2K", y+1)
-		if y == footerRow && top < rows {
-			continue // the native instruments now live in the Cully status view
+		if x0 > 0 {
+			if y < len(side) {
+				out.WriteString(side[y])
+			}
+			fmt.Fprintf(&out, "\x1b[%d;%dH\x1b[0m", y+1, x0+1)
 		}
 		line := uv.NewLine(limit)
 		for x := 0; x < limit; x++ {
@@ -643,9 +816,9 @@ func renderTerminalPaneView(emulator *vt.Emulator, offset, cols, rows int, conte
 	}
 	cursor := emulator.CursorPosition()
 	show := "\x1b[?25h"
-	if offset > 0 {
+	if offset > 0 || !cursorVisible {
 		show = "" // the cursor belongs to the live screen
 	}
-	fmt.Fprintf(&out, "\x1b[%d;%dH%s", min(max(cursor.Y+1, 1), top), min(max(cursor.X+1, 1), cols), show)
+	fmt.Fprintf(&out, "\x1b[?7h\x1b[%d;%dH%s", min(max(cursor.Y+1, 1), top), min(max(cursor.X+1, 1), cols-x0)+x0, show)
 	return out.String()
 }

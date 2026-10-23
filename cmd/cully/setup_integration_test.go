@@ -229,7 +229,7 @@ esac
 				if err != nil || !strings.Contains(string(content), endpoint) {
 					t.Fatalf("%s MCP not connected: %s, %v", agent, content, err)
 				}
-				if _, err := os.Stat(filepath.Join(root, "."+agent, "skills", "cully", "SKILL.md")); err != nil {
+				if _, err := os.Stat(filepath.Join(root, "."+agent, ".cully-runtime", "skills", "cully", "SKILL.md")); err != nil {
 					t.Fatal(err)
 				}
 				hooks := "hooks.json"
@@ -245,8 +245,8 @@ esac
 					t.Fatalf("explicit Codex setup modified Cursor: %v", err)
 				}
 			}
-			if _, err := os.Stat(filepath.Join(root, ".codex", "AGENTS.md")); err != nil {
-				t.Fatalf("missing user-level integration: %v", err)
+			if _, err := os.Stat(filepath.Join(root, ".codex", "AGENTS.md")); !os.IsNotExist(err) {
+				t.Fatalf("setup wrote Cully guidance into native Codex instructions: %v", err)
 			}
 			if entries, err := os.ReadDir(project); err != nil || len(entries) != 0 {
 				t.Fatalf("setup changed project: %v, %v", entries, err)

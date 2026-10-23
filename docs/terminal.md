@@ -42,6 +42,16 @@ Cully forwards native errors too: a subcommand unsupported by the installed agen
 
 Interactive panel requirements: a terminal at least 20 columns by 8 rows, macOS or Linux. Exiting the panel stops the agent's process group.
 
+## Sessions
+
+A sidebar down the left edge of the window lists the named sessions running in that window. Click **+ New** to start another session of the same agent, click a name to switch to it, and click **Rename** then type a name and press Enter. Each session keeps its own agent process, input and scroll position, so switching back returns you to where you were. Sessions belong to the window: closing it ends them, and nothing runs in the background. The sidebar hides itself in windows narrower than 60 columns, and `CULLY_SIDEBAR=0` turns it off.
+
+Keys go to the agent unless the sidebar has focus after you click it. With focus, Up/Down move, Enter switches, `n` creates, `r` renames and Esc returns to the agent. Cully does not take any agent shortcut by default. `CULLY_SHORTCUTS=1` adds F7 to move focus to the sidebar.
+
+## Cully only inside `cully run`
+
+Cully's hooks, skill guidance, panel and sidebar are active only in sessions started with `cully run AGENT`. Running `claude`, `codex` or `cursor-agent` directly gives the native experience: setup puts nothing in their instructions or skill folders, and every Cully hook exits before doing anything unless `cully run` started the session.
+
 ## The health bar
 
 The first row under the agent is a one-line health bar. Every value is measured. A value with no data is left out.
@@ -84,7 +94,7 @@ All agents get the health bar, harness overview, check and edit state, loops, Gi
 | Agent | Extra signals in the terminal | How Cully gets them |
 | --- | --- | --- |
 | Codex | Model, reasoning effort, context, tokens, quota, fast mode | Reads the native footer rows in memory, never a transcript |
-| Claude Code | Context pressure | A hook-fed snapshot. The visible Claude status line is turned off inside the terminal, so there is one display. |
+| Claude Code | Tool events | Claude hooks. Cully installs no status line; Claude's own stays yours. |
 | Cursor CLI | Tool events from shell, file edits and MCP calls | Cursor hooks |
 | Other agents | Process and Git state only, until it has an adapter | None needed |
 

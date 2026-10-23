@@ -31,6 +31,9 @@ func TestMain(m *testing.M) {
 	}
 	os.Setenv("TERM_PROGRAM", program)
 	os.Setenv("SHELL", "/bin/zsh")
+	// Legacy keyboard-control tests opt in; default passthrough has its own tests.
+	os.Setenv("CULLY_SHORTCUTS", "1")
+	os.Setenv("CULLY_RUN_ACTIVE", "1")
 	// Run in a clean Cully environment. From inside a Cully terminal, or an
 	// agent Cully wraps, these are set, and some behavior depends on them: a
 	// statusline prints nothing inside a pane, and measurements follow the agent.

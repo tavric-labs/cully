@@ -23,7 +23,7 @@ A plugin does not do three things, so keep these steps:
 
 - **Install the CLI.** Hooks run `cully` from your `PATH`, where setup writes an absolute path. Run the [installer](/installation) first.
 - **Connect memory.** A plugin cannot know your server URL. Run `cully mcp add --agent AGENT --url URL`, adding `--oauth` for a sign-in server.
-- **Claude Code's status line.** Plugins cannot set it. Run `cully setup --agent claude` if you want the status line.
+- **Direct launches stay native.** Plugin hooks run only inside `cully run`; starting `claude`, `codex` or `cursor-agent` directly runs no Cully hook.
 
 ## Claude Code
 

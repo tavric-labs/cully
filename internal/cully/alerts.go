@@ -63,19 +63,6 @@ func alertColor(l AlertLevel) string {
 // reverse is the SGR for swapped fg/bg — turns a colored label into a filled chip.
 const reverse = "\033[7m"
 
-// alertChip renders the severity label so urgency reads at a glance: WARN and
-// CAUT become filled reverse-video chips (impossible to miss), while advisories
-// and memos stay as quiet colored text so they don't compete for attention.
-func alertChip(l AlertLevel) string {
-	label := l.Display()
-	switch l {
-	case AlertWarn, AlertCaut:
-		return reverse + alertColor(l) + bold + " " + label + " " + rst
-	default:
-		return alertColor(l) + label + rst
-	}
-}
-
 type classifiedSuggestion struct {
 	Level AlertLevel
 	Text  string

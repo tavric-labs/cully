@@ -334,8 +334,6 @@ func runInternal(args []string) error {
 	switch args[0] {
 	case "terminal-check-output":
 		return cully.RunTerminalCheckOutput(os.Stdin, os.Stdout)
-	case "statusline":
-		cully.RunStatusline(os.Stdin, os.Stdout)
 	case "analyze":
 		cully.RunAnalyze(os.Stdin)
 	case "cleanup":

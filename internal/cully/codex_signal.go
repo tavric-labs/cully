@@ -154,6 +154,9 @@ func RunSignalHook(r io.Reader) { RunPaneSignalHook("codex", r) }
 // inactive outside the opt-in terminal, so ordinary agent sessions have no
 // local advisor artifacts.
 func RunPaneSignalHook(agent string, r io.Reader) {
+	if !wrappedSessionActive() && os.Getenv("MODEL_HINT_GUARD") == "" {
+		return
+	}
 	var event toolEvent
 	data, _ := io.ReadAll(io.LimitReader(r, 1<<20))
 	if agent == "cursor" {

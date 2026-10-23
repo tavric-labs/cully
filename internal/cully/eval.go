@@ -293,7 +293,7 @@ func evalSetupWithInstaller(install func(string, bool, ...string) error) EvalSui
 		}
 		s.check("install for every agent", true, "")
 		for _, agent := range []struct{ name, dir string }{{"claude", claude}, {"codex", codex}, {"cursor", cursor}} {
-			skill := filepath.Join(agent.dir, "skills", "cully", "SKILL.md")
+			skill := filepath.Join(agent.dir, ".cully-runtime", "skills", "cully", "SKILL.md")
 			b, err := os.ReadFile(skill)
 			s.check(agent.name+" skill is the canonical one", err == nil && strings.Contains(string(b), strings.TrimSpace(cullySkill())), "%s", skill)
 		}
@@ -306,7 +306,7 @@ func evalSetupWithInstaller(install func(string, bool, ...string) error) EvalSui
 		for _, item := range auditHarness(harnessDirs{Claude: claude, Codex: codex, Cursor: cursor}) {
 			found[item.Component] = item.Present()
 		}
-		for _, component := range []string{"Instructions", "Skills", "Hooks and scripts"} {
+		for _, component := range []string{"Instructions", "Hooks and scripts"} {
 			s.check("harness audit finds "+component+" after setup", found[component], "")
 		}
 		s.check("setup left the project untouched", dirEmpty(project), "")
@@ -323,7 +323,7 @@ func evalSetupWithInstaller(install func(string, bool, ...string) error) EvalSui
 			s.check("uninstall every agent", false, "%v", err)
 			return
 		}
-		s.check("uninstall removes the skills", !fileHas(filepath.Join(claude, "skills", "cully", "SKILL.md"), "") && !fileHas(filepath.Join(codex, "skills", "cully", "SKILL.md"), "") && !fileHas(filepath.Join(cursor, "skills", "cully", "SKILL.md"), ""), "")
+		s.check("uninstall removes the skills", !fileHas(filepath.Join(claude, ".cully-runtime", "skills", "cully", "SKILL.md"), "") && !fileHas(filepath.Join(codex, ".cully-runtime", "skills", "cully", "SKILL.md"), "") && !fileHas(filepath.Join(cursor, ".cully-runtime", "skills", "cully", "SKILL.md"), ""), "")
 		s.check("uninstall removes the hooks", !fileHas(filepath.Join(claude, "settings.json"), `"hooks"`) && !fileHas(filepath.Join(cursor, "hooks.json"), "cully"), "")
 		s.check("uninstall keeps the user's Claude permissions", fileHas(filepath.Join(claude, "settings.json"), "Bash(ls:*)"), "")
 		s.check("uninstall keeps the user's Codex instructions", fileHas(filepath.Join(codex, "AGENTS.md"), "Always run tests."), "")
