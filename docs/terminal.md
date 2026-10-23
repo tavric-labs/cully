@@ -11,7 +11,7 @@ It is an observation surface, not another terminal emulator you have to learn. Y
 
 ## Supported environment
 
-Cully supports **macOS and Linux**, using **zsh + Oh My Zsh** in the OS-provided terminal. Native font configuration targets [macOS Terminal](https://support.apple.com/guide/terminal/welcome/mac), GNOME Terminal, Ptyxis and GNOME Console on Linux. Warp and other third-party terminal apps are outside support; identified unsupported apps receive an instruction to use a native terminal. Unidentified client metadata does not prove support.
+Cully supports **macOS and Linux**, using **zsh + Oh My Zsh** in macOS Terminal, Ghostty, iTerm2, Kitty, WezTerm, Alacritty or a native Linux terminal. These all speak the mouse, keyboard and sync protocols Cully needs; Warp's input model conflicts with Cully owning the screen, so it stays unsupported with its own guidance. Native font configuration targets [macOS Terminal](https://support.apple.com/guide/terminal/welcome/mac), GNOME Terminal, Ptyxis and GNOME Console on Linux. Ghostty's embedded Nerd symbols already render icons; iTerm2, Kitty, WezTerm and Alacritty need a Nerd Font selected in their own settings. Unidentified client metadata does not prove support.
 
 Setup applies a consistent preset automatically: MesloLGS Nerd Font Mono at **14 pt on macOS** or **12 pt on Linux**, plus the stock `robbyrussell` prompt for a new Oh My Zsh configuration. An existing Oh My Zsh configuration is reused. Bash, fish and other interactive shells are outside the supported setup. This does not restrict a coding agent's own shell tools.
 

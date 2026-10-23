@@ -193,7 +193,7 @@ func setupShell(input, output *os.File, dryRun bool) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprintln(output, "Cully terminal requirements: macOS or Linux, zsh + Oh My Zsh. Use your OS-provided terminal.")
+	fmt.Fprintln(output, "Cully terminal requirements: macOS or Linux, zsh + Oh My Zsh, in macOS Terminal, Ghostty, iTerm2, Kitty, WezTerm, Alacritty or a native Linux terminal.")
 	if p.ready() {
 		fmt.Fprintln(output, "zsh + Oh My Zsh: already configured.")
 		return nil

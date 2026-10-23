@@ -281,8 +281,14 @@ func runPaneOptions(agent paneAgent, args []string, input, output *os.File, exer
 	}
 	finishRename := func(save bool) {
 		if save {
-			if name := cleanSessionName(sidebar.Input); name != "" {
+			names := make([]string, len(sessions))
+			for i, s := range sessions {
+				names[i] = s.name
+			}
+			if name, ok := renameSessionName(names, sidebar.Selected, sidebar.Input); ok {
 				sessions[sidebar.Selected].name = name
+			} else if cleanSessionName(sidebar.Input) != "" {
+				say("session name already used")
 			}
 		}
 		sidebar.Renaming = false
