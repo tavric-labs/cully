@@ -1,5 +1,3 @@
-//go:build !windows
-
 package cully
 
 import (
@@ -28,8 +26,8 @@ func TestCodexNativeFooter(t *testing.T) {
 	}
 	content := sessionStatusRows(180, nil, toolStats{}, view)
 	frame := ansi.Strip(renderTerminalPane(emulator, 180, 32, content, true, ""))
-	if strings.Contains(frame, "Context 73% left · 1.2K in") {
-		t.Fatal("duplicate native footer still shown above Cully")
+	if !strings.Contains(frame, "Context 73% left · 1.2K in") {
+		t.Fatal("Cully removed the user's native footer")
 	}
 	if !strings.Contains(frame, "73% left") || !strings.Contains(frame, "GPT-6.1-Sol medium") {
 		t.Fatal("native instruments missing from Cully")

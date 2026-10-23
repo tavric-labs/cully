@@ -1,5 +1,3 @@
-//go:build !windows
-
 package cully
 
 // paneScroll lets the mouse wheel read output that has scrolled off the agent's
@@ -19,11 +17,15 @@ func (s *paneScroll) active() bool { return s.Offset > 0 }
 
 // wheel moves the view and reports whether it changed.
 func (s *paneScroll) wheel(up bool, scrollbackLen int) bool {
-	next := s.Offset - wheelLines
+	lines := -wheelLines
 	if up {
-		next = s.Offset + wheelLines
+		lines = wheelLines
 	}
-	next = min(max(next, 0), scrollbackLen)
+	return s.move(lines, scrollbackLen)
+}
+
+func (s *paneScroll) move(lines, scrollbackLen int) bool {
+	next := min(max(s.Offset+lines, 0), scrollbackLen)
 	changed := next != s.Offset
 	s.Offset = next
 	return changed

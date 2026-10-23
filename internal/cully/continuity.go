@@ -65,6 +65,7 @@ func continuityNativeSessionID(agent string, in continuityHookInput) string {
 }
 
 func continuityPrompt(base, agent string, in continuityHookInput) string {
+	base = "Cully session active. For session controls, read " + runtimeSkillPath(agent) + ". " + base
 	if ref := continuitySessionRef(agent, in); ref != "" {
 		prompt := base + " For this session, set cully_log.session_ref to " + ref
 		if id := continuityNativeSessionID(agent, in); id != "" {
@@ -86,6 +87,9 @@ func cursorSessionID(in continuityHookInput) string {
 // It never sends a transcript or calls MCP itself: OAuth credentials stay with
 // the agent, and the agent chooses a concise record from work it actually did.
 func RunContinuityHook(agent, event string, r io.Reader, w io.Writer) {
+	if !wrappedSessionActive() {
+		return
+	}
 	if os.Getenv("MODEL_HINT_GUARD") != "" {
 		return // background advisor analysis must not start continuity loops
 	}

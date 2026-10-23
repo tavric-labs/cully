@@ -140,6 +140,7 @@ func loadHookConfig(path string) (map[string]any, error) {
 }
 
 func setCursorHook(m map[string]any, event, cmd, sub string) {
+	cmd = scopedHookCommand(cmd)
 	hooks, _ := m["hooks"].(map[string]any)
 	if hooks == nil {
 		hooks = map[string]any{}

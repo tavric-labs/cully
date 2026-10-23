@@ -296,71 +296,12 @@ type barSeg struct {
 
 const prioPinned = 1 << 20
 
-// assembleRow joins segments with the " · " separator, dropping the
-// lowest-priority optional segments until the visible width fits cols. Segments
-// are dropped whole (never cut mid-escape) and pinned segments always survive.
-// Original left-to-right order is preserved in the output.
-func assembleRow(segs []barSeg, cols int) string {
-	const sepW = 3 // visible width of " · "
-	sep := dim + " · " + rst
-	in := make([]bool, len(segs))
-	w := make([]int, len(segs))
-	for i, s := range segs {
-		in[i] = true
-		w[i] = visibleWidth(s.text)
-	}
-	width := func() int {
-		total, n := 0, 0
-		for i := range segs {
-			if in[i] {
-				total += w[i]
-				n++
-			}
-		}
-		if n > 1 {
-			total += (n - 1) * sepW
-		}
-		return total
-	}
-	for width() > cols {
-		lowest, at := prioPinned, -1
-		for i, s := range segs {
-			if in[i] && s.prio < lowest {
-				lowest, at = s.prio, i
-			}
-		}
-		if at < 0 || lowest >= prioPinned {
-			break // only pinned segments remain
-		}
-		in[at] = false
-	}
-	var parts []string
-	for i, s := range segs {
-		if in[i] {
-			parts = append(parts, s.text)
-		}
-	}
-	return strings.Join(parts, sep)
-}
-
 // pctColor returns green/yellow/red for a usage percentage.
 func pctColor(p int) string {
 	switch {
 	case p >= 90:
 		return red
 	case p >= 75:
-		return yellow
-	default:
-		return green
-	}
-}
-
-// costColor flags session spend: green under $5, yellow under $20, red beyond.
-func costColor(usd float64) string {
-	switch {
-	case usd >= 20:
-		return red
-	case usd >= 5:
 		return yellow
 	default:
 		return green

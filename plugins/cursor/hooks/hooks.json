@@ -2,45 +2,45 @@
   "hooks": {
     "afterAgentResponse": [
       {
-        "command": "cully _internal continuity cursor response"
+        "command": "if [ \"${CULLY_RUN_ACTIVE:-}\" = \"1\" ]; then cully _internal continuity cursor response; fi"
       }
     ],
     "afterFileEdit": [
       {
-        "command": "cully _internal pane-signal cursor",
+        "command": "if [ \"${CULLY_RUN_ACTIVE:-}\" = \"1\" ]; then cully _internal pane-signal cursor; fi",
         "timeout": 5
       }
     ],
     "afterMCPExecution": [
       {
-        "command": "cully _internal pane-signal cursor",
+        "command": "if [ \"${CULLY_RUN_ACTIVE:-}\" = \"1\" ]; then cully _internal pane-signal cursor; fi",
         "timeout": 5
       }
     ],
     "afterShellExecution": [
       {
-        "command": "cully _internal pane-signal cursor",
+        "command": "if [ \"${CULLY_RUN_ACTIVE:-}\" = \"1\" ]; then cully _internal pane-signal cursor; fi",
         "timeout": 5
       }
     ],
     "beforeSubmitPrompt": [
       {
-        "command": "cully _internal continuity cursor prompt"
+        "command": "if [ \"${CULLY_RUN_ACTIVE:-}\" = \"1\" ]; then cully _internal continuity cursor prompt; fi"
       }
     ],
     "sessionEnd": [
       {
-        "command": "cully _internal continuity cursor end"
+        "command": "if [ \"${CULLY_RUN_ACTIVE:-}\" = \"1\" ]; then cully _internal continuity cursor end; fi"
       }
     ],
     "sessionStart": [
       {
-        "command": "cully _internal continuity cursor start"
+        "command": "if [ \"${CULLY_RUN_ACTIVE:-}\" = \"1\" ]; then cully _internal continuity cursor start; fi"
       }
     ],
     "stop": [
       {
-        "command": "cully _internal continuity cursor stop",
+        "command": "if [ \"${CULLY_RUN_ACTIVE:-}\" = \"1\" ]; then cully _internal continuity cursor stop; fi",
         "loop_limit": null
       }
     ]

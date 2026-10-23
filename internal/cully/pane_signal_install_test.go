@@ -106,30 +106,6 @@ func TestCursorPaneSignalEvents(t *testing.T) {
 	}
 }
 
-func TestStatuslineIsSilentDataFeedInsidePane(t *testing.T) {
-	t.Setenv("CLAUDE_CONFIG_DIR", t.TempDir())
-	t.Setenv("CULLY_PANE_SESSION", "pane-claude")
-	in := `{"session_id":"native","model":{"display_name":"Opus"},"workspace":{"current_dir":"/tmp/foo"},"context_window":{"used_percentage":30,"total_input_tokens":300000,"context_window_size":1000000}}`
-	var out strings.Builder
-	RunStatusline(strings.NewReader(in), &out)
-	if out.Len() != 0 {
-		t.Fatalf("status line must be silent inside the terminal: %q", out.String())
-	}
-	var view sessionView
-	readClaudeContext("pane-claude", &view)
-	if !view.ContextKnown || view.ContextLeft != 70 {
-		t.Fatalf("context = %+v", view)
-	}
-	if view.Model != "Opus" || view.Input != "300k" {
-		t.Fatalf("model and tokens must come from the Claude feed: %+v", view)
-	}
-	var unknown sessionView
-	readClaudeContext("other", &unknown)
-	if unknown.ContextKnown {
-		t.Fatal("unknown session must not report context")
-	}
-}
-
 func TestPanelWaitingTextNamesTheRunningAgent(t *testing.T) {
 	if got := waitingForAgent(sessionView{Agent: "claude"}, true); got != "waiting for Claude" {
 		t.Fatalf("claude: %q", got)

@@ -54,7 +54,7 @@ func TestEvalSetupDetectsBrokenInstaller(t *testing.T) {
 		if err := installAgents(endpoint, oauth, targets...); err != nil {
 			return err
 		}
-		return os.Remove(filepath.Join(CodexConfigDir(), "skills", "cully", "SKILL.md"))
+		return os.Remove(filepath.Join(CodexConfigDir(), ".cully-runtime", "skills", "cully", "SKILL.md"))
 	})
 	if !strings.Contains(strings.Join(failures(suite), "\n"), "codex skill is the canonical one") {
 		t.Fatalf("broken installation passed: %+v", suite)

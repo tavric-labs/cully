@@ -1,5 +1,3 @@
-//go:build !windows
-
 package cully
 
 import (
@@ -171,19 +169,39 @@ if [ "$1" -lt 33 ]; then exit 2; fi
 	}
 }
 
-func TestWarpPaneWheelReachesHistoryBeforeAndAfterAdvisor(t *testing.T) {
+func TestPaneWheelReachesHistoryBeforeAndAfterAdvisor(t *testing.T) {
+	for _, program := range []string{"Apple_Terminal", "gnome-terminal", "ptyxis", ""} {
+		for _, legacy := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/legacy=%t", program, legacy), func(t *testing.T) {
+				testPaneWheelReachesHistoryBeforeAndAfterAdvisor(t, program, legacy)
+			})
+		}
+	}
+}
+
+func testPaneWheelReachesHistoryBeforeAndAfterAdvisor(t *testing.T, program string, legacy bool) {
 	t.Setenv("CULLY_ANALYZE_DISABLE", "1")
-	t.Setenv("TERM_PROGRAM", "WarpTerminal")
+	t.Setenv("TERM_PROGRAM", program)
 	dir := t.TempDir()
 	t.Setenv("CLAUDE_CONFIG_DIR", dir)
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	script := `#!/bin/sh
 stty raw -echo
 i=1
-while [ "$i" -le 80 ]; do printf 'warp line %02d\r\n' "$i"; i=$((i+1)); done
+while [ "$i" -le 80 ]; do printf 'history line %02d\r\n' "$i"; i=$((i+1)); done
 while :; do
   c=$(dd bs=1 count=1 2>/dev/null)
-  case "$c" in n) printf 'new tail\r\n';; q) exit 0;; esac
+  case "$c" in
+    n) printf 'new tail\r\n';;
+    a)
+      set -- $(stty size)
+      printf '\033[?1049h\033[?1000h\033[?1006hALT rows=%s' "$1"
+      expected=$(printf '\033[<80;5;1M\033[<81;%s;%sM\033[5~\033[6~' "$2" "$1")
+      dd bs=1 count="${#expected}" of="$CLAUDE_CONFIG_DIR/alt-wheel" 2>/dev/null
+      printf '\r\nALT wheel received'
+      ;;
+    q) exit 0;;
+  esac
 done
 `
 	if err := os.WriteFile(filepath.Join(dir, "codex"), []byte(script), 0755); err != nil {
@@ -228,7 +246,20 @@ done
 		}
 	}()
 	done := make(chan error, 1)
-	go func() { done <- RunPane("codex", nil, slave, slave) }()
+	exercise := &terminalExercise{}
+	go func() {
+		agent, _ := lookupPaneAgent("codex")
+		done <- runPane(agent, nil, slave, slave, exercise)
+		close(done)
+	}()
+	defer func() {
+		_ = master.Close()
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			t.Error("pane did not stop during cleanup")
+		}
+	}()
 	wait := func(check func(string, string) bool) {
 		t.Helper()
 		deadline := time.Now().Add(4 * time.Second)
@@ -242,25 +273,31 @@ done
 		_, screen := snapshot()
 		t.Fatalf("terminal state did not arrive: %s", screen)
 	}
-	wait(func(_, screen string) bool { return strings.Contains(screen, "warp line 80") })
+	wait(func(_, screen string) bool { return strings.Contains(screen, "history line 80") })
 	raw, _ := snapshot()
-	if !strings.Contains(raw, "\x1b[?1000h") || !strings.Contains(raw, "\x1b[?1006h") || strings.Contains(raw, "\x1b[?1003h") {
-		t.Fatal("Warp needs wheel reports, with continuous motion deferred")
+	if !strings.Contains(raw, "\x1b[?1000h") || !strings.Contains(raw, "\x1b[?1006h") || !strings.Contains(raw, "\x1b[?1003h") {
+		t.Fatal("mouse, wheel and hover reporting must be enabled")
+	}
+	encodeWheel := func(button, x, y int) string {
+		if legacy {
+			return string([]byte{'\x1b', '[', 'M', byte(button + 32), byte(x + 32), byte(y + 32)})
+		}
+		return fmt.Sprintf("\x1b[<%d;%d;%dM", button, x, y)
 	}
 	wheel := func(up bool, y int) {
 		t.Helper()
-		button := 65
+		button := 81 // Ctrl modifier must not hide the wheel from Cully.
 		if up {
-			button = 64
+			button = 80
 		}
-		_, err := master.Write([]byte(strings.Repeat(fmt.Sprintf("\x1b[<%d;5;%dM", button, y), 40)))
+		_, err := master.Write([]byte(strings.Repeat(encodeWheel(button, 5, y), 40)))
 		if err != nil {
 			t.Fatal(err)
 		}
 	}
 	wheel(true, 1)
 	wait(func(_, screen string) bool {
-		return strings.Contains(screen, "warp line 01") && strings.Contains(screen, "lines back") && !strings.Contains(screen, "warp line 80")
+		return strings.Contains(screen, "history line 01") && strings.Contains(screen, "lines back") && !strings.Contains(screen, "history line 80")
 	})
 	_, _ = master.Write([]byte("n"))
 	wait(func(_, screen string) bool {
@@ -268,25 +305,52 @@ done
 	})
 	wheel(true, 40) // the compact panel must not swallow conversation scrolling
 	wait(func(_, screen string) bool {
-		return strings.Contains(screen, "warp line 01") && strings.Contains(screen, "lines back")
+		return strings.Contains(screen, "history line 01") && strings.Contains(screen, "lines back")
 	})
 	wheel(false, 40)
 	wait(func(_, screen string) bool {
 		return strings.Contains(screen, "new tail") && !strings.Contains(screen, "lines back")
 	})
+	_, _ = master.Write([]byte("\x1b[5~"))
+	wait(func(_, screen string) bool {
+		return strings.Contains(screen, "lines back") && !strings.Contains(screen, "new tail")
+	})
+	_, _ = master.Write([]byte("\x1b[6~"))
+	wait(func(_, screen string) bool {
+		return strings.Contains(screen, "new tail") && !strings.Contains(screen, "lines back")
+	})
 	_, _ = master.Write([]byte{0x1d})
-	wait(func(raw, _ string) bool { return strings.Contains(raw, "\x1b[?1003h") })
-	before, _ := snapshot()
+	wait(func(raw, screen string) bool {
+		return strings.Contains(raw, "\x1b[?1003h") && strings.Contains(screen, "Cully Advisor")
+	})
 	_, _ = master.Write([]byte{0x1b})
-	wait(func(raw, _ string) bool { return strings.Contains(raw[len(before):], "\x1b[?1003l") })
+	wait(func(raw, screen string) bool {
+		return strings.Contains(screen, "new tail") && !strings.Contains(screen, "Cully Advisor")
+	})
 	raw, _ = snapshot()
 	if strings.Contains(raw, "\x1b[?1000l") || strings.Contains(raw, "\x1b[?1006l") {
 		t.Fatal("closing advisor disabled wheel reports")
 	}
 	wheel(true, 1)
 	wait(func(_, screen string) bool {
-		return strings.Contains(screen, "warp line 01") && strings.Contains(screen, "lines back")
+		return strings.Contains(screen, "history line 01") && strings.Contains(screen, "lines back")
 	})
+	// Alternate-screen agents scroll themselves, including when the pointer is
+	// over Cully's compact panel rather than over the agent viewport.
+	_, _ = master.Write([]byte("a"))
+	wait(func(_, screen string) bool { return strings.Contains(screen, "ALT rows=") })
+	_, screen := snapshot()
+	var altRows int
+	if _, err := fmt.Sscanf(screen[strings.Index(screen, "ALT rows="):], "ALT rows=%d", &altRows); err != nil {
+		t.Fatal(err)
+	}
+	_, _ = master.Write([]byte(encodeWheel(80, 5, 1) + encodeWheel(81, 200, 40) + "\x1b[5~\x1b[6~"))
+	wait(func(_, screen string) bool { return strings.Contains(screen, "ALT wheel received") })
+	received, err := os.ReadFile(filepath.Join(dir, "alt-wheel"))
+	agentCols := 120
+	if want := fmt.Sprintf("\x1b[<80;5;1M\x1b[<81;%d;%dM\x1b[5~\x1b[6~", agentCols, altRows); err != nil || string(received) != want {
+		t.Fatalf("alternate-screen wheel reports=%q, want %q (%v)", received, want, err)
+	}
 	_, _ = master.Write([]byte("q"))
 	select {
 	case err := <-done:
@@ -299,6 +363,9 @@ done
 	wait(func(raw, _ string) bool {
 		return strings.Contains(raw, "\x1b[?1000l") && strings.Contains(raw, "\x1b[?1006l") && strings.Contains(raw, "\x1b[?1049l")
 	})
+	if !exercise.WheelUp || !exercise.WheelDown || !exercise.AdvisorOpen || !exercise.AdvisorClose || !exercise.Status {
+		t.Fatalf("live check missed observed features: %+v", exercise)
+	}
 }
 
 func TestCodexPaneAdvisorControlsDoNotReachChild(t *testing.T) {

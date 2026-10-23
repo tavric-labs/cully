@@ -1,9 +1,6 @@
 package cully
 
 import (
-	"encoding/json"
-	"os"
-	"path/filepath"
 	"reflect"
 	"testing"
 )
@@ -73,60 +70,6 @@ func TestMergeUpdateRetainsAndOverwrites(t *testing.T) {
 	}
 }
 
-func TestDecodeSnapshot(t *testing.T) {
-	full := cullySnapshot{Model: "Opus", CtxSize: 200000, ContextUsedPct: 27,
-		CtxTokens: 140000, TokensOut: 42000, Rate5hPct: 82, Rate7dPct: 9,
-		LinesAdded: 42, LinesRemoved: 7}
-	upd := decodeSnapshot(full)
-	if upd.Source != sourceSnapshot || strVal(upd.Model) != "Opus" ||
-		upd.ContextLeft == nil || *upd.ContextLeft != 73 ||
-		strVal(upd.Input) != "140k" || strVal(upd.Output) != "42k" ||
-		strVal(upd.FiveHour) != "82% used" || strVal(upd.Weekly) != "9% used" {
-		t.Fatalf("update = %+v", upd)
-	}
-	if upd.LinesAdded == nil || *upd.LinesAdded != 42 || upd.LinesRemoved == nil || *upd.LinesRemoved != 7 {
-		t.Fatalf("lines = %+v", upd)
-	}
-	modelOnly := cullySnapshot{Model: "Opus"}
-	upd = decodeSnapshot(modelOnly)
-	if upd.Model == nil || upd.ContextLeft != nil || upd.Input != nil || upd.LinesAdded != nil {
-		t.Fatalf("model-only snapshot must not fill context: %+v", upd)
-	}
-	quiet := cullySnapshot{CtxSize: 1}
-	upd = decodeSnapshot(quiet)
-	if upd.Model != nil || upd.LinesAdded != nil {
-		t.Fatalf("empty snapshot must stay silent: %+v", upd)
-	}
-}
-
 // TestSessionSnapshotFixtureDecodesAcrossSaves pins the persisted snapshot
 // shape: a saved fixture must decode the same before and after a save/load
 // round trip, so a Go rename can never silently change stored state.
-func TestSessionSnapshotFixtureDecodesAcrossSaves(t *testing.T) {
-	raw, err := os.ReadFile(filepath.Join("testdata", "session_snapshot.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var snap cullySnapshot
-	if err := json.Unmarshal(raw, &snap); err != nil {
-		t.Fatal(err)
-	}
-	if snap.Model != "Opus" || snap.ContextUsedPct != 27 || snap.LinesAdded != 42 {
-		t.Fatalf("fixture = %+v", snap)
-	}
-	before := decodeSnapshot(snap)
-	saved, err := json.Marshal(snap)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var reloaded cullySnapshot
-	if err := json.Unmarshal(saved, &reloaded); err != nil {
-		t.Fatal(err)
-	}
-	after := decodeSnapshot(reloaded)
-	if strVal(after.Model) != strVal(before.Model) ||
-		(after.ContextLeft == nil) != (before.ContextLeft == nil) ||
-		(after.ContextLeft != nil && *after.ContextLeft != *before.ContextLeft) {
-		t.Fatalf("round trip changed decoding: %+v vs %+v", before, after)
-	}
-}

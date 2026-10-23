@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -26,16 +27,13 @@ func TestSetupLifecycle(t *testing.T) {
 		name, endpoint, failure string
 		args                    []string
 		agents                  []string
-		prepare, oauth, remote  bool
-		customAuth              bool
+		oauth, remote           bool
 	}{
 		{name: "detect agents", args: []string{"--all"}, agents: []string{"codex", "cursor"}},
 		{name: "selected agent", args: []string{"--agent", "codex", "--all"}, agents: []string{"codex"}},
 		{name: "all agents", args: []string{"--agent", "all", "--all"}, agents: []string{"claude", "codex", "cursor"}},
 		{name: "OAuth", args: []string{"--agent", "codex", "--oauth", "--mcp-url", "mock"}, agents: []string{"codex"}, oauth: true, remote: true},
 		{name: "existing server", args: []string{"--agent", "codex", "--mcp-url", "https://mcp.example.test/mcp"}, agents: []string{"codex"}, remote: true, endpoint: "https://mcp.example.test/mcp"},
-		{name: "prepare only", args: []string{"--all", "--prepare"}, prepare: true},
-		{name: "prepare provider files", args: []string{"--all", "--oauth", "--prepare"}, prepare: true, oauth: true, customAuth: true},
 		{name: "Docker failure", args: []string{"--all"}, failure: "Docker"},
 		{name: "advisor failure", args: []string{"--all"}, failure: "advisor"},
 	} {
@@ -109,18 +107,29 @@ esac
 				write(filepath.Join(config, "connectors.json"), `{"org":{"client_secret_env":"MCP_AUTH_UPSTREAM_CLIENT_SECRET"}}`)
 				write(filepath.Join(config, ".secrets", "signing-key.pem"), "test-key")
 			}
-			if test.customAuth {
-				source := filepath.Join(root, "my provider files")
-				if err := os.Mkdir(source, 0o700); err != nil {
-					t.Fatal(err)
-				}
-				write(filepath.Join(source, "my-login.json"), `{"methods":[{"id":"custom","type":"ldap"}]}`)
-				provider := filepath.Join(root, "provider.env")
-				write(provider, "MCP_AUTH_LOGIN_METHODS_FILE=/etc/mcp-auth/my-login.json\nCUSTOM_SECRET=private-value\n")
-				// Exercise the actual CLI without querying an external release service.
-				args = append(args, "--mcp-auth-image", "example/auth:ci", "--mcp-auth-config-dir", source, "--mcp-auth-env", provider)
+			// Model an already configured native terminal. No test may download
+			// software, change the test runner's login shell or launch its GUI.
+			if err := os.Mkdir(filepath.Join(root, ".oh-my-zsh"), 0700); err != nil {
+				t.Fatal(err)
 			}
-			env := append(os.Environ(), "HOME="+root, "PATH="+bin,
+			write(filepath.Join(root, ".oh-my-zsh", "oh-my-zsh.sh"), "# fixture")
+			write(filepath.Join(root, ".zshrc"), "source \"$ZSH/oh-my-zsh.sh\"\n")
+			write(filepath.Join(bin, "zsh"), "#!/bin/sh\nexit 0\n")
+			write(filepath.Join(bin, "tty"), "#!/bin/sh\necho /dev/ttys123\n")
+			write(filepath.Join(bin, "osascript"), "#!/bin/sh\nprintf 'Basic\\tMesloLGSNFM-Regular\\t14\\n'\n")
+			write(filepath.Join(bin, "gsettings"), `#!/bin/sh
+case "$*" in
+ *use-system-font) echo false ;;
+ *default) echo "'b1dcc9dd-5262-4d8d-a863-c897e6d979b9'" ;;
+ *) echo "'MesloLGS Nerd Font Mono 12'" ;;
+esac
+`)
+			write(filepath.Join(bin, "fc-match"), "#!/bin/sh\nprintf 'MesloLGS Nerd Font Mono'\n")
+			terminalProgram := "gnome-terminal"
+			if runtime.GOOS == "darwin" {
+				terminalProgram = "Apple_Terminal"
+			}
+			env := append(os.Environ(), "HOME="+root, "PATH="+bin, "SHELL=/bin/zsh", "TERM_PROGRAM="+terminalProgram, "ZSH="+filepath.Join(root, ".oh-my-zsh"), "ZDOTDIR="+root, "SSH_CONNECTION=", "SSH_TTY=", "GNOME_TERMINAL_PROFILE=",
 				"CLAUDE_CONFIG_DIR="+filepath.Join(root, ".claude"),
 				"CODEX_HOME="+filepath.Join(root, ".codex"),
 				"CURSOR_CONFIG_DIR="+filepath.Join(root, ".cursor"),
@@ -162,24 +171,6 @@ esac
 				t.Fatalf("setup: %v: %s", err, output)
 			}
 			dockerCalls, _ := os.ReadFile(filepath.Join(root, "docker-calls"))
-			if test.prepare {
-				if len(dockerCalls) != 0 || strings.Contains(output, "Advisor ready") {
-					t.Fatalf("prepare started components: %s", output)
-				}
-				if _, err := os.Stat(filepath.Join(root, ".codex", "hooks.json")); !os.IsNotExist(err) {
-					t.Fatalf("prepare installed agent hooks: %v", err)
-				}
-				if test.customAuth {
-					saved, err := os.ReadFile(filepath.Join(root, ".cully", "self-hosted", "config", "mcp-auth.json"))
-					if err != nil || !strings.Contains(string(saved), "my provider files") || strings.Contains(string(saved), "private-value") {
-						t.Fatalf("provider inputs were not saved safely: %v", err)
-					}
-					if _, err := os.Stat(filepath.Join(setupDir, "compose.custom-auth.yaml")); err != nil {
-						t.Fatal("missing custom auth service wiring")
-					}
-				}
-				return
-			}
 			if test.remote && len(dockerCalls) != 0 {
 				t.Fatalf("remote setup started Docker: %s", dockerCalls)
 			}
@@ -206,7 +197,7 @@ esac
 				if err != nil || !strings.Contains(string(content), endpoint) {
 					t.Fatalf("%s MCP not connected: %s, %v", agent, content, err)
 				}
-				if _, err := os.Stat(filepath.Join(root, "."+agent, "skills", "cully", "SKILL.md")); err != nil {
+				if _, err := os.Stat(filepath.Join(root, "."+agent, ".cully-runtime", "skills", "cully", "SKILL.md")); err != nil {
 					t.Fatal(err)
 				}
 				hooks := "hooks.json"
@@ -222,8 +213,8 @@ esac
 					t.Fatalf("explicit Codex setup modified Cursor: %v", err)
 				}
 			}
-			if _, err := os.Stat(filepath.Join(root, ".codex", "AGENTS.md")); err != nil {
-				t.Fatalf("missing user-level integration: %v", err)
+			if _, err := os.Stat(filepath.Join(root, ".codex", "AGENTS.md")); !os.IsNotExist(err) {
+				t.Fatalf("setup wrote Cully guidance into native Codex instructions: %v", err)
 			}
 			if entries, err := os.ReadDir(project); err != nil || len(entries) != 0 {
 				t.Fatalf("setup changed project: %v, %v", entries, err)

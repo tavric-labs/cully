@@ -214,12 +214,7 @@ PATH="$BIN_DIR:$PATH"
 export PATH
 
 # Add an idempotent PATH entry for future terminals without replacing settings.
-profile=""
-case "${SHELL:-}" in
-  */zsh) profile="$HOME/.zshrc" ;;
-  */bash)
-    if [ "$os" = darwin ]; then profile="$HOME/.bash_profile"; else profile="$HOME/.bashrc"; fi ;;
-esac
+profile="${ZDOTDIR:-$HOME}/.zshrc"
 if [ -n "$profile" ]; then
   path_line='export PATH="$HOME/.local/bin:$PATH"'
   if [ ! -f "$profile" ] || ! grep -Fqx "$path_line" "$profile"; then
@@ -232,6 +227,7 @@ if [ -n "$profile" ]; then
     say "Cully PATH entry already present in $profile."
   fi
 fi
+say 'Cully supports macOS/Linux native terminals with zsh + Oh My Zsh; setup installs the required shell and font configuration.'
 say 'A piped installer cannot change the PATH or command cache in your current terminal.'
 say 'To refresh this terminal, run: export PATH="$HOME/.local/bin:$PATH"; hash -r'
 say 'Then verify: command -v cully; cully version'
@@ -249,11 +245,11 @@ if [ -n "$mcp_url" ]; then
   "$BIN_DIR/cully" "$@"
 else
   if [ -n "$agent" ]; then
-    say "CLI installed. For the full local stack, start Docker and run: cully setup --agent $agent --all"
-    say "For a deployed stack, run: cully setup --agent $agent --mcp-url URL"
+    say "CLI installed. For the full local stack, start Docker and run: \"$BIN_DIR/cully\" setup --agent $agent --all"
+    say "For a deployed stack, run: \"$BIN_DIR/cully\" setup --agent $agent --mcp-url URL"
   else
-    say 'CLI installed. For the full local stack, start Docker and run: cully setup --all'
-    say 'For a deployed stack, run: cully setup --mcp-url URL'
+    say "CLI installed. For the full local stack, start Docker and run: \"$BIN_DIR/cully\" setup --all"
+    say "For a deployed stack, run: \"$BIN_DIR/cully\" setup --mcp-url URL"
   fi
 fi
 

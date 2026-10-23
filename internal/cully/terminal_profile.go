@@ -17,7 +17,20 @@ func detectTerminalProfile() terminalProfile {
 	if os.Getenv("SSH_TTY") != "" || os.Getenv("SSH_CONNECTION") != "" {
 		connection = "ssh"
 	}
-	return terminalProfile{Program: terminalField(os.Getenv("TERM_PROGRAM")), Type: terminalField(os.Getenv("TERM")), Shell: terminalField(filepath.Base(os.Getenv("SHELL"))), OS: runtime.GOOS, Connection: connection}
+	program := os.Getenv("TERM_PROGRAM")
+	if program == "" {
+		switch {
+		case os.Getenv("GNOME_TERMINAL_SERVICE") != "" || os.Getenv("GNOME_TERMINAL_SCREEN") != "":
+			program = "gnome-terminal"
+		case os.Getenv("PTYXIS_VERSION") != "":
+			program = "ptyxis"
+		case os.Getenv("KGX_VERSION") != "":
+			program = "gnome-console"
+		case os.Getenv("VTE_VERSION") != "":
+			program = "VTE"
+		}
+	}
+	return terminalProfile{Program: terminalField(program), Type: terminalField(os.Getenv("TERM")), Shell: terminalField(filepath.Base(os.Getenv("SHELL"))), OS: runtime.GOOS, Connection: connection}
 }
 
 func terminalField(value string) string {
@@ -33,18 +46,22 @@ func terminalField(value string) string {
 	return value
 }
 
-// isWarp reports Warp's terminal program. Cully defers continuous mouse motion
-// there until the advisor or divider needs it, while keeping wheel reports on
-// so the emulator's history remains reachable.
-func (p terminalProfile) isWarp() bool {
-	return strings.EqualFold(p.Program, "WarpTerminal") || strings.EqualFold(p.Program, "Warp")
+// Unknown client metadata is not proof of support. In particular, SSH does
+// not identify the client OS. Reject identified third-party terminal apps.
+func (p terminalProfile) requireNative() error {
+	if p.OS != "darwin" && p.OS != "linux" {
+		return fmt.Errorf("Cully supports macOS and Linux only")
+	}
+	switch strings.ToLower(p.Program) {
+	case "", "apple_terminal", "gnome-terminal", "ptyxis", "gnome-console", "kgx", "vte":
+		return nil
+	default:
+		return fmt.Errorf("%s is not supported; use macOS Terminal or your Linux desktop's native terminal with zsh + Oh My Zsh", p.Program)
+	}
 }
 
 func (p terminalProfile) label() string {
 	program := p.Program
-	if strings.EqualFold(program, "WarpTerminal") {
-		program = "Warp"
-	}
 	if program == "" {
 		program = fallback(p.Type, "unknown terminal")
 	}

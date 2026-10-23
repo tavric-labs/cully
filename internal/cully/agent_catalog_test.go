@@ -67,9 +67,6 @@ func TestAgentLaunchTableFromCatalog(t *testing.T) {
 	if err != nil || !agent.NativeFooter || agent.ResumeID == nil {
 		t.Fatalf("codex launch entry = %+v %v", agent, err)
 	}
-	if got := agent.Launch([]string{"resume"}); len(got) < 3 || got[0] != "-c" {
-		t.Fatalf("codex launch args = %q", got)
-	}
 	agent, err = lookupPaneAgent("cursor")
 	if err != nil || agent.Binary != "cursor-agent" || agent.NativeFooter {
 		t.Fatalf("cursor launch entry = %+v %v", agent, err)

@@ -2,7 +2,6 @@ package cully
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -31,7 +30,6 @@ type agentSpec struct {
 	ConfigDir func() string
 	Aliases   []string
 	Binary    string
-	Launch    func(args []string) []string
 	ResumeID  func(args []string) string
 	// NativeFooter reports a terminal footer the wrapper can read.
 	NativeFooter bool
@@ -103,7 +101,6 @@ func buildAgentCatalog() []agentSpec {
 			JournalName:      "Codex",
 			ConfigDir:        CodexConfigDir,
 			Binary:           "codex",
-			Launch:           func(args []string) []string { return append([]string{"-c", codexStatusConfig}, args...) },
 			ResumeID:         codexExplicitResumeID,
 			NativeFooter:     true,
 			HasUsageFeed:     true,
@@ -212,21 +209,6 @@ func journalAgentName(agent string) string {
 		return "The agent"
 	}
 	return agent
-}
-
-// statuslineAgent detects the running agent from the hook environment.
-func statuslineAgent() string {
-	if v := strings.TrimSpace(os.Getenv("CULLY_AGENT")); v != "" {
-		return v
-	}
-	switch {
-	case os.Getenv("CURSOR_TRACE_ID") != "", os.Getenv("CURSOR_SESSION_ID") != "", os.Getenv("CURSOR_WORKSPACE_ID") != "":
-		return "cursor"
-	case os.Getenv("CODEX_HOME") != "", os.Getenv("CODEX_SANDBOX") != "", os.Getenv("CODEX_SESSION_ID") != "":
-		return "codex"
-	default:
-		return "agent"
-	}
 }
 
 // installedAgentID returns the first catalog agent with an executable on

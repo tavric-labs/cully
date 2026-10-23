@@ -92,7 +92,12 @@ func installMemorySkill(target string) error {
 	default:
 		return fmt.Errorf("unknown skill target %q", target)
 	}
-	path := filepath.Join(dir, "skills", "cully", "SKILL.md")
+	legacy := filepath.Join(dir, "skills", "cully", "SKILL.md")
+	if err := removeOwnedFile(legacy, "<!-- cully:skill:managed -->"); err != nil {
+		return err
+	}
+	removeWorkflowLink(filepath.Join(dir, "skills", "dev-workflow-rules"))
+	path := runtimeSkillPath(target)
 	wrote, err := writeOwnedFile(path, "<!-- cully:skill:managed -->", cullyskill.Content)
 	if err != nil {
 		return err
@@ -139,7 +144,7 @@ func dirExists(path string) bool {
 	return err == nil && st.IsDir()
 }
 
-// installClaude registers cully into settings.json (statusLine + Stop hook),
+// installClaude registers cully into settings.json (hooks),
 // merging rather than overwriting so other settings/hooks are preserved.
 // Idempotent. The merge is done in Go so the installer needs no jq.
 func installClaude() error {
@@ -158,11 +163,6 @@ func installClaude() error {
 		return err
 	}
 
-	m["statusLine"] = map[string]any{
-		"type":    "command",
-		"command": quote(exe) + " _internal statusline",
-		"padding": 0,
-	}
 	setEventHook(m, "Stop", quote(exe)+" _internal analyze", "analyze")
 	setEventHook(m, "SessionStart", quote(exe)+" _internal continuity claude start", "continuity claude start")
 	setEventHook(m, "UserPromptSubmit", quote(exe)+" _internal continuity claude prompt", "continuity claude prompt")
@@ -180,13 +180,13 @@ func installClaude() error {
 		fmt.Println("Registered /cully (status · suggestions · apply).")
 	}
 	fmt.Printf("\033[32mInstalled.\033[0m Registered cully in %s\n", settingsPath)
-	fmt.Println("Restart Claude Code (or run /hooks) so advisor and continuity hooks load. The status bar is live immediately.\nFor the terminal with live signals, start Claude with: cully run claude")
+	fmt.Println("Cully hooks stay inactive in native launches. Start through cully run to activate them.\nFor the terminal with live signals, start Claude with: cully run claude")
 	fmt.Println("Accept a suggestion: cully apply <n>  (updates agent instructions, MCP, skills after you confirm)")
 	return nil
 }
 
 func installCodex() error {
-	if err := upsertManagedSection(codexInstructionsPath(), "codex", codexAgentInstructions()); err != nil {
+	if err := removeManagedSection(codexInstructionsPath(), "codex"); err != nil {
 		return err
 	}
 	// Older Cully installs added a managed native footer. The status view is
@@ -267,7 +267,10 @@ func removeManagedMemorySkill(target string) error {
 	default:
 		return fmt.Errorf("unknown skill target %q", target)
 	}
-	return removeCullySkillIfUnchanged(filepath.Join(configDir, "skills", "cully", "SKILL.md"))
+	if err := removeCullySkillIfUnchanged(filepath.Join(configDir, "skills", "cully", "SKILL.md")); err != nil {
+		return err
+	}
+	return removeCullySkillIfUnchanged(runtimeSkillPath(target))
 }
 
 // uninstallClaude removes cully's entries from settings.json and deletes
@@ -276,7 +279,6 @@ func uninstallClaude() error {
 	_ = StopDaemon()
 	exe, _ := os.Executable()
 	exe, _ = filepath.Abs(exe)
-	slCmd := quote(exe) + " _internal statusline"
 	settingsPath := filepath.Join(ConfigDir(), "settings.json")
 
 	if _, err := os.Stat(settingsPath); err == nil {
@@ -286,11 +288,6 @@ func uninstallClaude() error {
 		}
 		_ = backup(settingsPath)
 
-		if sl, ok := m["statusLine"].(map[string]any); ok {
-			if cmd, _ := sl["command"].(string); cmd == slCmd || isCullySubcommand(cmd, "statusline") {
-				delete(m, "statusLine")
-			}
-		}
 		removeEventHook(m, "Stop", quote(exe)+" _internal analyze", "analyze")
 		removeEventHook(m, "UserPromptSubmit", "", "continuity claude prompt")
 		removeEventHook(m, "SessionStart", quote(exe)+" _internal continuity claude start", "continuity claude start")
@@ -428,6 +425,7 @@ func backup(path string) error {
 // entry (matched by exact command or by subcommand) first so re-running install
 // never duplicates it. Foreign hooks are preserved.
 func setEventHook(m map[string]any, event, cmd, sub string) {
+	cmd = scopedHookCommand(cmd)
 	hooks, _ := m["hooks"].(map[string]any)
 	if hooks == nil {
 		hooks = map[string]any{}
@@ -451,7 +449,7 @@ func setGuardHook(m map[string]any, exe, agent, matcher string) {
 	list := filterOutCullyCommand(toList(hooks["PreToolUse"]), "", sub)
 	list = append(list, map[string]any{
 		"matcher": matcher,
-		"hooks":   []any{map[string]any{"type": "command", "command": quote(exe) + " _internal " + sub, "timeout": 5}},
+		"hooks":   []any{map[string]any{"type": "command", "command": scopedHookCommand(quote(exe) + " _internal " + sub), "timeout": 5}},
 	})
 	hooks["PreToolUse"] = list
 	m["hooks"] = hooks
@@ -485,12 +483,6 @@ func removeEventHook(m map[string]any, event, cmd, sub string) {
 	}
 }
 
-// filterOutCommand drops hook groups that contain the given command, and any
-// group left with no inner hooks.
-func filterOutCommand(groups []any, cmd string) []any {
-	return filterOutCullyCommand(groups, cmd, "")
-}
-
 func filterOutCullyCommand(groups []any, cmd, subcommand string) []any {
 	out := make([]any, 0, len(groups))
 	for _, g := range groups {
@@ -522,6 +514,7 @@ func isCullySubcommand(cmd, subcommand string) bool {
 	if subcommand == "" {
 		return false
 	}
+	cmd = unscopedHookCommand(cmd)
 	return strings.HasSuffix(cmd, " "+subcommand) && strings.Contains(cmd, "cully")
 }
 
@@ -609,41 +602,6 @@ func expandInstallTargets(targets []string) []string {
 func managedStart(id string) string { return "<!-- cully:" + id + ":start -->" }
 func managedEnd(id string) string   { return "<!-- cully:" + id + ":end -->" }
 
-func upsertManagedSection(path, id, section string) error {
-	start, end := managedStart(id), managedEnd(id)
-	existing, err := os.ReadFile(path)
-	if err != nil && !os.IsNotExist(err) {
-		return err
-	}
-	body := strings.TrimSpace(section)
-	prefix := ""
-	if strings.HasSuffix(path, ".mdc") && strings.HasPrefix(body, "---\n") {
-		rest := body[4:]
-		if i := strings.Index(rest, "\n---"); i >= 0 {
-			prefix = "---\n" + rest[:i] + "\n---\n\n"
-			body = strings.TrimSpace(rest[i+4:])
-		}
-	}
-	block := start + "\n" + body + "\n" + end
-	text := string(existing)
-	if text == "" {
-		text = prefix + block + "\n"
-	} else if s := strings.Index(text, start); s >= 0 {
-		if e := strings.Index(text[s:], end); e >= 0 {
-			e += s + len(end)
-			text = text[:s] + block + text[e:]
-		} else {
-			text = strings.TrimRight(text, "\n") + "\n\n" + block + "\n"
-		}
-	} else {
-		text = strings.TrimRight(text, "\n") + "\n\n" + block + "\n"
-	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-	return os.WriteFile(path, []byte(text), 0o644)
-}
-
 func removeManagedSection(path, id string) error {
 	b, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
@@ -680,15 +638,6 @@ func mdcFrontmatterOnly(text string) bool {
 		return strings.TrimSpace(rest[i+3:]) == ""
 	}
 	return false
-}
-
-func codexAgentInstructions() string {
-	return `## Cully
-
-- Use the user-level Cully skill at ` + "`" + filepath.Join(CodexConfigDir(), "skills", "cully", "SKILL.md") + "`" + ` for Cully session controls.
-- In Codex, use /prompts:cully (or type /cully and select the saved cully prompt) for the in-session cully command.
-- For each substantive task, find relevant prior work with Cully MCP and save one concise work summary before finishing. Follow the Cully skill for project identity, owner section, and private-data rules.
-- Use the configured Cully MCP tools for shared personal and project memory.`
 }
 
 func cullySkill() string {

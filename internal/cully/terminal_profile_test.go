@@ -5,24 +5,19 @@ import (
 	"testing"
 )
 
-func TestTerminalProfileSeparatesWarpFromExecutionHost(t *testing.T) {
-	t.Setenv("TERM_PROGRAM", "WarpTerminal")
+func TestTerminalProfileSeparatesClientFromExecutionHost(t *testing.T) {
+	t.Setenv("TERM_PROGRAM", "Apple_Terminal")
 	t.Setenv("TERM", "xterm-256color")
-	t.Setenv("SHELL", "/bin/bash")
+	t.Setenv("SHELL", "/bin/zsh")
 	t.Setenv("SSH_TTY", "/dev/pts/291")
 	profile := detectTerminalProfile()
-	if profile.Program != "WarpTerminal" || profile.Type != "xterm-256color" || profile.Shell != "bash" || profile.Connection != "ssh" {
+	if profile.Program != "Apple_Terminal" || profile.Type != "xterm-256color" || profile.Shell != "zsh" || profile.Connection != "ssh" {
 		t.Fatalf("%+v", profile)
 	}
-	if !profile.isWarp() {
-		t.Fatal("WarpTerminal must report as Warp")
-	}
-	if !strings.Contains(profile.label(), "Warp · xterm-256color · login shell bash") || !strings.Contains(profile.signals(), "execution_os=") {
+	if !strings.Contains(profile.label(), "Apple_Terminal · xterm-256color · login shell zsh") || !strings.Contains(profile.signals(), "execution_os=") {
 		t.Fatal(profile)
 	}
-	if (terminalProfile{Program: "iTerm.app"}).isWarp() {
-		t.Fatal("non-Warp terminals must not claim Warp")
-	}
+
 }
 
 func TestTerminalMetadataCannotInjectPanelOrPrompt(t *testing.T) {

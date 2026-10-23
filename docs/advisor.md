@@ -36,8 +36,8 @@ cully suggestions
 
 | Agent | Installed local integration |
 | --- | --- |
-| Claude Code | Session and stop hooks, an asynchronous tool-event hook for the terminal, a status line that feeds the terminal panel (and displays itself outside it), `/cully` command and skill. |
-| Codex | `cully run codex` terminal, session-start and asynchronous tool-event hooks, `/prompts:cully`, managed user-level `AGENTS.md` pointer and skill. Setup leaves Codex's saved footer settings to the user. |
+| Claude Code | Session and stop hooks, an asynchronous tool-event hook for the terminal, `/cully` command and skill. |
+| Codex | `cully run codex` terminal, session-start and asynchronous tool-event hooks, `/prompts:cully`, and skill. Setup writes nothing to `AGENTS.md` and leaves Codex's saved footer settings to the user. |
 | Cursor | Session and response hooks, asynchronous shell, file-edit and MCP hooks for the terminal, user-level `/cully` command and skill. |
 
 The background advisor uses one shared analysis workflow with adapters for Claude Code, Codex and Cursor. The originating agent selects its own CLI adapter and configured MCP connection; it does not resume or take over the foreground conversation. Claude supplies its richer hook-derived signals, the Codex wrapper supplies bounded context/tool counters, and Cursor supplies coarse metadata through its continuity stop hook. Missing instruments remain unknown.
@@ -90,7 +90,7 @@ Opening a Codex thread also requests one read-only connection check through an e
 
 The Codex panel shows the last completed analysis time and memory/research source states. These states are reported by the agent, rather than independently verified tool telemetry. Claude workers use an isolated temporary Cully-only MCP configuration; Codex workers disable unrelated configured MCP servers for their invocation. Saved agent configurations remain unchanged.
 
-The wrapper detects `TERM_PROGRAM`, `TERM`, the login shell and SSH, keeping the terminal client separate from the execution host. In Warp, basic mouse/wheel reporting stays enabled because Cully draws on an alternate screen and the conversation history lives in its emulator. Scroll over the agent or compact panel to read that history. Drag/hover reporting activates for the advisor or explicit resize mode; closing the drawer preserves wheel reporting. Hold Shift for Warp text selection. See [Warp's mouse reporting documentation](https://docs.warp.dev/terminal/more-features/full-screen-apps).
+The wrapper detects terminal client metadata, the login shell and SSH, keeping the terminal client separate from the execution host. Supported terminal UI targets macOS Terminal and native GNOME terminals on Linux, using zsh + Oh My Zsh. Mouse, wheel and pointer reports remain enabled. Scroll over the agent or compact panel to read normal-screen history; fullscreen agents receive wheel events inside their viewport. Drag the divider to resize the panel; release or Esc ends a drag. See [terminal setup](/terminal#configure-and-verify-your-terminal) for the automatic Nerd Font preset, backups and visual verification. Warp is outside support.
 
 If the agent process cannot start, memory is marked **not run**, with a bounded failure category such as invalid MCP configuration or authentication required. This differs from a completed analysis whose actual recall failed. Raw CLI stderr is not exposed because it can include private tool data or credentials.
 
@@ -124,7 +124,6 @@ Review the preview. To apply it, run `cully apply 1` and confirm the proposed ch
 | `cully apply <n>` | Applies one after confirmation. |
 | `cully setup --all [--agent AGENT]` | Starts the local stack, installs agent integrations and starts the advisor; detects agents by default. |
 | `cully setup --mcp-url URL [--agent AGENT]` | Connects an existing server, installs agent integrations and starts the advisor. |
-| `cully setup --all --prepare` | Prepares editable stack configuration without starting services or installing integrations. |
 | `cully uninstall AGENT` | Removes one agent's Cully-managed integration settings. |
 | `cully uninstall` | Stops the local stack and removes managed agent integrations; keeps memory data. |
 | `cully uninstall --purge-data` | Also deletes local memory volumes and self-hosted configuration. |
@@ -150,7 +149,7 @@ Set these environment variables only when you want to change the defaults:
 
 | Variable | Effect |
 | --- | --- |
-| `CULLY_ANALYZE_DISABLE=1` | Disable advisor analysis while keeping the status line. |
+| `CULLY_ANALYZE_DISABLE=1` | Disable advisor analysis. |
 | `CULLY_DISCOVERY=off` | Disable periodic public discovery of current coding-agent techniques; local warnings and tool-gap research remain. |
 | `CULLY_ANALYZE_PROMPTS=0` | Exclude recent prompt text from analyzer signals. |
 | `CULLY_DISPLAY` | Use `minimal`, `full` or `debug` display. |

@@ -67,10 +67,10 @@ MCP_AUTH_CONNECTORS_FILE=/etc/mcp-auth/connectors.json
 # Add the provider variables referenced by your config's *_env fields.
 ```
 
-Use your actual file paths to prepare the local deployment:
+Use your actual file paths to configure the local deployment:
 
 ```sh
-cully setup --all --oauth --prepare \
+cully setup --all --oauth \
   --mcp-auth-config-dir /absolute/path/to/auth-config \
   --mcp-auth-env /absolute/path/to/provider.env
 ```
@@ -177,10 +177,10 @@ and Docker Compose.
 
 ## Self-hosted Docker with MCP Auth
 
-1. Create the editable files without starting containers:
+1. Create the editable configuration directory:
 
    ```sh
-   cully setup --all --prepare
+   mkdir -p ~/.cully/self-hosted/config/.secrets
    ```
 
 2. Register a client with your identity provider. Set its redirect URI to your MCP Auth callback, such as `https://auth.example.com/mcp-auth/identity/callback`. Follow the [MCP Auth connector guide](https://github.com/tavric-labs/mcp-auth/blob/main/docs/auth-server.md#connect-an-organizations-identity-provider) for provider settings and identity claims.

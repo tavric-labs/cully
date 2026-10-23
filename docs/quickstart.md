@@ -13,7 +13,7 @@ Pick your agent, then copy the command:
 
 <InstallCommand />
 
-The installer puts Cully at `~/.local/bin/cully`, links it into agent `bin` directories and adds the canonical directory to your shell's PATH when needed. The setup command in step 2 installs the integrations and starts all components, including the advisor. Open a new terminal before the next step, or use the installed binary path printed by the installer.
+The installer puts Cully at `~/.local/bin/cully`, links it into agent `bin` directories and adds the canonical directory to your shell's PATH when needed. The setup command in step 2 installs the integrations and starts all components, including the advisor. If your current shell cannot find `cully`, run `~/.local/bin/cully setup --all` directly. Setup installs the required zsh environment; reopen the native terminal afterwards.
 
 For source builds, version pinning or custom PATH setup, see [installer options](/installation).
 
@@ -28,6 +28,8 @@ Use the same agent you picked in step 1, or run bare `cully setup --all` to dete
 Setup writes to your home and agent user configuration, regardless of where you run it. No project `.cully` directory or repository changes are required. It works across your projects while keeping memory associated with each active repository. See [paths and migration from older installs](/installation#one-setup-across-projects).
 
 When `Setup complete` appears, restart your agent. In Codex, review and trust the installed Cully hooks in `/hooks` when asked. You do not need a repository checkout or OAuth for this laptop setup.
+
+Local interactive setup also installs the required zsh + Oh My Zsh environment and selects a Nerd Font preset in your native macOS/Linux terminal, backing up existing shell and font settings. Cully prints the changes and applies them automatically; OS authentication may still be required. Warp and other third-party terminal apps are outside support. Follow the [live terminal check](/terminal#configure-and-verify-your-terminal), confirming Unicode/icons with `u` and colors with `c`, then wheel, divider and advisor gestures before pressing `q`. `--skip-terminal-test` skips the exercise. Headless/SSH service setup leaves desktop settings alone and marks them untested. Use `cully setup --terminal-only` locally to configure the terminal without restarting services.
 
 Setup prints each stage, including image pulls and builds, database startup, migrations and agent connection. It confirms that private credentials are ready without showing their values. Mem0's local embedding model is downloaded into its Docker image on the first build.
 

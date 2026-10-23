@@ -9,7 +9,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-	"unicode/utf8"
 )
 
 // strip ANSI for readable assertions.
@@ -42,7 +41,7 @@ func TestInstallCombinedMemorySkill(t *testing.T) {
 	if err := installMemorySkill("codex"); err != nil {
 		t.Fatal(err)
 	}
-	path := filepath.Join(dir, "skills", "cully", "SKILL.md")
+	path := filepath.Join(dir, ".cully-runtime", "skills", "cully", "SKILL.md")
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
@@ -67,7 +66,7 @@ func TestInstallCombinedMemorySkill(t *testing.T) {
 func TestUninstallRemovesOnlyUnchangedManagedSkills(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("CODEX_HOME", dir)
-	path := filepath.Join(dir, "skills", "cully", "SKILL.md")
+	path := filepath.Join(dir, ".cully-runtime", "skills", "cully", "SKILL.md")
 	if err := installMemorySkill("codex"); err != nil {
 		t.Fatal(err)
 	}
@@ -138,86 +137,8 @@ func TestEmojiLines(t *testing.T) {
 	}
 }
 
-func TestRenderStatuslineNearFull(t *testing.T) {
-	t.Setenv("COLUMNS", "140") // full width: assert every segment renders (no responsive drop)
-	var in slInput
-	in.Model.DisplayName = "Opus 4.8 (1M context)"
-	in.Effort.Level = "high"
-	in.Workspace.CurrentDir = "/x/mcp-runtime"
-	in.Worktree.Branch = "main"
-	in.ContextWindow.UsedPercentage = 99
-	in.ContextWindow.TotalInputTokens = 985000
-	in.ContextWindow.ContextWindowSize = 1000000
-	in.Cost.TotalCostUSD = 24.3
-	rows := renderStatusline(in, nil, cullySnapshot{Phase: "cruise"}, cullyState{})
-	if len(rows) < 2 {
-		t.Fatalf("want at least 2 rows, got %d", len(rows))
-	}
-	p := plain(rows[0])
-	for _, want := range []string{"mcp-runtime", "⎇main", "Opus 4.8 (1M context)", "high", "ctx", "99%", "985k/1.0M", "⚠ /compact"} {
-		if !strings.Contains(p, want) {
-			t.Errorf("row1 missing %q: %s", want, p)
-		}
-	}
-}
-
 // Regression: past 200k tokens on a large (1M) window must NOT fire /compact —
 // exceeds_200k_tokens is true there but the window is only ~21% full.
-func TestRenderStatuslineNoEarlyCompactWarn(t *testing.T) {
-	var in slInput
-	in.Workspace.CurrentDir = "/x/repo"
-	in.ContextWindow.UsedPercentage = 21
-	in.ContextWindow.TotalInputTokens = 211000
-	in.ContextWindow.ContextWindowSize = 1000000
-	in.Exceeds200k = true
-	p := plain(renderStatusline(in, nil, cullySnapshot{}, cullyState{})[0])
-	if strings.Contains(p, "/compact") {
-		t.Errorf("should not warn at 21%%: %s", p)
-	}
-
-	// ...but at 90%+ it must warn, with the emoji-presentation glyph.
-	in.ContextWindow.UsedPercentage = 92
-	p = plain(renderStatusline(in, nil, cullySnapshot{}, cullyState{})[0])
-	if !strings.Contains(p, "⚠ /compact") {
-		t.Errorf("want compact warn at 92%%: %s", p)
-	}
-}
-
-func TestRenderStatuslinePRAndHint(t *testing.T) {
-	var in slInput
-	in.Workspace.CurrentDir = "/x/repo"
-	in.Worktree.Branch = "feat"
-	in.PR.Number = json.Number("336")
-	in.PR.ReviewState = "APPROVED"
-	rows := renderStatusline(in, []classifiedSuggestion{
-		{Level: AlertMemo, Text: "✅ session looks efficient."},
-		{Level: AlertAdv, Text: "💡 use sonnet"},
-	}, cullySnapshot{Phase: "cruise"}, cullyState{})
-	if len(rows) != 6 {
-		t.Fatalf("want 6 rows (2 instruments+advisor header+note+fix+apply), got %d", len(rows))
-	}
-	if !strings.Contains(plain(rows[0]), "● steady") {
-		t.Errorf("phase badge missing: %s", plain(rows[0]))
-	}
-	if !strings.Contains(plain(rows[0]), "⇡#336") {
-		t.Errorf("PR segment missing: %s", plain(rows[0]))
-	}
-	if !strings.Contains(plain(rows[2]), "advisor") {
-		t.Errorf("advisor section header missing: %q", plain(rows[2]))
-	}
-	if !strings.Contains(plain(rows[3]), "note") || !strings.Contains(plain(rows[3]), "efficient") {
-		t.Errorf("note row wrong: %q", plain(rows[3]))
-	}
-	if strings.Contains(plain(rows[3]), "cully apply") {
-		t.Errorf("note should not have apply: %q", plain(rows[3]))
-	}
-	if !strings.Contains(plain(rows[4]), "1") || !strings.Contains(plain(rows[4]), "use sonnet") {
-		t.Errorf("fix row wrong: %q", plain(rows[4]))
-	}
-	if !strings.Contains(plain(rows[5]), "cully apply 1") {
-		t.Errorf("apply line missing: %q", plain(rows[5]))
-	}
-}
 
 func TestIsApplyable(t *testing.T) {
 	if isApplyable(classifiedSuggestion{Level: AlertMemo, Text: "✅ session looks efficient."}) {
@@ -228,53 +149,6 @@ func TestIsApplyable(t *testing.T) {
 	}
 	if isApplyable(classifiedSuggestion{Level: AlertWarn, Text: "⚠️ Context critical — run /compact"}) {
 		t.Fatal("/compact warn should not be applyable")
-	}
-}
-
-func TestRunStatuslineSmoke(t *testing.T) {
-	in := `{"model":{"display_name":"Sonnet 4.6"},"workspace":{"current_dir":"/tmp/foo"},"context_window":{"used_percentage":47,"total_input_tokens":472000,"context_window_size":1000000}}`
-	var out bytes.Buffer
-	RunStatusline(strings.NewReader(in), &out)
-	if !strings.Contains(plain(out.String()), "Sonnet 4.6") {
-		t.Errorf("smoke output: %s", out.String())
-	}
-}
-
-func TestRunStatuslineGenericCodingAgents(t *testing.T) {
-	orig, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	dir := t.TempDir()
-	if err := os.Chdir(dir); err != nil {
-		t.Fatal(err)
-	}
-	defer os.Chdir(orig)
-	t.Setenv("CLAUDE_CONFIG_DIR", filepath.Join(dir, ".claude"))
-	t.Setenv("COLUMNS", "140")
-
-	for _, tc := range []struct {
-		env  string
-		want string
-	}{
-		{"codex", "Codex"},
-		{"cursor", "Cursor"},
-	} {
-		t.Run(tc.env, func(t *testing.T) {
-			t.Setenv("CULLY_AGENT", tc.env)
-			var out bytes.Buffer
-			RunStatusline(strings.NewReader(""), &out)
-			p := plain(out.String())
-			if !strings.Contains(p, tc.want) {
-				t.Fatalf("generic statusline missing %s:\n%s", tc.want, p)
-			}
-			if !strings.Contains(p, "ctx n/a") {
-				t.Fatalf("generic statusline should not fake token context:\n%s", p)
-			}
-			if strings.Contains(p, "claude") {
-				t.Fatalf("generic statusline leaked claude default:\n%s", p)
-			}
-		})
 	}
 }
 
@@ -307,7 +181,6 @@ func TestSettingsMergePreservesAndDedups(t *testing.T) {
 	m := map[string]any{
 		"model":       "opus",
 		"permissions": map[string]any{"allow": []any{"Bash(ls:*)"}},
-		"statusLine":  map[string]any{"type": "command", "command": "/old/line.sh"},
 		"hooks": map[string]any{
 			"Stop": []any{
 				map[string]any{"hooks": []any{map[string]any{"type": "command", "command": "/foreign/tool.sh"}}},
@@ -328,8 +201,8 @@ func TestSettingsMergePreservesAndDedups(t *testing.T) {
 	if cmds["/foreign/tool.sh"] != 1 {
 		t.Errorf("foreign hook not preserved: %v", cmds)
 	}
-	if cmds[cmd] != 1 {
-		t.Errorf("cully hook should appear exactly once, got %d", cmds[cmd])
+	if cmds[scopedHookCommand(cmd)] != 1 {
+		t.Errorf("cully hook should appear exactly once, got %d", cmds[scopedHookCommand(cmd)])
 	}
 	if m["model"] != "opus" {
 		t.Error("unrelated key 'model' lost")
@@ -337,7 +210,6 @@ func TestSettingsMergePreservesAndDedups(t *testing.T) {
 
 	// uninstall removes only ours, keeps foreign + other keys.
 	removeEventHook(m, "Stop", cmd, "analyze")
-	delete(m, "statusLine") // simulate Uninstall's statusLine drop
 	stop = toList(m["hooks"].(map[string]any)["Stop"])
 	if len(stop) != 1 {
 		t.Fatalf("want 1 remaining (foreign) group, got %d", len(stop))
@@ -378,7 +250,7 @@ func TestSetStopHookReplacesOldCullyPath(t *testing.T) {
 	if cmds[quote("/old path/cully")+" analyze"] != 0 {
 		t.Fatalf("old cully hook was not removed: %v", cmds)
 	}
-	if cmds[quote("/new path/o'connor/cully")+" analyze"] != 1 {
+	if cmds[scopedHookCommand(quote("/new path/o'connor/cully")+" analyze")] != 1 {
 		t.Fatalf("new cully hook missing: %v", cmds)
 	}
 	if cmds["/foreign/tool.sh"] != 1 {
@@ -429,13 +301,16 @@ func TestInstallCodexAndCursorUserFiles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.HasPrefix(string(agents), custom) || strings.Count(string(agents), managedStart("codex")) != 1 || !strings.Contains(string(agents), filepath.Join(CodexConfigDir(), "skills", "cully", "SKILL.md")) {
-		t.Fatalf("global instructions lost custom rules or are not idempotent: %s", agents)
+	if string(agents) != custom {
+		t.Fatalf("native instructions changed by setup: %s", agents)
 	}
 	for _, dir := range []string{CodexConfigDir(), CursorConfigDir()} {
-		skill, err := os.ReadFile(filepath.Join(dir, "skills", "cully", "SKILL.md"))
+		skill, err := os.ReadFile(filepath.Join(dir, ".cully-runtime", "skills", "cully", "SKILL.md"))
 		if err != nil || !strings.Contains(string(skill), "cully apply <n> --dry-run") {
-			t.Fatalf("global skill: %v", err)
+			t.Fatalf("runtime skill: %v", err)
+		}
+		if _, err := os.Stat(filepath.Join(dir, "skills", "cully")); !os.IsNotExist(err) {
+			t.Fatalf("native skill directory contains Cully skill: %v", err)
 		}
 	}
 	for _, path := range []string{codexPromptPath(), cursorCommandPath()} {
@@ -711,60 +586,6 @@ func TestMultiAgentDiscovery(t *testing.T) {
 
 // The status line writes the authoritative context window; the analyzer should
 // prefer it over inferring from the model name.
-func TestContextWindowBridge(t *testing.T) {
-	dir := t.TempDir()
-	t.Setenv("CLAUDE_CONFIG_DIR", dir)
-	tp := filepath.Join(dir, "t.jsonl")
-	os.WriteFile(tp, []byte(`{"message":{"role":"assistant","model":"claude-opus-4-8[1m]","content":[]}}`+"\n"), 0o644)
-	in := stopInput{TranscriptPath: tp, Cwd: dir, SessionID: "s"}
-
-	// No state file yet -> inferred from model name (1M for the [1m] variant).
-	if got := collectSignals(in, 5); got.ContextSource != "inferred" || got.ContextWindow != 1_000_000 {
-		t.Fatalf("inferred path: source=%s window=%d", got.ContextSource, got.ContextWindow)
-	}
-
-	// Simulate the status line capturing real data via writeState.
-	var sl slInput
-	sl.ContextWindow.ContextWindowSize = 200000
-	sl.ContextWindow.UsedPercentage = 88
-	sl.ContextWindow.TotalInputTokens = 176000
-	sl.Cost.TotalCostUSD = 7.5
-	sl.RateLimits.FiveHour.UsedPercentage = 91
-	writeState(sl)
-
-	got := collectSignals(in, 5)
-	if got.ContextSource != "actual" {
-		t.Errorf("want actual source, got %s", got.ContextSource)
-	}
-	if got.ContextWindow != 200000 || got.ContextUsedPct != 88 {
-		t.Errorf("want real window 200000/88%%, got %d/%d", got.ContextWindow, got.ContextUsedPct)
-	}
-	if got.Rate5hPct != 91 || got.CostUSD != 7.5 {
-		t.Errorf("rate/cost not bridged: 5h=%d cost=%.2f", got.Rate5hPct, got.CostUSD)
-	}
-	if sig := formatSignals(got); !strings.Contains(sig, "context_used_pct=88 (actual)") {
-		t.Errorf("formatted signals missing actual pct:\n%s", sig)
-	}
-}
-
-func TestWrapText(t *testing.T) {
-	if got := wrapText("", 100); got != nil {
-		t.Errorf("empty -> %v want nil", got)
-	}
-	long := "🎯 Model downgrade: switch to Sonnet because the recent prompts are all mechanical UI testing work"
-	got := wrapText(long, 40)
-	if len(got) < 2 {
-		t.Fatalf("expected wrap into multiple lines, got %v", got)
-	}
-	for _, ln := range got {
-		if utf8.RuneCountInString(ln) > 40 {
-			t.Errorf("line exceeds width: %q (%d)", ln, utf8.RuneCountInString(ln))
-		}
-	}
-	if strings.Join(got, " ") != long {
-		t.Errorf("wrap lost/changed words: %q", strings.Join(got, " "))
-	}
-}
 
 func TestExtractToolGap(t *testing.T) {
 	// structured form: capability || evidence || query.
@@ -1308,46 +1129,8 @@ func TestRunAnalyzeWaitsForTwelveCompletedPrompts(t *testing.T) {
 // block (indistinguishable from a real 0%) must not erase previously known
 // good 5h/7d values, and a momentarily-zero context window must not block
 // persisting rate-limit data.
-func TestWriteStatePersistsRateLimitsWithZeroContext(t *testing.T) {
-	dir := t.TempDir()
-	t.Setenv("CLAUDE_CONFIG_DIR", dir)
-
-	var sl slInput
-	sl.RateLimits.FiveHour.UsedPercentage = 53
-	sl.RateLimits.SevenDay.UsedPercentage = 9
-	writeState(sl) // ContextWindowSize is 0 here
-
-	st, ok := readState()
-	if !ok || st.FiveH != 53 || st.SevenD != 9 {
-		t.Fatalf("rate limits not persisted with zero context: ok=%v st=%+v", ok, st)
-	}
-
-	var sl2 slInput
-	sl2.ContextWindow.ContextWindowSize = 200000
-	sl2.ContextWindow.UsedPercentage = 40
-	writeState(sl2) // no rate_limits block in this payload
-
-	st, _ = readState()
-	if st.FiveH != 53 || st.SevenD != 9 {
-		t.Fatalf("rate limits clobbered by a payload without rate_limits: %+v", st)
-	}
-	if st.CtxSize != 200000 || st.CtxPct != 40 {
-		t.Fatalf("context not updated: %+v", st)
-	}
-}
-
 // Acceptance: state with 53/9 plus a payload without rate_limits must render
 // "5h 53% · 7d 9%" instead of falling back to 0%.
-func TestRenderStatuslineRateLimitFallback(t *testing.T) {
-	var in slInput
-	in.Workspace.CurrentDir = "/x/repo"
-	st := cullyState{FiveH: 53, SevenD: 9}
-	rows := renderStatusline(in, nil, cullySnapshot{}, st)
-	p := plain(rows[1])
-	if !strings.Contains(p, "53%") || !strings.Contains(p, "9%") {
-		t.Fatalf("want 5h 53%% . 7d 9%% fallback from state, got: %s", p)
-	}
-}
 
 func TestRunCleanupRemovesOnlyThisSession(t *testing.T) {
 	dir := t.TempDir()

@@ -3,7 +3,6 @@ package cully
 import (
 	"os"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -36,20 +35,6 @@ func TestLookupPaneAgent(t *testing.T) {
 		if _, err := lookupPaneAgent(bad); err == nil {
 			t.Fatalf("%q should be rejected", bad)
 		}
-	}
-}
-
-func TestPaneAgentLaunchArguments(t *testing.T) {
-	codex, _ := lookupPaneAgent("codex")
-	if got := codex.args([]string{"resume"}); len(got) != 3 || got[0] != "-c" || got[2] != "resume" {
-		t.Fatalf("codex args = %v", got)
-	}
-	claude, _ := lookupPaneAgent("claude")
-	if got := claude.args([]string{"--continue"}); !reflect.DeepEqual(got, []string{"--continue"}) {
-		t.Fatalf("claude args = %v", got)
-	}
-	if claude.resumeID([]string{"resume", "x"}) != "" {
-		t.Fatal("only Codex has native resume ids")
 	}
 }
 

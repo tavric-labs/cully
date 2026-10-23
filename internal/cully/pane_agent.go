@@ -13,8 +13,6 @@ type paneAgent struct {
 	Name string
 	// Binary is the executable started inside the terminal.
 	Binary string
-	// Launch returns the argument list for the child process.
-	Launch func(args []string) []string
 	// NativeFooter is true when the agent prints an instrument footer that the
 	// wrapper can read and move into the Cully panel (Codex today).
 	NativeFooter bool
@@ -30,7 +28,6 @@ var paneAgents = func() map[string]paneAgent {
 		m[spec.ID] = paneAgent{
 			Name:         spec.ID,
 			Binary:       spec.Binary,
-			Launch:       spec.Launch,
 			NativeFooter: spec.NativeFooter,
 			ResumeID:     spec.ResumeID,
 		}
@@ -71,13 +68,6 @@ func safeAgentName(binary string) string {
 		return "agent"
 	}
 	return out.String()
-}
-
-func (a paneAgent) args(args []string) []string {
-	if a.Launch != nil {
-		return a.Launch(args)
-	}
-	return args
 }
 
 func (a paneAgent) resumeID(args []string) string {

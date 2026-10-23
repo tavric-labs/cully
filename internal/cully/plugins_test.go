@@ -83,7 +83,7 @@ func hookSubcommands(t *testing.T, config map[string]any) []string {
 			}
 			for _, c := range commands {
 				if text, _ := c.(string); strings.Contains(text, "_internal ") {
-					out = append(out, label+": "+text[strings.Index(text, "_internal ")+len("_internal "):])
+					out = append(out, label+": "+strings.TrimSuffix(text[strings.Index(text, "_internal ")+len("_internal "):], "; fi"))
 				}
 			}
 		}

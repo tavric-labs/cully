@@ -70,11 +70,13 @@ The advisor combines immediate local rules with an optional background worker th
 What the terminal can know differs by agent:
 
 - Codex supplies model, context, tokens and quota through its native footer.
-- Claude Code supplies context pressure through a hook-fed snapshot; its own status line stays silent inside the terminal.
+- Claude Code supplies tool events through hooks; Cully installs no status line.
 - Cursor supplies shell, file-edit and MCP events. Its shell hook reports no exit code, so a failed Cursor command is not marked failed. Model, context, tokens and rate limits have no Cursor feed, so the panel shows them as unavailable rather than waiting.
 - Other agents get the health bar and Git state, and tool events only if they can run Cully's hook.
 
-In Warp, wheel reports stay enabled so you can read Cully's emulator history over the agent or compact panel. Drag/hover reporting is enabled only for the advisor or explicit divider resizing. Open the advisor with Ctrl+] or F6; Esc closes it while preserving scrolling. Warp's Shift modifier keeps text selection with Warp.
+Supported terminal UI uses macOS Terminal or a native GNOME terminal on Linux, with zsh + Oh My Zsh. Warp and other third-party terminal apps, Bash and other interactive shells are outside support. Cully does not restrict a coding agent's own shell tools. Mouse/wheel/pointer reporting remains enabled; drag the divider directly, release or Esc to end, and use Ctrl+] or F6 for the advisor.
+
+`cully setup --terminal-only` automatically installs the required shell and Nerd Font preset with backups; ordinary launches never provision software or rewrite preferences. `cully terminal check` is read-only; `shell --dry-run` and `configure --dry-run` preview changes. `shell`, `configure`, `test` and `restore --backup PATH` handle required shell setup, font setup, live verification and font rollback. The preset uses MesloLGS Nerd Font Mono at 14 pt on macOS or 12 pt on Linux. A missing home icon U+F015 requires the terminal's patched font, not just Oh My Zsh. The visual exercise requires user confirmation with `u` for Unicode/icons and `c` for colors; writing a sample is not proof of correct rendering. Do not claim physical terminal verification from synthetic PTY checks or infer model/token statistics from the exercise.
 
 Loop detection reports what repeated, for example that the same command failed three times after edits. It never states a cause. When it fires, read the first failure before editing again.
 

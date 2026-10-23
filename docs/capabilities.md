@@ -13,9 +13,9 @@ This page separates what ships today from what is planned. Cully's other pages d
 
 | Capability | Status | Notes |
 | --- | --- | --- |
-| [Cully terminal](/terminal) for Claude Code, Codex, Cursor CLI and any executable | Shipped | macOS and Linux. Not available on Windows. |
+| [Cully terminal](/terminal) for Claude Code, Codex, Cursor CLI and any executable | Shipped | macOS Terminal and native GNOME terminals on Linux, with zsh + Oh My Zsh and the Nerd Font preset. Warp and other third-party terminal apps are outside support. |
 | [Harness column and CLI audit](/harness) | Shipped | Setup detection across supported configurations; historical estimates read the running agent's local transcripts (Claude Code or Codex; Cursor is not read yet). Presence does not prove a working connection. |
-| Resizable panel divider | Shipped | Drag to resize; Warp uses `Ctrl+\`. Hover requests a resize cursor where supported. |
+| Resizable panel divider | Shipped | Drag to resize; `Ctrl+\` enables explicit resize mode. Hover requests a resize cursor where supported. |
 | Agent health bar | Shipped | Agent, project and branch, time, context, loops, unchecked edits. Segments with no data are omitted. |
 | Tool events from hooks | Shipped | Claude Code and Codex hooks, and Cursor shell, file-edit and MCP hooks. Hooks do nothing outside the Cully terminal. |
 | Cursor shell exit codes | Partial | Cursor's shell hook reports no exit code, so a failed Cursor command is not marked failed. Loop detection is weaker for Cursor. |

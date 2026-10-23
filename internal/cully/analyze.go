@@ -118,6 +118,9 @@ type Signals struct {
 // a session-length cadence, and hand off to a detached worker that asks a cheap
 // model for control suggestions. Returns fast so the turn never waits.
 func RunAnalyze(r io.Reader) {
+	if !wrappedSessionActive() {
+		return
+	}
 	if os.Getenv("MODEL_HINT_GUARD") != "" {
 		return // don't run inside the background `claude -p`
 	}
@@ -701,6 +704,9 @@ func spawnWorker(signals, session, cwd string) {
 // hook so nothing is deleted mid-session — signals and logs persist until the
 // session actually ends.
 func RunCleanup(r io.Reader) {
+	if !wrappedSessionActive() {
+		return
+	}
 	data, _ := io.ReadAll(r)
 	var in stopInput
 	_ = json.Unmarshal(data, &in)

@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"runtime"
 	"strconv"
 
 	"github.com/mcp-runtime/cully/internal/cully"
@@ -18,10 +19,14 @@ var version = "dev"
 const help = `Cully — the harness runtime for coding agents and software projects.
 
 Usage:
-  cully setup --all [--agent claude|codex|cursor|all] [--oauth] [--prepare]
+  cully setup --all [--agent claude|codex|cursor|all] [--oauth]
                                          Start the full local stack, integrations and advisor
   cully setup [--agent AGENT] --mcp-url URL [--oauth]
                                          Use an existing server; set up integrations and advisor
+  cully setup --terminal-only [--skip-terminal-test]
+                                         Install zsh/Oh My Zsh, select a Nerd Font and verify the terminal
+  cully terminal check|configure|shell|test|restore
+                                         Inspect, repair, exercise or restore terminal preferences
   cully uninstall [--purge-data]           Stop local stack and remove managed agent setup
   cully uninstall [claude|codex|cursor|all] Remove one or all agent integrations
   cully update [--check] [--version TAG]   Update this machine's CLI and running advisor
@@ -98,6 +103,8 @@ func run(args []string) error {
 		fmt.Print(help)
 	case "setup":
 		return runSetup(args[1:])
+	case "terminal":
+		return cully.RunTerminal(os.Stdin, os.Stdout, args[1:])
 	case "uninstall":
 		return runUninstall(args[1:])
 	case "update":
@@ -182,11 +189,17 @@ func run(args []string) error {
 }
 
 func runSetup(args []string) error {
+	if runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
+		return fmt.Errorf("Cully setup supports macOS and Linux only")
+	}
 	options, err := parseSetup(args)
 	if err != nil {
 		return err
 	}
 	fmt.Printf("Cully %s setup\n", version)
+	if options.terminalOnly {
+		return cully.SetupTerminal(os.Stdin, os.Stdout, options.skipTerminalTest, options.terminal)
+	}
 	if options.endpoint != "" {
 		fmt.Println("Setting up Cully with an existing MCP server")
 		var targets []string
@@ -199,15 +212,18 @@ func runSetup(args []string) error {
 		if err := checkSetupMCP(os.Stdout, options.endpoint, options.oauth); err != nil {
 			return err
 		}
+		if err := cully.SetupInteractiveTerminal(os.Stdin, os.Stdout, options.skipTerminalTest, options.terminal); err != nil {
+			return err
+		}
 		fmt.Println("Setup complete. Restart your coding agent to load the Cully skill, hooks and MCP tools.")
 		printT3CodeHint(os.Stdout, exec.LookPath)
 		return nil
 	}
-	if err := runSelfHost(options.target, options.oauth, options.prepare, options.auth); err != nil {
+	if err := runSelfHost(options.target, options.oauth, options.auth); err != nil {
 		return err
 	}
 	printT3CodeHint(os.Stdout, exec.LookPath)
-	return nil
+	return cully.SetupInteractiveTerminal(os.Stdin, os.Stdout, options.skipTerminalTest, options.terminal)
 }
 
 // printT3CodeHint tells T3 Code users that Cully already works in it. T3 Code
@@ -221,9 +237,11 @@ func printT3CodeHint(w io.Writer, lookPath func(string) (string, error)) {
 }
 
 type setupOptions struct {
-	target, endpoint string
-	oauth, prepare   bool
-	auth             mcpAuthOptions
+	target, endpoint               string
+	oauth                          bool
+	terminalOnly, skipTerminalTest bool
+	terminal                       string
+	auth                           mcpAuthOptions
 }
 
 func parseSetup(args []string) (setupOptions, error) {
@@ -233,7 +251,9 @@ func parseSetup(args []string) (setupOptions, error) {
 	all := fs.Bool("all", false, "start the full stack on this machine, configure agents, and start the advisor")
 	fs.StringVar(&options.endpoint, "mcp-url", "", "connect to an already deployed Cully MCP server")
 	fs.BoolVar(&options.oauth, "oauth", false, "server uses OAuth; print sign-in instructions")
-	fs.BoolVar(&options.prepare, "prepare", false, "with --all, prepare local configuration without starting services")
+	fs.BoolVar(&options.terminalOnly, "terminal-only", false, "install the required zsh/Oh My Zsh and font setup without services or agents")
+	fs.StringVar(&options.terminal, "terminal", "", "native terminal program; default: detect")
+	fs.BoolVar(&options.skipTerminalTest, "skip-terminal-test", false, "configure terminal settings without the interactive wheel/divider/advisor exercise")
 	fs.StringVar(&options.auth.Image, "mcp-auth-image", "", "testing only: override the automatically selected latest mcp-auth release image")
 	fs.StringVar(&options.auth.ConfigDir, "mcp-auth-config-dir", "", "mount this directory of mcp-auth configuration files read-only at /etc/mcp-auth")
 	fs.StringVar(&options.auth.EnvFile, "mcp-auth-env", "", "environment file for mcp-auth, including its configuration-file paths and provider secrets")
@@ -246,11 +266,11 @@ func parseSetup(args []string) (setupOptions, error) {
 	if *all && options.endpoint != "" {
 		return setupOptions{}, fmt.Errorf("choose either --all for a local stack or --mcp-url for a deployed stack")
 	}
-	if !*all && options.endpoint == "" {
-		return setupOptions{}, fmt.Errorf("setup requires --all to start Cully on this machine, or --mcp-url URL to connect to a deployed Cully stack")
+	if options.terminalOnly && (*all || options.endpoint != "" || options.target != "" || options.oauth || options.auth.specified()) {
+		return setupOptions{}, fmt.Errorf("--terminal-only cannot be combined with stack or agent setup options")
 	}
-	if options.prepare && !*all {
-		return setupOptions{}, fmt.Errorf("--prepare requires --all")
+	if !*all && options.endpoint == "" && !options.terminalOnly {
+		return setupOptions{}, fmt.Errorf("setup requires --all to start Cully on this machine, or --mcp-url URL to connect to a deployed Cully stack")
 	}
 	if options.auth.specified() {
 		if !*all || !options.oauth {
@@ -305,8 +325,8 @@ func runInternal(args []string) error {
 		return fmt.Errorf("missing internal action")
 	}
 	switch args[0] {
-	case "statusline":
-		cully.RunStatusline(os.Stdin, os.Stdout)
+	case "terminal-check-output":
+		return cully.RunTerminalCheckOutput(os.Stdin, os.Stdout)
 	case "analyze":
 		cully.RunAnalyze(os.Stdin)
 	case "cleanup":
