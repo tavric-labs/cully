@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.28.0
+
+- Support Warp for `cully run claude` and other agents. `WarpTerminal` now passes the terminal check; setup gives manual Nerd Font guidance (Settings → Appearance → Text) instead of rewriting Warp settings.
+
 ## 0.27.1
 
 - Restore trackpad and wheel scrolling for alternate-screen agents that do not request mouse reports. Cully now turns each wheel notch into arrow keys for them instead of dropping it; agents that request the mouse still receive real wheel events.
