@@ -45,7 +45,7 @@ Usage:
   cully task [NAME]                       Show or set the session task (--clear removes it)
   cully workspace --mcp-url URL --input FILE
                                          Team tasks, handoffs, review and shared lessons (OAuth)
-  cully run AGENT [ARGS...]               Run any coding agent in the Cully terminal
+  cully run [--sidebar] AGENT [ARGS...]  Run any coding agent in the Cully terminal
   cully claude|codex|cursor [ARGS...]     Shortcuts for cully run claude, codex and cursor-agent
   cully timeline [--all] [--session ID] [--cwd DIR]
                                          Show what happened in a coding session
@@ -72,6 +72,18 @@ func main() {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
+}
+
+// parseRunFlags consumes Cully's own leading flags so they never reach the
+// agent binary. Only --sidebar is Cully's; everything from the agent name on
+// passes through untouched.
+func parseRunFlags(args []string) (bool, []string) {
+	sidebar := false
+	for len(args) > 0 && args[0] == "--sidebar" {
+		sidebar = true
+		args = args[1:]
+	}
+	return sidebar, args
 }
 
 func run(args []string) error {
@@ -142,12 +154,14 @@ func run(args []string) error {
 	case "savings":
 		return cully.RunSavings(os.Stdout, args[1:])
 	case "run":
-		if len(args) < 2 {
-			return fmt.Errorf("usage: cully run AGENT [ARGS...]")
+		sidebar, rest := parseRunFlags(args[1:])
+		if len(rest) < 1 {
+			return fmt.Errorf("usage: cully run [--sidebar] AGENT [ARGS...]")
 		}
-		return cully.RunAgent(args[1], args[2:], os.Stdin, os.Stdout, os.Stderr)
+		return cully.RunAgentOptions(rest[0], rest[1:], os.Stdin, os.Stdout, os.Stderr, sidebar)
 	case "claude", "codex", "cursor":
-		return cully.RunAgent(args[0], args[1:], os.Stdin, os.Stdout, os.Stderr)
+		sidebar, rest := parseRunFlags(args[1:])
+		return cully.RunAgentOptions(args[0], rest, os.Stdin, os.Stdout, os.Stderr, sidebar)
 	case "timeline":
 		return cully.RunTimeline(os.Stdout, args[1:])
 	case "replay":

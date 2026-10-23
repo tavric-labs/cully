@@ -44,7 +44,7 @@ Interactive panel requirements: a terminal at least 20 columns by 8 rows, macOS 
 
 ## Sessions
 
-A sidebar down the left edge of the window lists the named sessions running in that window. Click **+ New** to start another session of the same agent, click a name to switch to it, and click **Rename** then type a name and press Enter. Each session keeps its own agent process, input and scroll position, so switching back returns you to where you were. Sessions belong to the window: closing it ends them, and nothing runs in the background. The sidebar hides itself in windows narrower than 60 columns, and `CULLY_SIDEBAR=0` turns it off.
+A sidebar down the left edge of the window lists the named sessions running in that window. It is opt-in: start with `cully run --sidebar AGENT` (or set `CULLY_SIDEBAR=1`). Click **+ New** to start another session of the same agent, click a name to switch to it, and click **Rename** then type a name and press Enter. Each session keeps its own agent process, input and scroll position, so switching back returns you to where you were. Sessions belong to the window: closing it ends them, and nothing runs in the background. The sidebar hides itself in windows narrower than 60 columns.
 
 Keys go to the agent unless the sidebar has focus after you click it. With focus, Up/Down move, Enter switches, `n` creates, `r` renames and Esc returns to the agent. Cully does not take any agent shortcut by default. `CULLY_SHORTCUTS=1` adds F7 to move focus to the sidebar.
 
