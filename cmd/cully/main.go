@@ -22,6 +22,10 @@ Usage:
                                          Start the full local stack, integrations and advisor
   cully setup [--agent AGENT] --mcp-url URL [--oauth]
                                          Use an existing server; set up integrations and advisor
+  cully setup --terminal-only [--skip-terminal-test]
+                                         Configure terminal settings and verify wheel/divider/advisor
+  cully terminal check|configure|test|restore
+                                         Inspect, repair, exercise or restore terminal preferences
   cully uninstall [--purge-data]           Stop local stack and remove managed agent setup
   cully uninstall [claude|codex|cursor|all] Remove one or all agent integrations
   cully update [--check] [--version TAG]   Update this machine's CLI and running advisor
@@ -98,6 +102,8 @@ func run(args []string) error {
 		fmt.Print(help)
 	case "setup":
 		return runSetup(args[1:])
+	case "terminal":
+		return cully.RunTerminal(os.Stdin, os.Stdout, args[1:])
 	case "uninstall":
 		return runUninstall(args[1:])
 	case "update":
@@ -187,6 +193,9 @@ func runSetup(args []string) error {
 		return err
 	}
 	fmt.Printf("Cully %s setup\n", version)
+	if options.terminalOnly {
+		return cully.SetupTerminal(os.Stdin, os.Stdout, options.skipTerminalTest)
+	}
 	if options.endpoint != "" {
 		fmt.Println("Setting up Cully with an existing MCP server")
 		var targets []string
@@ -201,13 +210,13 @@ func runSetup(args []string) error {
 		}
 		fmt.Println("Setup complete. Restart your coding agent to load the Cully skill, hooks and MCP tools.")
 		printT3CodeHint(os.Stdout, exec.LookPath)
-		return nil
+		return cully.SetupTerminal(os.Stdin, os.Stdout, options.skipTerminalTest)
 	}
 	if err := runSelfHost(options.target, options.oauth, options.prepare, options.auth); err != nil {
 		return err
 	}
 	printT3CodeHint(os.Stdout, exec.LookPath)
-	return nil
+	return cully.SetupTerminal(os.Stdin, os.Stdout, options.skipTerminalTest || options.prepare)
 }
 
 // printT3CodeHint tells T3 Code users that Cully already works in it. T3 Code
@@ -221,9 +230,10 @@ func printT3CodeHint(w io.Writer, lookPath func(string) (string, error)) {
 }
 
 type setupOptions struct {
-	target, endpoint string
-	oauth, prepare   bool
-	auth             mcpAuthOptions
+	target, endpoint               string
+	oauth, prepare                 bool
+	terminalOnly, skipTerminalTest bool
+	auth                           mcpAuthOptions
 }
 
 func parseSetup(args []string) (setupOptions, error) {
@@ -234,6 +244,8 @@ func parseSetup(args []string) (setupOptions, error) {
 	fs.StringVar(&options.endpoint, "mcp-url", "", "connect to an already deployed Cully MCP server")
 	fs.BoolVar(&options.oauth, "oauth", false, "server uses OAuth; print sign-in instructions")
 	fs.BoolVar(&options.prepare, "prepare", false, "with --all, prepare local configuration without starting services")
+	fs.BoolVar(&options.terminalOnly, "terminal-only", false, "configure terminal compatibility and check live features without services or agent setup")
+	fs.BoolVar(&options.skipTerminalTest, "skip-terminal-test", false, "configure terminal settings without the interactive wheel/divider/advisor exercise")
 	fs.StringVar(&options.auth.Image, "mcp-auth-image", "", "testing only: override the automatically selected latest mcp-auth release image")
 	fs.StringVar(&options.auth.ConfigDir, "mcp-auth-config-dir", "", "mount this directory of mcp-auth configuration files read-only at /etc/mcp-auth")
 	fs.StringVar(&options.auth.EnvFile, "mcp-auth-env", "", "environment file for mcp-auth, including its configuration-file paths and provider secrets")
@@ -246,7 +258,10 @@ func parseSetup(args []string) (setupOptions, error) {
 	if *all && options.endpoint != "" {
 		return setupOptions{}, fmt.Errorf("choose either --all for a local stack or --mcp-url for a deployed stack")
 	}
-	if !*all && options.endpoint == "" {
+	if options.terminalOnly && (*all || options.endpoint != "" || options.target != "" || options.oauth || options.prepare || options.auth.specified()) {
+		return setupOptions{}, fmt.Errorf("--terminal-only cannot be combined with stack or agent setup options")
+	}
+	if !*all && options.endpoint == "" && !options.terminalOnly {
 		return setupOptions{}, fmt.Errorf("setup requires --all to start Cully on this machine, or --mcp-url URL to connect to a deployed Cully stack")
 	}
 	if options.prepare && !*all {
@@ -305,6 +320,8 @@ func runInternal(args []string) error {
 		return fmt.Errorf("missing internal action")
 	}
 	switch args[0] {
+	case "terminal-check-output":
+		return cully.RunTerminalCheckOutput(os.Stdin, os.Stdout)
 	case "statusline":
 		cully.RunStatusline(os.Stdin, os.Stdout)
 	case "analyze":

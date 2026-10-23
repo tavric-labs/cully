@@ -30,6 +30,10 @@ func RunPane(agentName string, args []string, input, output *os.File) error {
 	if err != nil {
 		return err
 	}
+	return runPane(agent, args, input, output, nil)
+}
+
+func runPane(agent paneAgent, args []string, input, output *os.File, exercise *terminalExercise) error {
 	if !term.IsTerminal(int(input.Fd())) || !term.IsTerminal(int(output.Fd())) {
 		return fmt.Errorf("cully %s requires an interactive terminal", agent.Name)
 	}
@@ -120,7 +124,13 @@ func RunPane(agentName string, args []string, input, output *os.File) error {
 	statusRows := func() []string { return compactSessionStatusRows(cols, panelBudget(), advice, stats, view) }
 	content := statusRows()
 	top := divider.top(rows, len(content))
-	child, err := pty.StartWithSize(cmd, &pty.Winsize{Rows: uint16(top), Cols: uint16(cols)})
+	agentCols := func() int {
+		if profile.isWarp() {
+			return max(1, cols-2)
+		} // scrollbar and right margin
+		return cols
+	}
+	child, err := pty.StartWithSize(cmd, &pty.Winsize{Rows: uint16(top), Cols: uint16(agentCols())})
 	if err != nil {
 		return fmt.Errorf("start %s: %w", agent.Name, err)
 	}
@@ -133,7 +143,7 @@ func RunPane(agentName string, args []string, input, output *os.File) error {
 		close(waitDone)
 	}()
 	readerDone := make(chan struct{})
-	emulator := vt.NewEmulator(cols, top)
+	emulator := vt.NewEmulator(agentCols(), top)
 	readFooter := func() {
 		if agent.NativeFooter {
 			rows, base := footerRows(emulator)
@@ -217,19 +227,20 @@ func RunPane(agentName string, args []string, input, output *os.File) error {
 	var keyFeed panelInput
 	lastInput := time.Now()
 	var drawer advisorDrawer
+	var scroll paneScroll
 	resizeMode := false
 	resizeChild := func() {
 		nextTop := divider.top(rows, len(content))
-		if nextTop != top || cols != emulator.Width() {
+		if nextTop != top || agentCols() != emulator.Width() {
 			top = nextTop
-			emulator.Resize(cols, top)
-			_ = pty.Setsize(child, &pty.Winsize{Rows: uint16(top), Cols: uint16(cols)})
+			emulator.Resize(agentCols(), top)
+			_ = pty.Setsize(child, &pty.Winsize{Rows: uint16(top), Cols: uint16(agentCols())})
 		}
 	}
 	// Keep wheel reporting active when the drawer closes; disabling it would
 	// strand Warp on the alternate screen without any reachable scrollback.
 	syncMouseTracking := func() {
-		want := !profile.isWarp() || drawer.Open || resizeMode
+		want := !profile.isWarp() || drawer.Open || resizeMode || divider.Dragging || scroll.Dragging
 		if mouseMotion == want {
 			return
 		}
@@ -251,8 +262,10 @@ func RunPane(agentName string, args []string, input, output *os.File) error {
 		_, _ = io.WriteString(output, "\x1b]22;"+shape+"\x1b\\")
 	}
 	defer func() { setPointer(false) }()
-	var scroll paneScroll
 	paint := func() string {
+		if exercise != nil {
+			exercise.frame(drawer.Open, top < rows && len(content) > 0)
+		}
 		if drawer.Open {
 			return drawer.render(cols, rows, stats, view)
 		}
@@ -269,8 +282,14 @@ func RunPane(agentName string, args []string, input, output *os.File) error {
 		}
 		if scroll.active() {
 			hint = fmt.Sprintf(" ↑ %d lines back · type or scroll down to return ", scroll.Offset)
+		} else if profile.isWarp() && emulator.IsAltScreen() {
+			hint = " agent owns history · wheel to scroll · Ctrl+] advisor "
 		}
-		return renderTerminalPaneView(emulator, scroll.Offset, cols, rows, content, agent.NativeFooter, hud, divider.grip(), hint)
+		frame := renderTerminalPaneView(emulator, scroll.Offset, cols, rows, content, agent.NativeFooter, hud, divider.grip(), hint)
+		if profile.isWarp() {
+			frame += renderPaneScrollbar(&scroll, emulator.ScrollbackLen(), top, cols-1, emulator.IsAltScreen())
+		}
+		return frame
 	}
 	// Enter pastes a request into the agent's input instead of submitting it, so
 	// the user keeps their draft, reads the request and decides whether to send.
@@ -285,14 +304,21 @@ func RunPane(agentName string, args []string, input, output *os.File) error {
 			return
 		}
 		request := terminalSafeText(advisorRequest(line, readSessionSignals(session)))
-		_, _ = child.Write([]byte("\x1b[200~\n" + request + "\x1b[201~"))
+		emulator.SendText("\x1b[200~\n" + request + "\x1b[201~")
 		drawer.close()
 		syncMouseTracking()
 		dirty = true
 	}
 	handleKeys := func(keys []panelKey) {
 		for _, key := range keys {
+			if key.Action == "escape" && scroll.Dragging {
+				scroll.Dragging = false
+				syncMouseTracking()
+				dirty = true
+				continue
+			}
 			if key.Action == "resize" {
+				scroll.Dragging = false
 				if drawer.Open {
 					drawer.close()
 				}
@@ -304,7 +330,7 @@ func RunPane(agentName string, args []string, input, output *os.File) error {
 				dirty = true
 				continue
 			}
-			if resizeMode && key.Action == "escape" && !drawer.Open {
+			if (resizeMode || divider.Dragging) && key.Action == "escape" && !drawer.Open {
 				resizeMode = false
 				divider.Dragging = false
 				divider.Hover = false
@@ -314,6 +340,7 @@ func RunPane(agentName string, args []string, input, output *os.File) error {
 				continue
 			}
 			if key.Action == "focus" {
+				scroll.Dragging = false
 				divider.Dragging = false
 				divider.Hover = false
 				setPointer(false)
@@ -330,11 +357,40 @@ func RunPane(agentName string, args []string, input, output *os.File) error {
 				mouse := key.Mouse
 				// The panel belongs to the same conversation view. A wheel over
 				// it must read history too, rather than silently doing nothing.
-				if !drawer.Open && (mouse.Button == 64 || mouse.Button == 65) && !mouse.Release && !emulator.IsAltScreen() {
-					if scroll.wheel(mouse.Button == 64, emulator.ScrollbackLen()) {
+				if up, wheel := mouse.verticalWheel(); !drawer.Open && wheel {
+					if emulator.IsAltScreen() {
+						// An alternate-screen agent owns its history. Wheel events over
+						// the compact panel must reach that agent inside its viewport.
+						forwarded := *mouse
+						forwarded.X = min(max(forwarded.X, 1), emulator.Width())
+						forwarded.Y = min(max(forwarded.Y, 1), top)
+						emulator.SendMouse(forwarded.event())
+					} else if scroll.wheel(up, emulator.ScrollbackLen()) {
+						if exercise != nil {
+							if up {
+								exercise.WheelUp = true
+							} else {
+								exercise.WheelDown = true
+							}
+						}
 						dirty = true
 					}
 					continue
+				}
+				if !drawer.Open && profile.isWarp() {
+					beforeOffset := scroll.Offset
+					if !emulator.IsAltScreen() && scroll.scrollbar(mouse, cols-1, top, emulator.ScrollbackLen()) {
+						if exercise != nil && beforeOffset != scroll.Offset {
+							exercise.Scrollbar = true
+						}
+						setPointer(false)
+						syncMouseTracking()
+						dirty = true
+						continue
+					}
+					if mouse.X > emulator.Width() && mouse.Y <= top {
+						continue
+					}
 				}
 				if !drawer.Open {
 					if motion, changed := divider.hover(mouse, rows, top); motion {
@@ -344,8 +400,18 @@ func RunPane(agentName string, args []string, input, output *os.File) error {
 					}
 				}
 				if !drawer.Open && divider.handle(mouse, rows, top) {
+					syncMouseTracking()
 					content = statusRows()
+					beforeTop := top
 					resizeChild()
+					if exercise != nil {
+						if top < beforeTop {
+							exercise.DividerUp = true
+						}
+						if top > beforeTop {
+							exercise.DividerDown = true
+						}
+					}
 					divider.Hover = mouse.Y == top+1
 					setPointer(divider.Dragging || divider.Hover)
 					dirty = true
@@ -362,7 +428,7 @@ func RunPane(agentName string, args []string, input, output *os.File) error {
 						setPointer(false)
 						syncMouseTracking()
 					} else if drawer.Open {
-						switch mouse.Button {
+						switch mouse.Button &^ (4 | 8 | 16) {
 						case 64:
 							drawer.move(-1)
 						case 65:
@@ -412,10 +478,26 @@ func RunPane(agentName string, args []string, input, output *os.File) error {
 				dirty = true
 				continue
 			}
+			// Normal-screen agents leave history in the emulator. Page keys
+			// keep it reachable even if the host withholds mouse reports.
+			// Fullscreen agents keep their own page-key bindings and history.
+			if !emulator.IsAltScreen() && emulator.ScrollbackLen() > 0 && (key.Action == "pageup" || key.Action == "pagedown") {
+				lines := max(1, top-1)
+				if key.Action == "pagedown" {
+					lines = -lines
+				}
+				if scroll.move(lines, emulator.ScrollbackLen()) {
+					dirty = true
+				}
+				continue
+			}
 			if scroll.reset() {
 				dirty = true // typing returns to the live screen
 			}
-			_, _ = child.Write(key.Data)
+			syncMouseTracking()
+			// Mouse events and terminal replies use the emulator's input pipe.
+			// Keep keys in that same stream so they cannot overtake a wheel.
+			emulator.SendText(string(key.Data))
 		}
 	}
 	var shutdown <-chan time.Time
@@ -475,9 +557,14 @@ func RunPane(agentName string, args []string, input, output *os.File) error {
 			dirty = true
 		case <-resize:
 			if width, height, sizeErr := term.GetSize(int(output.Fd())); sizeErr == nil && width > 0 && height > 0 {
+				if exercise != nil {
+					exercise.Resize = true
+				}
 				cols, rows = width, height
 				content = statusRows()
 				divider.Dragging = false
+				scroll.Dragging = false
+				syncMouseTracking()
 				resizeChild()
 				dirty = true
 			}
@@ -551,10 +638,12 @@ func currentDir() string {
 // button and wheel reports needed to read the virtual terminal's history.
 func writeMouseMotion(w io.Writer, on bool) {
 	if on {
-		_, _ = io.WriteString(w, "\x1b[?1002h\x1b[?1003h")
+		_, _ = io.WriteString(w, "\x1b[?1002h\x1b[?1003h\x1b[?1006h")
 		return
 	}
-	_, _ = io.WriteString(w, "\x1b[?1002l\x1b[?1003l")
+	// Tracking modes can be mutually exclusive in the host. Reassert basic
+	// reporting after turning motion off so the wheel continues to arrive.
+	_, _ = io.WriteString(w, "\x1b[?1002l\x1b[?1003l\x1b[?1000h\x1b[?1006h")
 }
 
 func renderTerminalPane(emulator *vt.Emulator, cols, rows int, content []string, nativeFooter bool, hud string, hints ...string) string {
@@ -569,7 +658,7 @@ func renderTerminalPaneGrip(emulator *vt.Emulator, cols, rows int, content []str
 // the same window that many lines further back in the emulator's scrollback.
 func renderTerminalPaneView(emulator *vt.Emulator, offset, cols, rows int, content []string, nativeFooter bool, hud string, grip gripState, hints ...string) string {
 	var out strings.Builder
-	limit := max(0, cols-1) // avoid triggering automatic terminal wrap
+	limit := max(0, min(cols-1, emulator.Width())) // leave the reserved gutter clear
 	top := min(emulator.Height(), rows)
 	scrollbackLen := emulator.ScrollbackLen()
 	offset = min(max(offset, 0), scrollbackLen)

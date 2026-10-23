@@ -79,3 +79,15 @@ func TestMCPAddRequiresDeploymentURL(t *testing.T) {
 		t.Fatal("mcp add accepted a missing deployment URL")
 	}
 }
+
+func TestTerminalOnlySetupOptions(t *testing.T) {
+	options, err := parseSetup([]string{"--terminal-only", "--skip-terminal-test"})
+	if err != nil || !options.terminalOnly || !options.skipTerminalTest {
+		t.Fatalf("%+v %v", options, err)
+	}
+	for _, args := range [][]string{{"--terminal-only", "--all"}, {"--terminal-only", "--mcp-url", "https://example.com/mcp"}, {"--terminal-only", "--prepare"}, {"--terminal-only", "--agent", "codex"}, {"--terminal-only", "--oauth"}} {
+		if _, err := parseSetup(args); err == nil {
+			t.Fatalf("accepted mixed terminal/stack setup: %v", args)
+		}
+	}
+}

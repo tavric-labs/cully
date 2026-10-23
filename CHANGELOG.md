@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Keep mouse and wheel reporting enabled across terminal tracking changes, advisor closure and divider dragging. Support SGR and legacy mouse reports, including modified wheel gestures; forward compact-panel wheel events into fullscreen agents within their viewport. Add Page Up/Down access to emulator history and document Warp's required scroll reporting setting.
+- Add a visible Warp conversation scrollbar with a proportional thumb, track clicks and dragging in a reserved gutter. Keep alternate-screen history owned by the agent, preserve terminal appearance, and serialize keyboard/mouse input to retain event order.
+- Add terminal-only setup and check/configure/test/restore commands. Back up and repair Warp's required mouse/scroll preferences without changing appearance; verify real wheel, scrollbar, divider, advisor and status rendering during interactive setup and report untested features explicitly.
+
 ## 0.26.0
 
 - Analyse completed user-prompt windows every 12 prompts by default, then scout current Claude Code, Codex or Cursor documentation, practical articles and primary research papers. Filter findings against the task and remembered workflows; keep immediate local warnings active between analyses.

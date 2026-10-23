@@ -55,7 +55,7 @@ The first row under the agent is a one-line health bar. Every value is measured.
 
 ## The advisor panel
 
-Below the health bar, the panel shows session instruments and two prioritized advisor comments. Click below the divider in the panel, or press `Ctrl+]` or `F6`, to open the full advisor. Select with the mouse or Up and Down, press Enter to add the suggestion to your prompt, and press Tab for every instrument. See the [advisor](/advisor) for what it analyzes and how you apply a suggestion. In Warp, open the advisor with `Ctrl+]` or `F6` first: mouse tracking is deferred so Warp scroll mode is not consumed while you work.
+Below the health bar, the panel shows session instruments and two prioritized advisor comments. Click below the divider in the panel, or press `Ctrl+]` or `F6`, to open the full advisor. Select with the mouse or Up and Down, press Enter to add the suggestion to your prompt, and press Tab for every instrument. See the [advisor](/advisor) for what it analyzes and how you apply a suggestion. Mouse and wheel reporting stay enabled; Warp defers continuous pointer motion until the advisor or divider needs it.
 
 At 120 columns or wider, two columns show **Harness** and **Session**. Narrow screens stack the groups. Harness shows which setup components were found, gaps, recent oversized tool-output estimates, the model and pending checks. Session keeps the project, context, token counts, quota, Fast mode and Git changes together with observed memory use, analyses avoided, loops caught, estimated net tokens, MCP health and authentication. Open Tab details for tool counters.
 
@@ -65,9 +65,9 @@ Drag the horizontal health bar between the agent and Cully up to expand the pane
 
 The divider grip highlights when the pointer is over it, and Cully requests a vertical-resize cursor (OSC 22) while you hover or drag, restoring the default when you leave the bar or open the advisor. Cursor appearance depends on terminal support.
 
-Scroll back through the agent's output with the mouse wheel over the agent area. Cully draws the agent from its own terminal emulator, which keeps the last 10,000 lines, because your terminal never receives that output and has no scrollback of it. The panel shows how many lines back you are; typing, or scrolling down to the bottom, returns to the live screen, and new output does not move the lines you are reading. An agent that uses the alternate screen, such as a full-screen interface, scrolls itself and receives the wheel instead. In Warp, mouse tracking stays off until you open the advisor or divider resizing, so Warp's own scrolling applies.
+Scroll back through the agent's output with the mouse wheel over the agent or compact panel. Cully draws the agent from its own terminal emulator, which keeps the last 10,000 lines, because your terminal never receives that output and has no scrollback of it. Page Up and Page Down also read this history when the agent uses the normal screen. The panel shows how many lines back you are; typing, or scrolling down to the bottom, returns to the live screen, and new output does not move the lines you are reading. A fullscreen agent using the alternate screen receives wheel and page keys to navigate its own history.
 
-In Warp, press `Ctrl+\` to enable divider dragging, drag the bar, then press `Ctrl+\` again or Esc to restore normal host scrolling. Other terminals allow dragging immediately. Click below the divider to open the advisor.
+Drag the divider directly in any supported terminal. Warp enables pointer motion during the drag and disables it on release or Esc, preserving mouse and wheel reporting. `Ctrl+\` toggles explicit resize mode when needed. Click below the divider to open the advisor.
 
 Before your first drag, the panel grows only as far as its content needs. It always leaves the agent at least 12 rows on a normal screen (8 on a short one). Terminals shorter than 12 rows give the agent the whole screen.
 
@@ -92,4 +92,36 @@ The hooks are inactive outside the Cully terminal, so an ordinary agent session 
 
 ## Scroll the conversation
 
-The mouse wheel reads Cully's emulator history over the agent or compact panel, including in Warp. New output keeps the history view anchored; typing returns to live output. An agent using its own alternate screen receives its own mouse events. Opening and closing the advisor preserves wheel reporting. Warp users can hold Shift for terminal text selection, or use `CULLY_NO_PANE=1` for native agent IO. Mouse and scroll reporting must be enabled in Warp for it to deliver wheel events to full-screen applications.
+The mouse wheel reads Cully's emulator history over the agent or compact panel. Cully requests SGR mouse reporting and accepts legacy mouse reports from terminals that do not support it. Modified vertical wheel events keep their direction; fullscreen agents receive the original modifiers with coordinates constrained to their viewport. New output keeps the history view anchored; typing returns to live output. Page Up and Page Down provide access to emulator history when wheel events are unavailable; fullscreen agents retain their own page-key handling. Opening and closing the advisor, ending a drag or resizing the terminal preserves wheel reporting.
+
+Enable mouse and scroll reporting in your terminal application. Cully can request these protocols but cannot override the terminal's user settings. In Warp, enable both **Mouse Reporting** and **Scroll Reporting** under **Settings → Features → Terminal**; a saved `scroll_reporting_enabled = false` prevents wheel events from reaching Cully even when mouse reporting is on. Hold Shift for Warp text selection, or use `CULLY_NO_PANE=1` for native agent IO. Restart a running Cully session after installing a new binary to use its fixes.
+
+### Visible scrollbar in Warp
+
+Warp sessions reserve a gutter on the right of the conversation, outside the agent's text width. Its vertical thumb shows the visible fraction and current position in Cully's normal-screen history. Click the track to jump to that position, or drag the thumb up or down. A drag continues if the pointer leaves the gutter; release or Esc ends it. The advisor and horizontal divider keep their own input handling. The scrollbar uses the terminal's default colors and does not change Warp's theme, fonts, opacity or padding.
+
+Cully retains up to 10,000 lines of **normal-screen** output. **Alternate-screen** agents manage their own history internally; Cully receives only their currently painted screen, so it cannot calculate a reliable thumb or implement a history drag for them. The gutter shows a dim track without a thumb in that mode and the divider says that the agent owns history. Wheel events still reach the agent, including over the panel and gutter. To use Codex with Cully's draggable scrollbar, select scrollback mode with Codex's `/tui` command and restart, or launch:
+
+```sh
+cully run codex --no-alt-screen
+# Continue an existing conversation:
+cully run codex --no-alt-screen resume SESSION_ID
+```
+
+The wrapper keeps keyboard and mouse input in one ordered stream, so typing or pressing page keys cannot overtake a wheel event.
+
+### Configure and verify your terminal
+
+```sh
+cully setup --terminal-only    # repair required settings, then run a live check
+cully terminal check          # inspect saved settings without changing them
+cully terminal configure --dry-run
+cully terminal configure      # repair only required mouse/scroll preferences
+cully terminal test           # repeat live verification without changing settings
+```
+
+Regular `cully setup --all` and `cully setup --mcp-url URL` also configure the detected terminal and offer the live exercise when stdin and stdout are terminals. Add `--skip-terminal-test` to configure without that exercise; redirected setup skips it and labels live checks as untested. `--prepare` skips the live exercise as well.
+
+The live check uses sample output instead of starting a coding agent. Scroll up and down, drag the divider both ways, open and close the advisor, and in Warp move the right scrollbar. Resize the window if desired, then press `q`. It reports observed history movement, agent viewport resizing and status rendering; incomplete checks remain **NOT VERIFIED**. Check selection/copy manually using the terminal's selection modifier. Model, token and tool statistics need a real coding-agent session; the exercise verifies their display area, not unavailable agent signals.
+
+Warp's adapter enables only `terminal.mouse_reporting_enabled` and `terminal.scroll_reporting_enabled`. It preserves other settings and comments, writes a private backup before changing an existing file, and prints an exact `cully terminal restore --backup PATH` command. Current Warp versions hot-reload the file. Use `--channel preview` for Warp Preview or `--terminal WarpTerminal` when terminal metadata is missing. Other terminals use standard mouse protocols; Cully does not guess at unsupported host preferences. Over SSH, configure the terminal on the client's local machine. Ordinary agent launches do not rewrite host preferences.

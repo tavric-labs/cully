@@ -102,8 +102,22 @@ func (p *panelInput) feed(data []byte, flush bool) []panelKey {
 				}
 			}
 		}
+		// Terminals that ignore SGR mode still send the original three-byte
+		// mouse encoding. Decode it here instead of leaking it into the prompt.
+		if bytes.HasPrefix(p.pending, []byte("\x1b[M")) {
+			if len(p.pending) < 6 && !flush {
+				break
+			}
+			if len(p.pending) >= 6 && p.pending[3] >= 32 && p.pending[4] > 32 && p.pending[5] > 32 {
+				button := int(p.pending[3]) - 32
+				mouse := &panelMouse{Button: button, X: int(p.pending[4]) - 32, Y: int(p.pending[5]) - 32, Release: button&3 == 3 && button&64 == 0 && button&32 == 0}
+				keys = append(keys, panelKey{Data: bytes.Clone(p.pending[:6]), Action: "mouse", Mouse: mouse})
+				p.pending = p.pending[6:]
+				continue
+			}
+		}
 		matched, partial := false, false
-		if bytes.HasPrefix([]byte("\x1b[<"), p.pending) {
+		if bytes.HasPrefix([]byte("\x1b[<"), p.pending) || bytes.HasPrefix([]byte("\x1b[M"), p.pending) {
 			partial = true
 		}
 		for _, seq := range sequences {
@@ -137,6 +151,13 @@ func (p *panelInput) feed(data []byte, flush bool) []panelKey {
 		}
 	}
 	return keys
+}
+
+// verticalWheel ignores modifier bits when identifying the wheel direction.
+// Horizontal wheels, pointer motion and button releases stay separate.
+func (m *panelMouse) verticalWheel() (up, ok bool) {
+	button := m.Button &^ (4 | 8 | 16)
+	return button == 64, !m.Release && (button == 64 || button == 65)
 }
 
 func (m *panelMouse) event() uv.MouseEvent {
