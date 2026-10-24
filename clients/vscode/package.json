@@ -8,10 +8,16 @@
   "engines": { "vscode": "^1.85.0" },
   "categories": ["Other"],
   "main": "./extension.js",
-  "activationEvents": ["onStartupFinished"],
+  "activationEvents": ["onStartupFinished", "onView:cully.dashboard"],
   "extensionKind": ["workspace"],
   "contributes": {
+    "views": {
+      "workbench.panel.chat": [
+        { "type": "webview", "id": "cully.dashboard", "name": "Cully", "icon": "media/cully.svg" }
+      ]
+    },
     "commands": [
+      { "command": "cully.focusDashboard", "title": "Cully: Open Dashboard" },
       { "command": "cully.runClaude", "title": "Cully: Run Claude Code" },
       { "command": "cully.runCodex", "title": "Cully: Run Codex" },
       { "command": "cully.runCursor", "title": "Cully: Run Cursor Agent" },
