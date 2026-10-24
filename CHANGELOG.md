@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add a VS Code extension under `clients/vscode`: launch agents through `cully run`, show session risk in the status bar, and view status, replay, handoff, harness, impact and improvement output without changing agent or terminal configuration.
+
 ## 0.28.0
 
 - Support Warp for `cully run claude` and other agents. `WarpTerminal` now passes the terminal check; setup gives manual Nerd Font guidance (Settings → Appearance → Text) instead of rewriting Warp settings.

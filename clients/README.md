@@ -27,3 +27,5 @@ Add `--oauth` if the server requires sign-in. A team can connect Cully to its id
 For client-specific sign-in instructions, see the [agent guide](../docs/agents.md). For the MCP resource, scopes and authorization flow, see [MCP OAuth](../docs/oauth.md).
 
 Native Cully phone clients live under [`apps/`](../apps/README.md). They use the same canonical skill through its mobile profile and consume mcp-mobile; they do not run a coding terminal on the phone.
+
+The VS Code extension lives in [`vscode/`](vscode/README.md); it wraps the CLI for launching agents and viewing session status, replay and handoff.
