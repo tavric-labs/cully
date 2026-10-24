@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Add a live Cully dashboard as a sibling view in the VS Code Agent Chat panel, with session health, harness readiness, Cully activity and advisor suggestions that can be added to chat as an editable prompt.
+- Add a live Cully dashboard as a visible sibling view in the VS Code Agent Chat panel, with session health, harness readiness, Cully activity and advisor suggestions that can be added to chat as an editable prompt.
 - Add a VS Code extension under `clients/vscode`: launch agents through `cully run`, show session risk in the status bar, and view status, replay, handoff, harness, impact and improvement output without changing agent or terminal configuration.
 
 ## 0.28.0

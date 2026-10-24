@@ -13,7 +13,7 @@
   "contributes": {
     "views": {
       "workbench.panel.chat": [
-        { "type": "webview", "id": "cully.dashboard", "name": "Cully", "icon": "media/cully.svg" }
+        { "type": "webview", "id": "cully.dashboard", "name": "Cully", "icon": "media/cully.svg", "visibility": "visible" }
       ]
     },
     "commands": [
