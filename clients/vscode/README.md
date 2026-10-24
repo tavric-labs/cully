@@ -4,7 +4,7 @@ A thin front end for the [Cully](https://cully.net) CLI. It runs the commands yo
 
 - **Run agents** in an integrated terminal: Claude Code, Codex or Cursor Agent through `cully run`.
 - **Status bar** shows the current session risk; click it for the menu.
-- **Cully dashboard** is a sibling view in VS Code's Agent Chat panel. It shows session health, harness readiness, Cully activity and advisor suggestions. Add a suggestion to Agent Chat to review and edit it before sending.
+- **Cully dashboard** is a sibling view in VS Code's Agent Chat panel. A colored session bar sits above the expanded Harness and Session sections; Advisor, Scout and extra details stay collapsed until opened. Add an advisor suggestion to Agent Chat to review and edit it before sending.
 - **Read-only views** in the Cully output channel: status, replay, handoff summary, harness audit, token impact and self-improvement suggestions.
 - **Rescue** a stuck session and **set the session task**.
 

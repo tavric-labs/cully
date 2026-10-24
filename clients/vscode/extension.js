@@ -94,47 +94,63 @@ function dashboardHTML(webview) {
 <html><head><meta charset="UTF-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}';">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <style>
-body{padding:0 12px 18px;color:var(--vscode-foreground);font:var(--vscode-font-size) var(--vscode-font-family);line-height:1.45}
-.top{display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;background:var(--vscode-sideBar-background);padding:8px 0;z-index:1}
-h1{font-size:15px;margin:0;font-weight:600}.muted,.foot{color:var(--vscode-descriptionForeground);font-size:11px}
+body{padding:0 10px 16px;color:var(--vscode-foreground);font:var(--vscode-font-size) var(--vscode-font-family);line-height:1.4}
+.top{display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;background:var(--vscode-sideBar-background);padding:7px 0;z-index:1}
+h1{font-size:14px;margin:0;font-weight:600}.muted,.foot{color:var(--vscode-descriptionForeground);font-size:11px}
 button{font:inherit;color:var(--vscode-button-foreground);background:var(--vscode-button-background);border:0;border-radius:2px;padding:4px 8px;cursor:pointer}
 button:hover{background:var(--vscode-button-hoverBackground)}button.secondary{color:var(--vscode-foreground);background:var(--vscode-button-secondaryBackground)}
-section{border:1px solid var(--vscode-panel-border);border-radius:5px;margin:9px 0;padding:9px;background:var(--vscode-sideBar-background)}
-h2{font-size:12px;text-transform:uppercase;letter-spacing:.04em;margin:0 0 7px;color:var(--vscode-descriptionForeground)}
-.hero{display:flex;align-items:center;gap:8px;font-size:14px;font-weight:600}.dot{color:var(--vscode-testing-iconPassed)}.risk{color:var(--vscode-editorWarning-foreground)}
+.healthbar{border-left:3px solid var(--vscode-editorWarning-foreground);border-radius:3px;background:var(--vscode-sideBarSectionHeader-background);padding:9px;margin:5px 0 10px}
+.healthbar.low{border-color:var(--vscode-testing-iconPassed)}.healthbar.medium{border-color:var(--vscode-editorWarning-foreground)}.healthbar.high{border-color:var(--vscode-editorError-foreground)}
+.healthbar.unknown{border-color:var(--vscode-descriptionForeground)}
+.pills{display:flex;gap:5px;flex-wrap:wrap}.pill{font-size:11px;padding:3px 7px;border-radius:9px;background:var(--vscode-badge-background);color:var(--vscode-badge-foreground)}
+.pill.low{background:var(--vscode-testing-iconPassed);color:var(--vscode-editor-background)}.pill.medium{background:var(--vscode-editorWarning-foreground);color:var(--vscode-editor-background)}.pill.high{background:var(--vscode-editorError-foreground);color:var(--vscode-editor-background)}
+.context{height:4px;background:var(--vscode-progressBar-background);border-radius:3px;margin-top:8px;overflow:hidden}.context span{display:block;height:100%;background:var(--vscode-progressBar-background);filter:brightness(1.4)}
+details{border:1px solid var(--vscode-panel-border);border-radius:4px;margin:7px 0;background:var(--vscode-sideBar-background)}
+summary{cursor:pointer;list-style:none;padding:8px 9px;font-weight:600;font-size:12px;display:flex;justify-content:space-between;align-items:center}
+summary::-webkit-details-marker{display:none}summary:before{content:'›';color:var(--vscode-descriptionForeground);font-size:17px;line-height:10px;margin-right:7px;transition:transform .12s}
+details[open]>summary:before{transform:rotate(90deg)}.summary-title{display:flex;align-items:center;flex:1}
+.section-content{padding:0 9px 9px}.section-content>h3{font-size:11px;color:var(--vscode-descriptionForeground);margin:9px 0 3px;text-transform:uppercase}
 .row{display:flex;justify-content:space-between;gap:10px;padding:3px 0;border-bottom:1px solid var(--vscode-widget-border);font-size:12px}.row:last-child{border:0}.value{text-align:right;overflow-wrap:anywhere;color:var(--vscode-descriptionForeground)}
-.chips{display:flex;gap:5px;flex-wrap:wrap}.chip{font-size:11px;padding:2px 6px;border-radius:9px;background:var(--vscode-badge-background);color:var(--vscode-badge-foreground)}
-.advice{font-size:12px;margin:7px 0}.advice button{display:block;margin-top:6px}
+.chips{display:flex;gap:5px;flex-wrap:wrap;margin:7px 0}.chip{font-size:11px;padding:2px 6px;border-radius:9px;background:var(--vscode-badge-background);color:var(--vscode-badge-foreground)}
+.advice{font-size:12px;margin:8px 0;padding-bottom:8px;border-bottom:1px solid var(--vscode-widget-border)}.advice button{display:block;margin-top:6px}
 .empty{color:var(--vscode-descriptionForeground);font-style:italic;font-size:12px}
-pre{white-space:pre-wrap;overflow-wrap:anywhere;font:11px var(--vscode-editor-font-family);color:var(--vscode-descriptionForeground);margin:0}
+pre{white-space:pre-wrap;overflow-wrap:anywhere;font:11px var(--vscode-editor-font-family);color:var(--vscode-descriptionForeground);margin:4px 0}
 </style></head>
 <body><div class="top"><div><h1>Cully</h1><div class="muted" id="workspace"></div></div><button id="refresh" class="secondary" title="Refresh dashboard">↻</button></div>
 <div id="content"><p class="empty">Loading session…</p></div><div id="updated" class="foot"></div>
 <script nonce="${nonce}">
 const vscode=acquireVsCodeApi();document.getElementById('refresh').onclick=()=>vscode.postMessage({type:'refresh'});
 window.addEventListener('message',e=>render(e.data));
-function card(title){const s=document.createElement('section'),h=document.createElement('h2');h.textContent=title;s.append(h);return s}
+function card(title,key,expanded){const d=document.createElement('details');d.dataset.section=key;d.open=expanded;const s=document.createElement('summary'),label=document.createElement('span');label.className='summary-title';label.textContent=title;s.append(label);const c=document.createElement('div');c.className='section-content';d.append(s,c);return[d,c]}
 function row(parent,label,value){const d=document.createElement('div');d.className='row';const a=document.createElement('span'),b=document.createElement('span');a.textContent=label;b.className='value';b.textContent=value;d.append(a,b);parent.append(d)}
 function section(text){const m=/^\\s*(.*?)\\s{2,}(.*)$/.exec(text);return m?[m[1].trim(),m[2].trim()]:null}
+function badge(text,tone){const e=document.createElement('span');e.className='pill '+(tone||'');e.textContent=text;return e}
+function heading(parent,text){const h=document.createElement('h3');h.textContent=text;parent.append(h)}
+function pre(parent,text){const p=document.createElement('pre');p.textContent=text;parent.append(p)}
 function render(data){
  document.getElementById('workspace').textContent=data.directory;document.getElementById('updated').textContent='Updated '+data.updated;
- const root=document.getElementById('content');root.replaceChildren();
- const lines=data.status.split('\\n'),health=card('Session'),risk=lines.find(x=>/^\\s*Risk\\s+/.test(x)),agent=lines.find(x=>/^\\s*Agent\\s+/.test(x));
- const hero=document.createElement('div');hero.className='hero';const dot=document.createElement('span');dot.className='dot';dot.textContent='●';const title=document.createElement('span');title.textContent=agent?agent.replace(/^\\s*Agent\\s+/, ''):'Session status';hero.append(dot,title);
- if(risk){const badge=document.createElement('span');badge.className='risk';badge.textContent=risk.replace(/^\\s*Risk\\s+/, '');hero.append(badge)}health.append(hero);
- for(const x of lines){const r=section(x);if(r&&['Branch','Session','Context','Tests','Verification','Loops','Uncommitted','Memory','Risk'].includes(r[0]))row(health,r[0],r[1])}root.append(health);
- const setup=card('Harness');const setupLine=data.harness.split('\\n').find(x=>/configured\\./.test(x));if(setupLine){const p=document.createElement('div');p.className='muted';p.textContent=setupLine.trim();setup.append(p)}
+ const root=document.getElementById('content'),expanded=new Set([...root.querySelectorAll('details[open]')].map(x=>x.dataset.section));root.replaceChildren();
+ const lines=data.status.split('\\n'),riskLine=lines.find(x=>/^\\s*Risk\\s+/.test(x)),riskValue=riskLine?section(riskLine)?.[1]||riskLine.replace(/^\\s*Risk\\s+/,''):'Risk unavailable',risk=(riskValue.match(/\\b(LOW|MEDIUM|HIGH)\\b/i)||[])[1]?.toLowerCase()||'unknown';
+ const contextLine=lines.find(x=>/^\\s*Context\\s+/.test(x)),contextPercent=Number((contextLine||'').match(/(\\d+)%/)?.[1]||0),agent=(section(lines.find(x=>/^\\s*Agent\\s+/.test(x))||'')||[])[1]||'Agent unavailable';
+ const branch=(section(lines.find(x=>/^\\s*Branch\\s+/.test(x))||'')||[])[1]||'Branch unavailable',elapsed=(section(lines.find(x=>/^\\s*Session\\s+/.test(x))||'')||[])[1]||'';
+ const bar=document.createElement('div');bar.className='healthbar '+risk;const pills=document.createElement('div');pills.className='pills';pills.append(badge(agent),badge(branch),badge(elapsed),badge(risk==='unknown'?'Risk unavailable':'Risk '+risk.toUpperCase(),risk));
+ if(contextPercent)pills.append(badge('Context '+contextPercent+'%',contextPercent>=90?'high':contextPercent>=75?'medium':'low'));
+ const loops=(section(lines.find(x=>/^\\s*Loops\\s+/.test(x))||'')||[])[1];if(loops&&loops!=='0')pills.append(badge('Loops '+loops,'high'));
+ const verify=(section(lines.find(x=>/^\\s*Verification\\s+/.test(x))||'')||[])[1];if(verify)pills.append(badge(verify,/passed|no edits/i.test(verify)?'low':'medium'));
+ bar.append(pills);if(contextPercent){const meter=document.createElement('div');meter.className='context';const fill=document.createElement('span');fill.style.width=Math.min(100,contextPercent)+'%';fill.style.background=contextPercent>=90?'var(--vscode-editorError-foreground)':contextPercent>=75?'var(--vscode-editorWarning-foreground)':'var(--vscode-testing-iconPassed)';meter.append(fill);bar.append(meter)}root.append(bar);
+ const session=card('Session','session',true),sessionBody=session[1];for(const x of lines){const r=section(x);if(r&&['Agent','Branch','Session','Context','Tests','Signals','Verification','Loops','Uncommitted','Memory','Risk'].includes(r[0]))row(sessionBody,r[0],r[1])}
+ const setup=card('Harness','harness',true),setupBody=setup[1];const setupLine=data.harness.split('\\n').find(x=>/configured\\./.test(x));if(setupLine){const p=document.createElement('div');p.className='muted';p.textContent=setupLine.trim();setupBody.append(p)}
  const required=new Set(['Instructions','Guardrails','Memory','Skills','Hooks and scripts','Subagents','Plugins']);
  const components=data.harness.split('\\n').map(x=>x.match(/^\\s*([✓·])\\s+([^:]+):?\\s*(.*)$/)).filter(c=>c&&required.has(c[2].trim()));
- if(components.length){const chips=document.createElement('div');chips.className='chips';for(const c of components){const chip=document.createElement('span');chip.className='chip';chip.textContent=(c[1]==='✓'?'✓ ':'! ')+c[2].trim();chip.title=c[3].trim();chips.append(chip)}setup.append(chips)}
- const measureAt=data.harness.split('\\n').findIndex(x=>/^MEASURED/.test(x));if(measureAt>=0){const p=document.createElement('p');p.className='muted';p.textContent=data.harness.split('\\n').slice(measureAt,measureAt+3).join(' ');setup.append(p)}root.append(setup);
- const activity=card('Cully activity');for(const x of data.impact.split('\\n')){const r=section(x);if(r&&['Memory used','Analyses avoided','Loops caught','Oversized output flagged','Saved (estimated)','Cost (measured)','Net'].includes(r[0]))row(activity,r[0],r[1])}root.append(activity);
- const advisor=card('Advisor');let found=false;
- function adviceItem(text){found=true;const item=document.createElement('div');item.className='advice';const body=document.createElement('div');body.textContent=text;const button=document.createElement('button');button.textContent='Add advice to Agent Chat';button.onclick=()=>vscode.postMessage({type:'prompt',text:'Cully advisor suggestion: '+text+'. Review whether this fits the current task, then suggest or make the appropriate change.'});item.append(body,button);advisor.append(item)}
+ if(components.length){const chips=document.createElement('div');chips.className='chips';for(const c of components){const chip=document.createElement('span');chip.className='chip';chip.textContent=(c[1]==='✓'?'✓ ':'! ')+c[2].trim();chip.title=c[3].trim();chips.append(chip)}setupBody.append(chips)}
+ const measureAt=data.harness.split('\\n').findIndex(x=>/^MEASURED/.test(x));if(measureAt>=0){const p=document.createElement('p');p.className='muted';p.textContent=data.harness.split('\\n').slice(measureAt,measureAt+3).join(' ');setupBody.append(p)}root.append(setup[0],session[0]);
+ const advisor=card('Advisor','advisor',expanded.has('advisor')),advisorBody=advisor[1];let found=false;
+ function adviceItem(text){found=true;const item=document.createElement('div');item.className='advice';const body=document.createElement('div');body.textContent=text;const button=document.createElement('button');button.textContent='Add advice to Agent Chat';button.onclick=()=>vscode.postMessage({type:'prompt',text:'Cully advisor suggestion: '+text+'. Review whether this fits the current task, then suggest or make the appropriate change.'});item.append(body,button);advisorBody.append(item)}
  for(const line of data.status.split('\\n')){const text=line.trim().replace(/^[○⚠]\\s*/, '');if(/^(automatic advisor|graphify graph|advisor:|warning:)/i.test(text))adviceItem(text)}
  for(const line of data.suggestions.split('\\n')){const m=line.match(/^\\[(\\d+)\\]\\s+(?:([^ ]+)\\s+)?(.*)$/);if(m)adviceItem(m[3])}
- if(!found){const p=document.createElement('p');p.className='empty';p.textContent='No current suggestions. Local session warnings remain available in Session status.';advisor.append(p)}
- const details=card('Details');const pre=document.createElement('pre');pre.textContent=data.status.split('Agent setup')[1]?'Agent setup'+data.status.split('Agent setup')[1]:data.status;details.append(pre);root.append(advisor,details);
+ if(!found){const p=document.createElement('p');p.className='empty';p.textContent='No current suggestions.';advisorBody.append(p)}root.append(advisor[0]);
+ const scout=card('Scout','scout',expanded.has('scout')),scoutBody=scout[1],scoutLines=lines.filter(x=>/public discovery|\\bscout\\b|\\bresearch\\b/i.test(x));if(scoutLines.length)pre(scoutBody,scoutLines.map(x=>x.trim()).join('\\n'));else{const p=document.createElement('p');p.className='empty';p.textContent='No scout result reported for this session.';scoutBody.append(p)}root.append(scout[0]);
+ const more=card('More Cully details','more',expanded.has('more')),moreBody=more[1];heading(moreBody,'Cully activity');pre(moreBody,data.impact);heading(moreBody,'Agent setup and advisor status');pre(moreBody,data.status.split('Agent setup')[1]?'Agent setup'+data.status.split('Agent setup')[1]:data.status);root.append(more[0]);
 }
 </script></body></html>`;
 }
