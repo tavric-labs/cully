@@ -5,6 +5,7 @@
   "version": "0.1.0",
   "publisher": "cully",
   "license": "Apache-2.0",
+  "repository": { "type": "git", "url": "https://github.com/tavric-labs/cully.git" },
   "engines": { "vscode": "^1.85.0" },
   "categories": ["Other"],
   "main": "./extension.js",

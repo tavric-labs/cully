@@ -25,6 +25,12 @@ jobs:
           for agent in claude cursor codex; do
             (cd "plugins/$agent" && zip -qr "../../dist-plugins/cully-plugin-$agent.zip" .)
           done
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Package the VS Code extension
+        run: npx --yes @vscode/vsce package --out ../../dist-plugins/cully-vscode-0.1.0.vsix
+        working-directory: clients/vscode
       # goreleaser replaces the whole release body with --release-notes, so its
       # footer would be ignored. Compose the notes here instead.
       - name: Compose the release notes

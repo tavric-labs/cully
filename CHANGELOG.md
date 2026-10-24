@@ -2,8 +2,11 @@
 
 ## Unreleased
 
-- Add a live Cully dashboard beside VS Code Agent Chat with distinct theme-aware colors for each section, green/amber harness readiness chips and colored session checks. Surface MCP connection details in Session; keep Harness and Session expanded and Advisor, Scout and extra details collapsed. Advisor suggestions can be added to chat as editable prompts.
-- Add a VS Code extension under `clients/vscode`: launch agents through `cully run`, show session risk in the status bar, and view status, replay, handoff, harness, impact and improvement output without changing agent or terminal configuration.
+
+## 0.29.0
+
+- Add a VS Code extension beside Agent Chat with a live Cully dashboard, theme-aware section colors, harness readiness, session health and MCP details. Keep Advisor, Scout and extra details collapsed, and let users add advisor suggestions as editable chat prompts.
+- Launch Claude Code, Codex and Cursor through `cully run`; show session risk in the status bar and provide read-only status, replay, handoff, harness, impact and improvement views without changing agent or terminal configuration.
 
 ## 0.28.0
 
