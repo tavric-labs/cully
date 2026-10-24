@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Add a live Cully dashboard beside VS Code Agent Chat with a colored health bar, expanded Harness and Session sections, and collapsed Advisor, Scout and detail sections. Advisor suggestions can be added to chat as editable prompts.
+- Add a live Cully dashboard beside VS Code Agent Chat with distinct theme-aware colors for agent, project, duration, context and risk; keep Harness and Session expanded and Advisor, Scout and extra details collapsed. Advisor suggestions can be added to chat as editable prompts.
 - Add a VS Code extension under `clients/vscode`: launch agents through `cully run`, show session risk in the status bar, and view status, replay, handoff, harness, impact and improvement output without changing agent or terminal configuration.
 
 ## 0.28.0
