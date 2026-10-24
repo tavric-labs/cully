@@ -45,7 +45,7 @@ async function showOutput(args) {
 function openTerminal(args, name) {
   const terminal = vscode.window.createTerminal({ name, cwd: workspaceDir() });
   terminal.show();
-  terminal.sendText(["cully", ...args].map(quote).join(" "));
+  terminal.sendText([config().get("path") || "cully", ...args].map(quote).join(" "));
 }
 
 const quote = (s) => (/^[\w./:=@-]+$/.test(s) ? s : `'${s.replace(/'/g, "'\\''")}'`);
