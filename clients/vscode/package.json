@@ -1,0 +1,57 @@
+{
+  "name": "cully-vscode",
+  "displayName": "Cully",
+  "description": "Session health, replay, handoff and agent launch for Cully from VS Code.",
+  "version": "0.1.0",
+  "publisher": "cully",
+  "license": "Apache-2.0",
+  "repository": { "type": "git", "url": "https://github.com/tavric-labs/cully.git" },
+  "engines": { "vscode": "^1.85.0" },
+  "categories": ["Other"],
+  "main": "./extension.js",
+  "activationEvents": ["onStartupFinished", "onView:cully.dashboard"],
+  "extensionKind": ["workspace"],
+  "contributes": {
+    "views": {
+      "workbench.panel.chat": [
+        { "type": "webview", "id": "cully.dashboard", "name": "Cully", "icon": "media/cully.svg", "visibility": "visible" }
+      ]
+    },
+    "commands": [
+      { "command": "cully.focusDashboard", "title": "Cully: Open Dashboard" },
+      { "command": "cully.runClaude", "title": "Cully: Run Claude Code" },
+      { "command": "cully.runCodex", "title": "Cully: Run Codex" },
+      { "command": "cully.runCursor", "title": "Cully: Run Cursor Agent" },
+      { "command": "cully.status", "title": "Cully: Show Session Status" },
+      { "command": "cully.harness", "title": "Cully: Audit Harness" },
+      { "command": "cully.replay", "title": "Cully: Replay Session" },
+      { "command": "cully.handoff", "title": "Cully: Hand Off Session" },
+      { "command": "cully.rescue", "title": "Cully: Rescue Stuck Session" },
+      { "command": "cully.impact", "title": "Cully: Show Token Impact" },
+      { "command": "cully.improve", "title": "Cully: Review Self-Improvements" },
+      { "command": "cully.setTask", "title": "Cully: Set Session Task" },
+      { "command": "cully.menu", "title": "Cully: Open Menu" }
+    ],
+    "configuration": {
+      "title": "Cully",
+      "properties": {
+        "cully.path": {
+          "type": "string",
+          "default": "cully",
+          "description": "Path to the cully executable."
+        },
+        "cully.statusBar": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show the Cully session status in the status bar."
+        },
+        "cully.refreshSeconds": {
+          "type": "number",
+          "default": 60,
+          "minimum": 10,
+          "description": "How often to refresh the status bar."
+        }
+      }
+    }
+  }
+}

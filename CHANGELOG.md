@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+
+## 0.29.0
+
+- Add a VS Code extension beside Agent Chat with a live Cully dashboard, theme-aware section colors, harness readiness, session health and MCP details. Keep Advisor, Scout and extra details collapsed, and let users add advisor suggestions as editable chat prompts.
+- Launch Claude Code, Codex and Cursor through `cully run`; show session risk in the status bar and provide read-only status, replay, handoff, harness, impact and improvement views without changing agent or terminal configuration.
+
 ## 0.28.0
 
 - Support Warp for `cully run claude` and other agents. `WarpTerminal` now passes the terminal check; setup gives manual Nerd Font guidance (Settings → Appearance → Text) instead of rewriting Warp settings.
