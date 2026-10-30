@@ -101,6 +101,12 @@ func RunContinuityHook(agent, event string, r io.Reader, w io.Writer) {
 	if len(data) != 0 && json.Unmarshal(data, &in) != nil {
 		return
 	}
+	if event == "start" && (agent == "claude" || agent == "cursor") {
+		startUsageSession(agent, fallback(in.ConversationID, in.SessionID))
+	}
+	if agent == "cursor" {
+		recordCursorUsage(data)
+	}
 	var out any
 	switch event {
 	case "prompt":

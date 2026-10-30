@@ -35,8 +35,8 @@ type agentSpec struct {
 	NativeFooter bool
 	// HasUsageFeed is true when the agent can eventually populate model,
 	// context, token or rate-limit instruments (Codex footer or Claude
-	// statusline snapshot). Cursor has neither, so missing values stay
-	// unavailable rather than "waiting".
+	// statusline callback). Cursor reports a model and occasional preCompact
+	// samples, not a continuous usage feed; missing values stay unavailable.
 	HasUsageFeed bool
 	// AdvisorMCPScope runs the headless advisor under this agent's MCP scope.
 	AdvisorMCPScope bool
