@@ -19,7 +19,7 @@ This page separates what ships today from what is planned. Cully's other pages d
 | Agent health bar | Shipped | Agent, project and branch, time, context, loops, unchecked edits. Segments with no data are omitted. |
 | Tool events from hooks | Shipped | Claude Code and Codex hooks, and Cursor shell, file-edit and MCP hooks. Hooks do nothing outside the Cully terminal. |
 | Cursor shell exit codes | Partial | Cursor's shell hook reports no exit code, so a failed Cursor command is not marked failed. Loop detection is weaker for Cursor. |
-| Native footer (model, tokens, quota) | Partial | Codex only. |
+| Native usage instruments | Partial | Codex footer and Claude session-only callback; Cursor model and labeled pre-compaction context samples. Missing native values stay unavailable. |
 | Context pressure | Partial | Codex and Claude Code. Other agents show none. |
 | Cost and cache values | Planned | Shown only if an agent reports them. |
 

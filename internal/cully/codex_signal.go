@@ -160,6 +160,7 @@ func RunPaneSignalHook(agent string, r io.Reader) {
 	var event toolEvent
 	data, _ := io.ReadAll(io.LimitReader(r, 1<<20))
 	if agent == "cursor" {
+		recordCursorUsage(data)
 		var ok bool
 		if event, ok = cursorToolEvent(data); !ok {
 			return

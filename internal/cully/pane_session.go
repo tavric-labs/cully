@@ -54,6 +54,7 @@ type paneSession struct {
 
 	restored  bool
 	lastSave  time.Time
+	usageKey  string
 	waitDone  chan struct{}
 	waitErr   error
 	exited    bool
@@ -78,7 +79,7 @@ func newPaneSession(ctx context.Context, agent paneAgent, args []string, name st
 		bindPane(currentDir(), resume)
 	}
 	appendJournal(currentDir(), id, journalEvent{Agent: agent.Name, Class: journalStart})
-	s.cmd = exec.Command(agent.Binary, args...)
+	s.cmd = exec.Command(agent.Binary, paneUsageArgs(agent.Name, args)...)
 	s.cmd.Env = append(os.Environ(), "CULLY_RUN_ACTIVE=1", "CULLY_PANE_SESSION="+id, "CULLY_SESSION="+id, "CULLY_AGENT="+agent.Name)
 	s.view = sessionView{HealthBar: true, Agent: agent.Name, Project: currentDir(), Branch: gitBranch(currentDir()), Started: time.Now(), Daemon: isDaemonRunning(), Terminal: profile}
 	s.refresh()
@@ -116,6 +117,7 @@ func (s *paneSession) readFooter() {
 		update, _ := parseFooterRows(rows, base)
 		s.view.mergeUpdate(update)
 	}
+	s.readUsage()
 }
 
 // reload refreshes everything the panel shows for this session.
@@ -247,6 +249,8 @@ func (s *paneSession) release() {
 	_ = os.Remove(signalFile(s.id))
 	_ = os.Remove(sessionReportFile(s.id))
 	_ = os.Remove(sessionSnapshotFile(s.id))
+	_ = os.Remove(paneUsageFile(s.id))
+	_ = os.Remove(paneUsageFile(s.id) + ".session")
 	_ = os.Remove(sessionSignalsFile(s.id))
 	_ = os.Remove(sessionSeenFile(s.id))
 	_ = os.Remove(discoveryFile(s.id, s.agent.Name))

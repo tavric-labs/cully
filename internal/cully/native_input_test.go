@@ -81,7 +81,17 @@ func TestNativeAgentKeysAndArgumentsPassThrough(t *testing.T) {
 				t.Fatalf("native input changed: %q vs %q (%v)", got, keys, err)
 			}
 			got, err = os.ReadFile(argv)
-			if err != nil || string(got) != strings.Join(args, "\n")+"\n" {
+			want := strings.Join(args, "\n") + "\n"
+			if test.name == "claude" {
+				// The per-run callback adds a settings overlay, while every native
+				// argument and key remains unchanged. Nothing is installed globally.
+				lines := strings.Split(strings.TrimSuffix(string(got), "\n"), "\n")
+				if len(lines) != len(args)+2 || lines[len(args)] != "--settings" || !strings.Contains(lines[len(args)+1], "_internal usage") {
+					t.Fatalf("missing session-only native usage callback: %q", got)
+				}
+				got = []byte(strings.Join(lines[:len(args)], "\n") + "\n")
+			}
+			if err != nil || string(got) != want {
 				t.Fatalf("native arguments overridden: %q (%v)", got, err)
 			}
 			master.Close()
