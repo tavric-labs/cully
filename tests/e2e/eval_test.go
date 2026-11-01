@@ -4,12 +4,36 @@ import (
 	"context"
 	"os"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/mcp-runtime/cully/internal/evals"
+	"github.com/mcp-runtime/cully/internal/memory"
 )
+
+func retrievalEvalSessions() (string, string) {
+	run := strings.ReplaceAll(uuid.NewString(), "-", "")[:16]
+	return "eval-" + run, "eval-other-" + run
+}
+
+func TestRetrievalEvalSessionsMatchMemoryContract(t *testing.T) {
+	seen := map[string]bool{}
+	for range 2 {
+		primary, other := retrievalEvalSessions()
+		for _, ref := range []string{primary, other} {
+			if seen[ref] {
+				t.Fatal("retrieval fixtures reused a session reference")
+			}
+			seen[ref] = true
+			req := memory.Request{Operation: "log", Log: &memory.LogInput{Summary: "retrieval fixture", Assistant: "other", SessionRef: &ref}}
+			if err := req.Validate(); err != nil {
+				t.Fatalf("retrieval fixture is rejected by the current memory contract: %v", err)
+			}
+		}
+	}
+}
 
 // TestRetrievalEval scores real text search and semantic recall against the
 // embedded dataset. Text retrieval is gated. Semantic recall depends on the
@@ -31,11 +55,9 @@ func TestRetrievalEval(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Fresh projects keep earlier or concurrent runs out of the scores.
-	run := uuid.NewString()[:8]
-	project := "https://github.com/cully-eval/app-" + run
-	other := "https://github.com/cully-eval/other-" + run
-	report, err := evals.Run(ctx, store, ds, project, other, "eval-"+run, 5)
+	// Fresh session references keep earlier or concurrent runs out of the scores.
+	primary, other := retrievalEvalSessions()
+	report, err := evals.Run(ctx, store, ds, primary, other, primary, 5)
 	if err != nil {
 		t.Fatal(err)
 	}
