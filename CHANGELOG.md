@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Fix the published-CLI retrieval E2E fixture to use opaque session references, and check its inputs against the memory contract offline.
+
 ## 0.29.1
 
 - Restore model, context, token and quota instruments inside `cully run codex` and `cully run claude` after the status-line removal. Request native feeds only for the wrapped child, preserve saved settings and explicit overrides, and keep Claude's existing user callback working.
