@@ -7,7 +7,7 @@ import (
 )
 
 // Cursor post-tool events that feed the Cully terminal panel.
-var cursorSignalEvents = []string{"afterShellExecution", "afterFileEdit", "afterMCPExecution"}
+var cursorSignalEvents = []string{"afterShellExecution", "afterFileEdit", "afterMCPExecution", "preCompact"}
 
 const cursorSignalSub = "pane-signal cursor"
 

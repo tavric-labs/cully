@@ -65,7 +65,7 @@ func TestCursorInstallRegistersPaneSignalHooks(t *testing.T) {
 		}
 	}
 	b, _ := os.ReadFile(cursorHooksPath())
-	if strings.Count(string(b), "_internal pane-signal cursor") != 3 || !strings.Contains(string(b), "user-hook") {
+	if strings.Count(string(b), "_internal pane-signal cursor") != 4 || !strings.Contains(string(b), "user-hook") || !strings.Contains(string(b), `"preCompact"`) {
 		t.Fatalf("unexpected hooks: %s", b)
 	}
 	if err := uninstallCursorContinuityHooks(); err != nil {

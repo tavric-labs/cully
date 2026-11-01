@@ -28,6 +28,12 @@
         "command": "if [ \"${CULLY_RUN_ACTIVE:-}\" = \"1\" ]; then cully _internal continuity cursor prompt; fi"
       }
     ],
+    "preCompact": [
+      {
+        "command": "if [ \"${CULLY_RUN_ACTIVE:-}\" = \"1\" ]; then cully _internal pane-signal cursor; fi",
+        "timeout": 5
+      }
+    ],
     "sessionEnd": [
       {
         "command": "if [ \"${CULLY_RUN_ACTIVE:-}\" = \"1\" ]; then cully _internal continuity cursor end; fi"

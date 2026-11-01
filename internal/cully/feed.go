@@ -10,17 +10,16 @@ import (
 //
 // Two feeds fill the panel instruments, and they never run for the same
 // agent: the native terminal footer (Codex, gated on NativeFooter) and the
-// hook snapshot (Claude, read from the session file). Cursor has neither, so
-// its instruments stay missing. Last writer wins between feeds because the
-// agent gates keep them exclusive.
+// hook callback (Claude, read from the pane's usage file). Cursor hooks also
+// report the selected model and historical pre-compaction context samples.
+// Last writer wins between feeds because the agent gates keep them exclusive.
 //
 // Merge rules, preserved from the original feed code:
 //
 //   - A matched footer always sets model and context; instruments absent from
 //     a clipped row are retained, never erased.
-//   - A snapshot always sets model when present. Context, tokens and rates
-//     apply only when the snapshot reports a context window; line changes
-//     apply only when nonzero.
+//   - A callback writes only present native measurements. A complete callback
+//     clears absent/null usage instead of retaining stale post-compaction data.
 //   - Git owns line changes, changed files and their known flag on its own
 //     beat: it resets them first, so a failed Git read zeroes them even when
 //     a snapshot seeded values between beats.

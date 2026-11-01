@@ -17,6 +17,8 @@ type sessionView struct {
 	Project, Branch, Model, Input, Output, FiveHour, Weekly, Fast string
 	ContextLeft                                                   int
 	ContextKnown                                                  bool
+	ContextTokens                                                 string
+	ContextAtCompaction                                           bool
 	Started                                                       time.Time
 	Daemon                                                        bool
 	LinesAdded, LinesRemoved                                      int64
@@ -174,6 +176,9 @@ func sessionStatusContent(cols int, advice []string, stats toolStats, view sessi
 			context += red + "  /compact" + rst
 		}
 	}
+	if view.ContextAtCompaction {
+		context = fmt.Sprintf("%d%% used before compaction", 100-view.ContextLeft)
+	}
 	location := dim + "project unavailable" + rst
 	if view.Project != "" {
 		location = cyan + filepath.Base(view.Project) + rst
@@ -190,6 +195,9 @@ func sessionStatusContent(cols int, advice []string, stats toolStats, view sessi
 		add(dim + "Terminal     " + rst + view.Terminal.label())
 	}
 	add("🧠 Context    " + context)
+	if view.ContextAtCompaction {
+		add("Context tokens  " + view.ContextTokens + " (reported before compaction)")
+	}
 	rows = append(rows, "")
 	left := []string{bold + "Session instruments" + rst, ""}
 	right := []string{bold + "🔧 Activity" + rst + dim + "  ·  recent tool window" + rst, ""}
@@ -682,6 +690,10 @@ func compactInstrumentRows(cols int, stats toolStats, view sessionView) ([]strin
 		}
 	}
 	tokens := "Tokens " + dim + "unavailable" + rst
+	if view.ContextAtCompaction {
+		context = fmt.Sprintf("%d%% used before compaction", 100-view.ContextLeft)
+		tokens = "Context tokens " + cyan + view.ContextTokens + rst + " (before compaction)"
+	}
 	if view.Input != "" || view.Output != "" {
 		tokens = "Tokens in " + cyan + instrument(view.Input) + rst + " / out " + cyan + instrument(view.Output) + rst
 	}

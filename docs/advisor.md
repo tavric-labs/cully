@@ -32,7 +32,7 @@ cully status
 cully suggestions
 ```
 
-`cully status` shows whether the daemon is running. If startup failed, resolve the reported error and rerun `cully setup --all` with the same options. For an existing server, keep the `--mcp-url URL` option. Every agent can run in the [Cully terminal](/terminal), which gives all of them the same health bar and advisor panel. Claude Code also keeps its Cully status line when you run it outside the terminal; inside the terminal that status line stays silent and only feeds the panel. The available advice may differ between agents.
+`cully status` shows whether the daemon is running. If startup failed, resolve the reported error and rerun `cully setup --all` with the same options. For an existing server, keep the `--mcp-url URL` option. Every agent can run in the [Cully terminal](/terminal), which gives all of them the same health bar and advisor panel. Codex's default native footer and Claude's usage callback are requested only for the wrapped child; saved settings and direct native launches stay unchanged. Explicit customizations can opt out of those feeds. The available advice may differ between agents.
 
 | Agent | Installed local integration |
 | --- | --- |

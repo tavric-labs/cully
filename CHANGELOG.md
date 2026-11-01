@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.29.1
+
+- Restore model, context, token and quota instruments inside `cully run codex` and `cully run claude` after the status-line removal. Request native feeds only for the wrapped child, preserve saved settings and explicit overrides, and keep Claude's existing user callback working.
+- Show Cursor's selected model from native hooks and label context/token samples reported before compaction. Keep unavailable input/output totals unknown, clear stale samples, and isolate callbacks by live pane and native session. Add CLI pseudo-terminal and regression tests for all three agents.
 
 ## 0.29.0
 

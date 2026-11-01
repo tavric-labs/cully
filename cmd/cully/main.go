@@ -339,6 +339,14 @@ func runInternal(args []string) error {
 		return fmt.Errorf("missing internal action")
 	}
 	switch args[0] {
+	case "usage":
+		forward := ""
+		if len(args) == 3 && args[1] == "--forward" {
+			forward = args[2]
+		} else if len(args) != 1 {
+			return fmt.Errorf("internal usage accepts only --forward COMMAND")
+		}
+		cully.RunUsageFeed(os.Stdin, os.Stdout, forward)
 	case "terminal-check-output":
 		return cully.RunTerminalCheckOutput(os.Stdin, os.Stdout)
 	case "analyze":

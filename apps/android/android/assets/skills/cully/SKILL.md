@@ -69,9 +69,9 @@ The advisor combines immediate local rules with an optional background worker th
 
 What the terminal can know differs by agent:
 
-- Codex supplies model, context, tokens and quota through its native footer.
-- Claude Code supplies tool events through hooks; Cully installs no status line.
-- Cursor supplies shell, file-edit and MCP events. Its shell hook reports no exit code, so a failed Cursor command is not marked failed. Model, context, tokens and rate limits have no Cursor feed, so the panel shows them as unavailable rather than waiting.
+- Codex supplies model, context, tokens and quota through its native footer. Wrapped launches request these fields when no custom footer is configured; explicit or saved custom/disabled footers remain authoritative.
+- Claude Code supplies tool events through hooks and native usage through a session-only callback. Cully preserves saved settings and chains an existing user status-line command. Explicit `--settings`/`--setting-sources` options and project status lines opt out of this callback. No Cully status line is installed for direct native launches.
+- Cursor hooks report the selected model and, at `preCompact`, a labeled context percentage/token sample. Later activity clears that historical sample; it is never treated as current context pressure or input/output totals. Missing token totals and quotas stay unavailable. Refresh hooks with `cully setup` using the original options after updating. Its shell hook reports no exit code, so a failed Cursor command is not marked failed.
 - Other agents get the health bar and Git state, and tool events only if they can run Cully's hook.
 
 Supported terminal UI uses macOS Terminal, Ghostty, iTerm2, Kitty, WezTerm, Alacritty, Warp or a native GNOME terminal on Linux, with zsh + Oh My Zsh. Bash and other interactive shells are outside support. Cully does not restrict a coding agent's own shell tools. Mouse/wheel/pointer reporting remains enabled; drag the divider directly, release or Esc to end, and use Ctrl+] or F6 for the advisor.
