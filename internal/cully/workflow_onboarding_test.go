@@ -120,7 +120,64 @@ func TestWorkflowExistingSkillAndBoundedRedactedContext(t *testing.T) {
 	if err := os.WriteFile(path, bytes.Repeat([]byte("x"), 13<<10), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if workflowAdvisorContext() != "" {
-		t.Fatal("unbounded context")
+	if got := workflowAdvisorContext(); got == "" || len(got) > workflowContextMax+1024 || !strings.Contains(got, "SKILL.md is longer than 10 KiB") {
+		t.Fatalf("an oversized skill must be cut with a notice, not dropped or sent whole (len %d)", len(got))
+	}
+}
+
+func TestWorkflowContextCutsAtALineAndKeepsRecentLessons(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	dir := filepath.Join(home, ".cully", "skills", "dev-workflow-rules")
+	if err := os.MkdirAll(filepath.Join(dir, "references"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	var skill strings.Builder
+	skill.WriteString("# Workflow\nFIRST-LINE-KEPT\n")
+	for skill.Len() < 30<<10 {
+		skill.WriteString("a line of workflow notes that is long enough to fill the budget quickly\n")
+	}
+	skill.WriteString("LAST-LINE-CUT\n")
+	if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte(skill.String()), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var lessons strings.Builder
+	lessons.WriteString("OLDEST-LESSON-DROPPED\n")
+	for lessons.Len() < 6<<10 {
+		lessons.WriteString("2026-11-02 | an older lesson with some detail | cause | fix | high\n")
+	}
+	lessons.WriteString("NEWEST-LESSON-KEPT token=secret12345678901234567890\n")
+	if err := os.WriteFile(filepath.Join(dir, "references", "lessons.md"), []byte(lessons.String()), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got := workflowAdvisorContext()
+	for _, want := range []string{"FIRST-LINE-KEPT", "NEWEST-LESSON-KEPT", "RECENT LESSONS"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("context lacks %q", want)
+		}
+	}
+	for _, unwanted := range []string{"LAST-LINE-CUT", "OLDEST-LESSON-DROPPED", "secret12345678901234567890"} {
+		if strings.Contains(got, unwanted) {
+			t.Errorf("context contains %q", unwanted)
+		}
+	}
+	if len(got) > workflowContextMax+1024 {
+		t.Fatalf("context is %d bytes, over the 12 KiB budget", len(got))
+	}
+}
+
+func TestWorkflowContextWithoutLessonsFile(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	dir := filepath.Join(home, ".cully", "skills", "dev-workflow-rules")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte("# Workflow\nsmall\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got := workflowAdvisorContext()
+	if !strings.Contains(got, "small") || strings.Contains(got, "RECENT LESSONS") || strings.Contains(got, "Cut here") {
+		t.Fatalf("unexpected context: %s", got)
 	}
 }

@@ -39,10 +39,22 @@ type OptimizationProposal struct {
 	Steps      []string `json:"steps"`
 	Sources    []string `json:"sources,omitempty"`
 	Validation string   `json:"validation"`
+	// Risks are the proposal's costs and downsides, and Undo says how to reverse
+	// it, so the user can weigh both sides before accepting. Both are optional so
+	// plans saved before they existed stay valid; the advisor is asked to fill them.
+	Risks string `json:"risks,omitempty"`
+	Undo  string `json:"undo,omitempty"`
 }
 
 func (p OptimizationProposal) Text() string {
-	return p.Title + "\n" + p.Benefit + "\n- " + strings.Join(p.Steps, "\n- ") + "\nValidation: " + p.Validation + "\nSources: " + strings.Join(p.Sources, " ")
+	out := p.Title + "\n" + p.Benefit + "\n- " + strings.Join(p.Steps, "\n- ") + "\nValidation: " + p.Validation
+	if p.Risks != "" {
+		out += "\nRisks: " + p.Risks
+	}
+	if p.Undo != "" {
+		out += "\nUndo: " + p.Undo
+	}
+	return out + "\nSources: " + strings.Join(p.Sources, " ")
 }
 
 type OptimizationSaveInput struct {
@@ -97,7 +109,7 @@ func (v *OptimizationSaveInput) Validate() error {
 		if len(p.Steps) < 1 || len(p.Steps) > 12 || len(p.Sources) > 5 {
 			return fmt.Errorf("%w: provide 1-12 steps and at most 5 sources", ErrInvalid)
 		}
-		checks = append(checks, boundedOptimizationText(&p.Title, true, 160), boundedOptimizationText(&p.Benefit, true, 600), boundedOptimizationText(&p.Validation, true, 600))
+		checks = append(checks, boundedOptimizationText(&p.Title, true, 160), boundedOptimizationText(&p.Benefit, true, 600), boundedOptimizationText(&p.Validation, true, 600), boundedOptimizationText(&p.Risks, false, 600), boundedOptimizationText(&p.Undo, false, 600))
 		for i := range p.Steps {
 			checks = append(checks, boundedOptimizationText(&p.Steps[i], true, 600))
 		}

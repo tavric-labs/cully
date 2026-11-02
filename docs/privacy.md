@@ -65,7 +65,7 @@ Audit events contain actor, action, target IDs and timestamp, without checkpoint
 
 ## Your workflow profile
 
-The optional `dev-workflow-rules` skill is a private file under `~/.cully/skills/dev-workflow-rules/` that you write and edit yourself; Cully installs only a starter with hint comments. Cully sends at most 12 KiB of it, with likely credentials redacted, to your configured advisor model as background for local analysis. It is excluded from web-research prompts, is never saved to memory automatically, and grants no tool or infrastructure access. Hint comments are not sent, and likely credentials are redacted. Delete the file to remove it.
+The optional `dev-workflow-rules` skill is a private file under `~/.cully/skills/dev-workflow-rules/` that you write and edit yourself; Cully installs only a starter with hint comments. Cully sends at most 12 KiB of it, with likely credentials redacted, to your configured advisor model as background for local analysis: `SKILL.md` up to 10 KiB (cut at a line with a notice when longer) plus up to 2 KiB of the newest lines of `references/lessons.md` when that file exists. It is excluded from web-research prompts, is never saved to memory automatically, and grants no tool or infrastructure access. Hint comments are not sent, and likely credentials are redacted. Delete the file to remove it.
 
 ## Public advisor discovery
 
