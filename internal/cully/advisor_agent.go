@@ -110,7 +110,8 @@ change; never promise measured savings from a paper or change Cully's code.
 When a concrete optimization fits (a skill for a repeated procedure, a workflow,
 plugin, tool, process or harness improvement), save a proposal with the existing
 pattern_key/session/window, kind, title, benefit, actionable steps, verified
-source URLs and validation plan. A novel researched idea may be saved with one
+source URLs, validation plan, risks (the costs and downsides, so the user can
+weigh both sides) and undo (how to reverse it). A novel researched idea may be saved with one
 current observation; clearly distinguish it from a multi-session pattern.
 Save at most one proposal per run. Require a confirmed successful save before
 saying its plan is in memory. Include [cully-plan:ENTRY_UUID] in its ADV line so

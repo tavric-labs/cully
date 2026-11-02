@@ -633,7 +633,7 @@ func commitImprovement(p improvement, plan applyPlan) error {
 	if err != nil {
 		return err
 	}
-	if err := executePlan(home, "cully-self:"+p.ID, plan); err != nil {
+	if err := executeSelfPlan(home, "cully-self:"+p.ID, plan); err != nil {
 		return err
 	}
 	recordAppliedChange("self", "", plan.Summary)

@@ -76,6 +76,23 @@ func continuityPrompt(base, agent string, in continuityHookInput) string {
 	return base
 }
 
+// projectSkillHint points a starting session at Cully's notes for its project,
+// kept outside the repository. It only looks; it never creates anything.
+func projectSkillHint(cwd string) string {
+	if cwd == "" {
+		return ""
+	}
+	dir := findProjectSkillRoot(cwd)
+	if dir == "" {
+		return ""
+	}
+	path := filepath.Join(dir, projectSkillFile)
+	if info, err := os.Stat(path); err != nil || !info.Mode().IsRegular() {
+		return ""
+	}
+	return " Cully's notes for this project, kept outside the repository (read when relevant): " + path + "."
+}
+
 func cursorSessionID(in continuityHookInput) string {
 	if in.SessionID != "" {
 		return in.SessionID
@@ -116,14 +133,15 @@ func RunContinuityHook(agent, event string, r io.Reader, w io.Writer) {
 			dispatchCompletedAdvisorWindow(agent, in)
 		}
 	case "start":
+		startPrompt := continuityPrompt(continuityStart, agent, in) + projectSkillHint(in.Cwd)
 		switch agent {
 		case "claude":
-			out = map[string]any{"hookSpecificOutput": map[string]any{"hookEventName": "SessionStart", "additionalContext": continuityPrompt(continuityStart, agent, in)}}
+			out = map[string]any{"hookSpecificOutput": map[string]any{"hookEventName": "SessionStart", "additionalContext": startPrompt}}
 		case "codex":
 			bindPane(in.Cwd, in.SessionID)
-			out = map[string]any{"hookSpecificOutput": map[string]any{"hookEventName": "SessionStart", "additionalContext": continuityPrompt(continuityStart, agent, in)}}
+			out = map[string]any{"hookSpecificOutput": map[string]any{"hookEventName": "SessionStart", "additionalContext": startPrompt}}
 		case "cursor":
-			out = map[string]any{"additional_context": continuityPrompt(continuityStart, agent, in)}
+			out = map[string]any{"additional_context": startPrompt}
 		}
 	case "response":
 		if agent == "cursor" {

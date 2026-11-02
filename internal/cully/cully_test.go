@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -1010,52 +1011,105 @@ func TestParseApplyPlan(t *testing.T) {
 	}
 }
 
-func TestAppendClaudeMD(t *testing.T) {
-	dir := t.TempDir()
+func TestAppendInstructionFileIsIdempotent(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "rules.md")
 	marker := suggestionMarker("🔍 use graphify")
-	if err := appendClaudeMD(dir, "## Graphify\n- query first", marker); err != nil {
-		t.Fatal(err)
+	for i := 0; i < 2; i++ {
+		if err := appendInstructionFile(path, "## Graphify\n- query first", marker); err != nil {
+			t.Fatal(err)
+		}
 	}
-	b, _ := os.ReadFile(filepath.Join(dir, "CLAUDE.md"))
-	if !strings.Contains(string(b), "Graphify") {
-		t.Fatalf("missing section: %s", b)
-	}
-	// idempotent
-	if err := appendClaudeMD(dir, "## Graphify\n- query first", marker); err != nil {
-		t.Fatal(err)
-	}
-	b2, _ := os.ReadFile(filepath.Join(dir, "CLAUDE.md"))
-	if strings.Count(string(b2), "Graphify") != 1 {
-		t.Fatalf("duplicate append: %s", b2)
+	b, _ := os.ReadFile(path)
+	if strings.Count(string(b), "Graphify") != 1 {
+		t.Fatalf("section missing or duplicated: %s", b)
 	}
 }
 
-func TestAppendAgentInstructions(t *testing.T) {
-	dir := t.TempDir()
-	marker := suggestionMarker("🔍 use graphify")
-	if err := appendAgentInstructions(dir, "## Graphify\n- query first", marker); err != nil {
+func TestAppendProjectRulesCreatesAValidSkill(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "demo_0a1b2c3d")
+	if err := appendProjectRules(dir, "## Graphify\n- query first", suggestionMarker("use graphify")); err != nil {
 		t.Fatal(err)
 	}
-	b, err := os.ReadFile(sharedSkillPath(dir, "cully"))
+	b, err := os.ReadFile(filepath.Join(dir, "SKILL.md"))
 	if err != nil {
-		t.Fatalf("missing shared skill: %v", err)
+		t.Fatalf("missing project skill: %v", err)
 	}
-	if !strings.Contains(string(b), "Graphify") {
-		t.Fatalf("shared skill missing rule: %s", b)
+	if !strings.HasPrefix(string(b), "---\nname: demo_0a1b2c3d\n") || !strings.Contains(string(b), "Graphify") {
+		t.Fatalf("project skill header or rule missing: %s", b)
 	}
 }
 
-func TestMergeMCPServers(t *testing.T) {
-	dir := t.TempDir()
-	if err := mergeMCPServers(dir, map[string]any{
-		"playwright": map[string]any{"command": "npx", "args": []any{"-y", "@playwright/mcp"}},
-	}); err != nil {
+// Applying a suggestion saves Cully's own project notes and changes nothing in
+// the repository: no instruction file, no skill folder, no .mcp.json, and no
+// command is run. MCP servers and commands come back as steps for the user.
+func TestExecutePlanNeverWritesInsideTheRepository(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	repo := t.TempDir()
+	run := func(args ...string) {
+		t.Helper()
+		if out, err := exec.Command("git", append([]string{"-C", repo}, args...)...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	run("init", "-q")
+	run("remote", "add", "origin", "git@github.com:tavric-labs/demo.git")
+	before := listTree(t, repo)
+	witness := filepath.Join(t.TempDir(), "ran")
+	plan := applyPlan{
+		Summary:         "demo",
+		ClaudeMDSection: "## Rule\n- do the thing",
+		MCPServers:      map[string]any{"playwright": map[string]any{"command": "npx"}},
+		ShellCommands:   []string{"touch " + witness},
+		SkillName:       "review",
+		SkillContent:    "# Review\n",
+	}
+	res, err := executePlan(repo, "use a rule", plan)
+	if err != nil {
 		t.Fatal(err)
 	}
-	b, _ := os.ReadFile(filepath.Join(dir, ".mcp.json"))
-	if !strings.Contains(string(b), "playwright") {
-		t.Fatalf("mcp not written: %s", b)
+	if after := listTree(t, repo); strings.Join(before, "\n") != strings.Join(after, "\n") {
+		t.Fatalf("the repository changed:\nbefore %v\nafter  %v", before, after)
 	}
+	if _, err := os.Stat(witness); !os.IsNotExist(err) {
+		t.Fatal("a shell command was executed")
+	}
+	if !strings.Contains(res.ProjectDir, filepath.Join(".cully", "skills", "projects", "demo_")) {
+		t.Fatalf("project notes are not under ~/.cully/skills/projects: %s", res.ProjectDir)
+	}
+	if b, _ := os.ReadFile(filepath.Join(res.ProjectDir, "SKILL.md")); !strings.Contains(string(b), "do the thing") {
+		t.Fatalf("rules not saved: %s", b)
+	}
+	if b, _ := os.ReadFile(filepath.Join(res.ProjectDir, "review", "SKILL.md")); !strings.Contains(string(b), "Review") {
+		t.Fatalf("skill not saved: %s", b)
+	}
+	manual := strings.Join(res.Manual, "\n")
+	if !strings.Contains(manual, "add MCP server playwright") || !strings.Contains(manual, "run touch ") {
+		t.Fatalf("manual steps missing: %q", manual)
+	}
+}
+
+func TestExecutePlanWithOnlyManualStepsCreatesNoProjectNotes(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	res, err := executePlan(t.TempDir(), "install it", applyPlan{ShellCommands: []string{"brew install x"}})
+	if err != nil || res.ProjectDir != "" || len(res.Manual) != 1 {
+		t.Fatalf("unexpected result %+v err=%v", res, err)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".cully")); !os.IsNotExist(err) {
+		t.Fatal("registered a project although nothing was written")
+	}
+}
+
+func listTree(t *testing.T, root string) []string {
+	t.Helper()
+	var out []string
+	_ = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err == nil && !strings.Contains(path, string(filepath.Separator)+".git"+string(filepath.Separator)) && !strings.HasSuffix(path, string(filepath.Separator)+".git") {
+			out = append(out, path)
+		}
+		return nil
+	})
+	return out
 }
 
 func TestWriteSkillSharedForAllAgents(t *testing.T) {

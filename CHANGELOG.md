@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.30.0
+
+- Stop `cully apply` from writing into the repository. Rules and skills now go to Cully's own notes for the project, `~/.cully/skills/projects/<name>_<id>/`; no instruction file, skill folder or `.mcp.json` is written in the repo and no command is run. MCP servers and commands in a suggestion are listed as manual steps. One folder serves every worktree and clone of a repository and survives an owner or organisation rename, and a session started in the project is pointed at its notes. `cully improve` is unchanged.
+- Change the advisor's Apply request to the same rule: do not edit the repository, save rules or a skill through `cully apply`, and describe MCP servers as steps for you. The Cully skill and its plugin and mobile copies say the same.
+- Add optional `risks` and `undo` to optimization proposals, ask the advisor to fill them, and have the plan request explain benefit, risks and undo before you accept. Plans saved without them stay valid.
+- Cut an oversized `dev-workflow-rules` skill at a line with a notice, instead of ignoring it whole, and add the newest 2 KiB of its `references/lessons.md`, within the existing 12 KiB limit.
 - Fix the published-CLI retrieval E2E fixture to use opaque session references, and check its inputs against the memory contract offline.
 
 ## 0.29.1

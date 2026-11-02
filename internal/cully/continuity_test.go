@@ -55,6 +55,36 @@ func TestContinuityHookStartAndStop(t *testing.T) {
 	}
 }
 
+func TestContinuityStartPointsAtProjectNotesOnlyWhenTheyExist(t *testing.T) {
+	t.Setenv("MODEL_HINT_GUARD", "")
+	t.Setenv("HOME", t.TempDir())
+	repo := newRepo(t, "git@github.com:tavric-labs/demo.git")
+	input, _ := json.Marshal(map[string]string{"session_id": "native-session-a", "cwd": repo})
+	context := func() string {
+		out := hookOutput(t, "claude", "start", string(input))
+		return out["hookSpecificOutput"].(map[string]any)["additionalContext"].(string)
+	}
+	if got := context(); strings.Contains(got, "notes for this project") {
+		t.Fatalf("hint without any project notes: %s", got)
+	}
+	if _, err := os.Stat(projectSkillsRoot()); !os.IsNotExist(err) {
+		t.Fatal("session start created project notes")
+	}
+	dir, err := projectSkillRoot(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := context(); strings.Contains(got, "notes for this project") {
+		t.Fatalf("hint for a directory with no SKILL.md: %s", got)
+	}
+	if err := appendProjectRules(dir, "## Rule\n- x", "m"); err != nil {
+		t.Fatal(err)
+	}
+	if got := context(); !strings.Contains(got, filepath.Join(dir, "SKILL.md")) || !strings.Contains(got, "outside the repository") {
+		t.Fatalf("project notes not surfaced: %s", got)
+	}
+}
+
 func TestCursorContinuityUsesOnlyCurrentResponse(t *testing.T) {
 	t.Setenv("MODEL_HINT_GUARD", "")
 	t.Setenv("CLAUDE_CONFIG_DIR", t.TempDir())
