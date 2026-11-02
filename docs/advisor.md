@@ -131,6 +131,7 @@ Applying saves only in Cully's own notes for the project, never in the repositor
 | `cully uninstall --purge-data` | Also deletes local memory volumes and self-hosted configuration. |
 | `cully mcp add --agent AGENT --url URL` | Adds Cully MCP to an existing agent setup; include `--oauth` when the server uses sign-in. |
 | `cully improve [--run] [--apply N] [--dismiss N]` | Shows how Cully scored itself in its scheduled eval and applies an approved improvement to Cully's own guidance. See [self-improvement](/self-improvement). |
+| `cully jobs [list\|run NAME]` | Shows or runs the scheduled jobs listed in `~/.cully/jobs.json`; the daemon starts a due job once a day. See [scheduled jobs](/scheduled-jobs). |
 | `cully impact [--days N] [--json] [--log] [--explain]` | Counts observed memory hits, skipped analyses, loops and output flags; `--explain` shows how the Net token figure is built and what it leaves out. See [token impact](/token-impact). |
 | `cully savings [--days N] [--project TEXT] [--json]` | Estimates Cully injection cost and compares early exploration in local Claude Code or Codex transcripts, following `cully run` or `--agent`; not a billing or causal savings report. |
 | `cully eval advisor [--project TEXT] [--max N] [--live N]` | Checks the advisor on planted sessions, then replays the running agent’s history (Claude Code or Codex) with hindsight proxies. `--live` additionally uses the configured model, can use recall/web research and fails on figures not in its signals. See [evaluate Cully](/evals). |
