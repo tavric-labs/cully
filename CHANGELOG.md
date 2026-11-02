@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.31.0
+
+- Add scheduled jobs. The Cully daemon starts a command you list in `~/.cully/jobs.json` once a day after a local time you choose, detached and at low priority, with no `launchd`, `cron` or `systemd` entry. A night missed while the computer slept or no Cully session was running is made up at the next check; a new job waits for its first scheduled time, runs one at a time, is retried after a failed attempt up to a limit, and is stopped with its child processes after its timeout. `cully jobs` lists jobs and when each is due, and `cully jobs run NAME` runs one now. Jobs are exact argument lists with no shell, started in your home directory, and Cully refuses a file that group or others can write; Cully itself never creates or edits it. State updates are locked across the daemon and `cully jobs run`, a timeout also kills descendants that ignore SIGTERM, and a corrupt state file is moved aside rather than overwritten. See [scheduled jobs](docs/scheduled-jobs.md). Set `CULLY_JOBS_DISABLE=1` to stop the daemon from starting jobs.
+
 ## 0.30.0
 
 - Stop `cully apply` from writing into the repository. Rules and skills now go to Cully's own notes for the project, `~/.cully/skills/projects/<name>_<id>/`; no instruction file, skill folder or `.mcp.json` is written in the repo and no command is run. MCP servers and commands in a suggestion are listed as manual steps. One folder serves every worktree and clone of a repository and survives an owner or organisation rename, and a session started in the project is pointed at its notes. `cully improve` is unchanged.

@@ -144,6 +144,7 @@ func RunDaemon() {
 	defer cancel()
 	go acquisitionLoop(ctx)
 	go selfImproveLoop(ctx)
+	go scheduledJobLoop(ctx)
 	advisorDone := make(chan struct{})
 	go func() { defer close(advisorDone); advisorLoop(ctx) }()
 

@@ -44,6 +44,7 @@ Cully supports native terminals on macOS and Linux with **zsh + Oh My Zsh**. Set
 | [Token impact](https://docs.cully.net/token-impact) | Inspect lookup overhead, oversized output and observational savings estimates. |
 | [Replay and handoff](https://docs.cully.net/session-intelligence) | Review recorded steps, recover a stuck session and prepare the next agent. |
 | [Project memory](https://docs.cully.net/memory) | Recall saved decisions, attempts, results and next steps through MCP and Mem0. |
+| [Scheduled jobs](https://docs.cully.net/scheduled-jobs) | The Cully daemon starts a command you list in `~/.cully/jobs.json` once a day, with no launchd or cron entry; `cully jobs` shows and runs them |
 | [Self-improvement](https://docs.cully.net/self-improvement) | Cully evaluates itself on a schedule, proposes fixes from failing checks, and applies one only when you approve it in `cully improve`. |
 | [Evals](https://docs.cully.net/evals) | Score setup, harness, the improvement loop, task efficiency (verified, time, steps), advisor and memory against planted ground truth. |
 | [Workflow profile](https://docs.cully.net/installation#optional-workflow-skill) | A starter skill with hint comments for your build, test and release habits; fill it in when you know more. |

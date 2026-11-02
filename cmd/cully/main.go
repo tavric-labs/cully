@@ -41,6 +41,7 @@ Usage:
   cully eval [setup|harness|advisor|memory] Score Cully as an agent against planted ground truth; see docs/evals.md
   cully improve [--run] [--apply N] [--dismiss N]
                                           Review how Cully scored itself every 5 hours; approve changes that improve it
+  cully jobs [list|run NAME]              Show or run the scheduled jobs you list in ~/.cully/jobs.json (the daemon starts them)
   cully savings [--days N]                Measure token cost against exploration avoided, from transcripts
   cully task [NAME]                       Show or set the session task (--clear removes it)
   cully workspace --mcp-url URL --input FILE
@@ -149,6 +150,8 @@ func run(args []string) error {
 		return cully.RunEval(os.Stdout, args[1:])
 	case "improve":
 		return cully.RunImprove(os.Stdout, os.Stdin, args[1:])
+	case "jobs":
+		return cully.RunJobs(os.Stdout, args[1:])
 	case "impact":
 		return cully.RunImpact(os.Stdout, args[1:])
 	case "savings":
