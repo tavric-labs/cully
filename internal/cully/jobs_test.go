@@ -267,7 +267,6 @@ func TestReconcileMarksALostJobFailedAndKeepsALiveOne(t *testing.T) {
 	if st := readJobStates()[j.Name]; !st.Running {
 		t.Fatalf("a live job was marked finished: %+v", st)
 	}
-	_ = syscall.Kill(0, 0)
 }
 
 func TestRunJobsListAndRun(t *testing.T) {
@@ -351,5 +350,199 @@ func TestCheckScheduledJobsRunsNothingFromAnUnsafeConfig(t *testing.T) {
 	}
 	if len(readJobStates()) != 0 {
 		t.Fatalf("recorded state for an unsafe config: %v", readJobStates())
+	}
+}
+
+func TestStartJobKillsDescendantsThatIgnoreSIGTERM(t *testing.T) {
+	home := jobsHome(t)
+	marker := filepath.Join(home, "stubborn-survived")
+	j := testJob()
+	j.Command = []string{"/bin/sh", "-c", "(trap '' TERM; sleep 3; touch " + marker + ") & wait"}
+	old := jobKillGrace
+	jobKillGrace = 300 * time.Millisecond
+	defer func() { jobKillGrace = old }()
+	j.timeoutOverride = 500 * time.Millisecond
+	done, err := startJob(j, time.Now(), false, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r := waitJob(t, done); !r.TimedOut {
+		t.Fatalf("result = %+v", r)
+	}
+	time.Sleep(3500 * time.Millisecond)
+	if _, err := os.Stat(marker); err == nil {
+		t.Fatal("a descendant that ignores SIGTERM survived the timeout")
+	}
+}
+
+func TestReconcileGivesAFreshClaimAGracePeriod(t *testing.T) {
+	jobsHome(t)
+	j := testJob()
+	now := time.Now()
+	if err := updateJobState(j.Name, func(s *jobState) { s.Running, s.PID, s.LastStart = true, 0, now }); err != nil {
+		t.Fatal(err)
+	}
+	reconcileJobs([]scheduledJob{j}, now)
+	if st := readJobStates()[j.Name]; !st.Running {
+		t.Fatalf("a job being claimed right now was marked lost: %+v", st)
+	}
+	reconcileJobs([]scheduledJob{j}, now.Add(10*time.Minute))
+	if st := readJobStates()[j.Name]; st.Running || st.LastExit == 0 {
+		t.Fatalf("a stale claim was never released: %+v", st)
+	}
+}
+
+func TestJobDueIgnoresTimestampsFromTheFuture(t *testing.T) {
+	j := testJob()
+	st := jobState{FirstSeen: jobAt("02", "09:00"), LastSuccess: jobAt("02", "09:00").AddDate(0, 1, 0)}
+	if due, why := jobDue(j, st, jobAt("02", "22:31")); !due {
+		t.Fatalf("a success stamped a month in the future blocked the job: %s", why)
+	}
+	st = jobState{FirstSeen: jobAt("02", "09:00").AddDate(1, 0, 0)}
+	if due, _ := jobDue(j, st, jobAt("02", "22:31")); due {
+		t.Fatal("a first-seen time in the future must still wait, not run")
+	}
+}
+
+func TestCorruptStateIsMovedAsideNotOverwritten(t *testing.T) {
+	jobsHome(t)
+	if err := os.MkdirAll(jobsRunDir(), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(jobsStateFile(), []byte("{not json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := updateJobState("a", func(s *jobState) { s.LastExit = 7 }); err != nil {
+		t.Fatal(err)
+	}
+	matches, _ := filepath.Glob(jobsStateFile() + ".corrupt-*")
+	if len(matches) != 1 {
+		t.Fatalf("corrupt copies = %v, want the bad file kept", matches)
+	}
+	if got, _ := os.ReadFile(matches[0]); string(got) != "{not json" {
+		t.Fatalf("corrupt copy = %q", got)
+	}
+	if st := readJobStates()["a"]; st == nil || st.LastExit != 7 {
+		t.Fatalf("fresh state = %+v", st)
+	}
+}
+
+func TestNullStateEntryDoesNotPanic(t *testing.T) {
+	jobsHome(t)
+	if err := os.MkdirAll(jobsRunDir(), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(jobsStateFile(), []byte(`{"x": null}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	reconcileJobs([]scheduledJob{testJob()}, time.Now())
+	_ = readJobStates()
+}
+
+func TestUpdateJobStateWaitsForTheCrossProcessLock(t *testing.T) {
+	jobsHome(t)
+	if err := os.MkdirAll(jobsRunDir(), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	other, err := os.OpenFile(filepath.Join(jobsRunDir(), ".lock"), os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer other.Close()
+	if err := syscall.Flock(int(other.Fd()), syscall.LOCK_EX); err != nil { // as another process would
+		t.Fatal(err)
+	}
+	finished := make(chan struct{})
+	go func() {
+		_ = updateJobState("a", func(s *jobState) { s.LastExit = 1 })
+		close(finished)
+	}()
+	select {
+	case <-finished:
+		t.Fatal("updateJobState ignored a lock held by another process")
+	case <-time.After(300 * time.Millisecond):
+	}
+	_ = syscall.Flock(int(other.Fd()), syscall.LOCK_UN)
+	select {
+	case <-finished:
+	case <-time.After(5 * time.Second):
+		t.Fatal("updateJobState never got the lock after release")
+	}
+}
+
+func TestLoadJobsRejectsRelativeProgramPathsAndTrailingData(t *testing.T) {
+	home := jobsHome(t)
+	path := filepath.Join(home, ".cully", "jobs.json")
+	for name, body := range map[string]string{
+		"relative with slash": `{"jobs":[{"name":"a","command":["./run.sh"],"after":"22:30"}]}`,
+		"parent traversal":    `{"jobs":[{"name":"a","command":["../run.sh"],"after":"22:30"}]}`,
+		"trailing data":       `{"jobs":[]} {"jobs":[{"name":"a","command":["/bin/true"],"after":"22:30"}]}`,
+	} {
+		writeJobsFile(t, home, body, 0o600)
+		if _, err := loadJobs(path); err == nil {
+			t.Errorf("%s: expected an error", name)
+		}
+	}
+	writeJobsFile(t, home, `{"jobs":[{"name":"a","command":["python3","./args-are-fine.py"],"after":"22:30"}]}`, 0o600)
+	if _, err := loadJobs(path); err != nil {
+		t.Errorf("relative arguments after the program must be allowed: %v", err)
+	}
+	if _, err := loadJobs("jobs.json"); err == nil {
+		t.Error("a relative config path (unknown home) must be refused")
+	}
+}
+
+func TestOversizedLogIsRotatedNotErased(t *testing.T) {
+	jobsHome(t)
+	j := testJob()
+	j.Command = []string{"/bin/sh", "-c", "echo fresh"}
+	if err := os.MkdirAll(jobsRunDir(), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	big := strings.Repeat("old-failure-evidence\n", jobLogMax/20+10)
+	if err := os.WriteFile(jobLogFile(j.Name), []byte(big), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	done, err := startJob(j, time.Now(), false, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitJob(t, done)
+	if old, err := os.ReadFile(jobLogFile(j.Name) + ".1"); err != nil || !strings.Contains(string(old), "old-failure-evidence") {
+		t.Fatalf("previous log not kept: %v", err)
+	}
+	if cur, _ := os.ReadFile(jobLogFile(j.Name)); strings.Contains(string(cur), "old-failure-evidence") || !strings.Contains(string(cur), "fresh") {
+		t.Fatalf("current log = %q", cur)
+	}
+}
+
+func TestCheckForgetsRemovedJobsSoAReAddedOneWaitsForItsFirstSlot(t *testing.T) {
+	home := jobsHome(t)
+	writeJobsFile(t, home, `{"jobs":[{"name":"nightly-audit","command":["/bin/true"],"after":"22:30"}]}`, 0o600)
+	clock := jobAt("02", "09:00")
+	setJobsClock(t, &clock)
+	checkScheduledJobs(clock)
+	writeJobsFile(t, home, `{"jobs":[]}`, 0o600)
+	checkScheduledJobs(clock)
+	if _, kept := readJobStates()["nightly-audit"]; kept {
+		t.Fatal("state of a removed job was kept")
+	}
+	writeJobsFile(t, home, `{"jobs":[{"name":"nightly-audit","command":["/bin/true"],"after":"22:30"}]}`, 0o600)
+	clock = jobAt("02", "22:31")
+	checkScheduledJobs(clock) // re-added: first sight again, so recorded only
+	if st := readJobStates()["nightly-audit"]; st == nil || !st.LastStart.IsZero() {
+		t.Fatalf("a re-added job ran immediately: %+v", st)
+	}
+}
+
+func TestMissingProgramIsRecordedNotSilent(t *testing.T) {
+	jobsHome(t)
+	j := testJob()
+	j.Command = []string{"definitely-not-a-real-program-xyz"}
+	if _, err := startJob(j, time.Now(), false, nil); err == nil {
+		t.Fatal("expected an error for a missing program")
+	}
+	if st := readJobStates()[j.Name]; st == nil || st.Detail == "" || st.Running {
+		t.Fatalf("state = %+v, want the failure recorded and not running", st)
 	}
 }

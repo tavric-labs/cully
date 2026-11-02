@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -30,6 +31,7 @@ import (
 // starts at the next opportunity.
 
 const (
+	jobClaimGrace          = 2 * time.Minute
 	jobsDefaultMinHours    = 20.0
 	jobsDefaultTimeoutMin  = 240
 	jobsMaxTimeoutMin      = 24 * 60
@@ -53,8 +55,13 @@ var (
 	jobsNow = time.Now
 )
 
+// cullyUserDir is ~/.cully, or "" when the home directory is unknown (so a
+// relative path is never used for the config or state).
 func cullyUserDir() string {
-	home, _ := os.UserHomeDir()
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return ""
+	}
 	return filepath.Join(home, ".cully")
 }
 
@@ -99,6 +106,9 @@ func (j scheduledJob) normalized() (scheduledJob, error) {
 		cmd[i] = a
 	}
 	j.Command = cmd
+	if prog := cmd[0]; strings.Contains(prog, "/") && !filepath.IsAbs(prog) {
+		return j, fmt.Errorf("command[0] %q must be an absolute path, ~/path, or a bare program name found on PATH; a relative path would depend on where the daemon was started", prog)
+	}
 	if _, err := time.Parse("15:04", j.After); err != nil {
 		return j, fmt.Errorf("after must be a 24-hour local time such as \"22:30\" (got %q)", j.After)
 	}
@@ -133,10 +143,18 @@ func (j scheduledJob) normalized() (scheduledJob, error) {
 // that others can write, or that another user owns, is refused: the daemon runs
 // what it lists.
 func loadJobs(path string) ([]scheduledJob, error) {
-	info, err := os.Stat(path)
+	if path == "" || !filepath.IsAbs(path) {
+		return nil, errors.New("cannot locate ~/.cully/jobs.json: the home directory is unknown")
+	}
+	f, err := os.Open(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, nil
 	}
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	info, err := f.Stat() // the file actually opened, not a path that could change
 	if err != nil {
 		return nil, err
 	}
@@ -146,7 +164,7 @@ func loadJobs(path string) ([]scheduledJob, error) {
 	if st, ok := info.Sys().(*syscall.Stat_t); ok && int(st.Uid) != os.Getuid() {
 		return nil, fmt.Errorf("%s is not owned by you", path)
 	}
-	raw, err := os.ReadFile(path)
+	raw, err := io.ReadAll(io.LimitReader(f, 1<<20))
 	if err != nil {
 		return nil, err
 	}
@@ -157,6 +175,9 @@ func loadJobs(path string) ([]scheduledJob, error) {
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&cfg); err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	if dec.More() {
+		return nil, fmt.Errorf("%s: unexpected data after the top-level object", path)
 	}
 	seen := map[string]bool{}
 	var out []scheduledJob
@@ -205,6 +226,17 @@ func jobDue(j scheduledJob, st jobState, now time.Time) (bool, string) {
 	if st.Running {
 		return false, "running"
 	}
+	// A stored time in the future means the clock was wrong once. Never let it
+	// block a job: ignore a future success, and bound the others to now.
+	if st.LastSuccess.After(now) {
+		st.LastSuccess = time.Time{}
+	}
+	if st.FirstSeen.After(now) {
+		st.FirstSeen = now
+	}
+	if st.LastEnd.After(now) {
+		st.LastEnd = now
+	}
 	slot := latestSlot(now, j.After)
 	if st.LastSuccess.IsZero() {
 		if st.FirstSeen.IsZero() || !slot.After(st.FirstSeen) {
@@ -233,15 +265,41 @@ func jobDue(j scheduledJob, st jobState, now time.Time) (bool, string) {
 
 type jobStates map[string]*jobState
 
+// readJobStatesLocked reads the state file. One that does not parse is moved
+// aside, never overwritten, so a corrupt file cannot silently erase what ran.
 func readJobStatesLocked() jobStates {
-	states := jobStates{}
-	if raw, err := os.ReadFile(jobsStateFile()); err == nil {
-		_ = json.Unmarshal(raw, &states)
+	raw, err := os.ReadFile(jobsStateFile())
+	if err != nil {
+		return jobStates{}
 	}
-	if states == nil {
-		states = jobStates{}
+	states := jobStates{}
+	if err := json.Unmarshal(raw, &states); err != nil || states == nil {
+		_ = os.Rename(jobsStateFile(), jobsStateFile()+".corrupt-"+time.Now().Format("20060102T150405.000000"))
+		return jobStates{}
+	}
+	for name, st := range states {
+		if st == nil {
+			delete(states, name)
+		}
 	}
 	return states
+}
+
+// lockJobStateFile takes an exclusive advisory lock shared with every other
+// Cully process (the daemon and `cully jobs run`) that updates the state.
+func lockJobStateFile() (func(), error) {
+	if err := os.MkdirAll(jobsRunDir(), 0o700); err != nil {
+		return nil, err
+	}
+	f, err := os.OpenFile(filepath.Join(jobsRunDir(), ".lock"), os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return nil, err
+	}
+	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
+		f.Close()
+		return nil, err
+	}
+	return func() { _ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN); f.Close() }, nil
 }
 
 func readJobStates() jobStates {
@@ -251,20 +309,30 @@ func readJobStates() jobStates {
 }
 
 func updateJobState(name string, fn func(*jobState)) error {
+	return mutateJobStates(func(states jobStates) {
+		st := states[name]
+		if st == nil {
+			st = &jobState{}
+			states[name] = st
+		}
+		fn(st)
+	})
+}
+
+// mutateJobStates applies fn to the whole state under both the in-process mutex
+// and the cross-process file lock, then replaces the file atomically.
+func mutateJobStates(fn func(jobStates)) error {
 	jobStateMu.Lock()
 	defer jobStateMu.Unlock()
-	states := readJobStatesLocked()
-	st := states[name]
-	if st == nil {
-		st = &jobState{}
-		states[name] = st
-	}
-	fn(st)
-	raw, err := json.MarshalIndent(states, "", "  ")
+	unlock, err := lockJobStateFile()
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(jobsRunDir(), 0o700); err != nil {
+	defer unlock()
+	states := readJobStatesLocked()
+	fn(states)
+	raw, err := json.MarshalIndent(states, "", "  ")
+	if err != nil {
 		return err
 	}
 	tmp, err := os.CreateTemp(jobsRunDir(), ".state-*")
@@ -276,10 +344,26 @@ func updateJobState(name string, fn func(*jobState)) error {
 		tmp.Close()
 		return err
 	}
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		return err
+	}
 	if err := tmp.Close(); err != nil {
 		return err
 	}
 	return os.Rename(tmp.Name(), jobsStateFile())
+}
+
+// pruneJobStates forgets jobs that are no longer configured (and not running),
+// so removing and re-adding a job starts it fresh.
+func pruneJobStates(keep map[string]bool) {
+	_ = mutateJobStates(func(states jobStates) {
+		for name, st := range states {
+			if !keep[name] && !st.Running {
+				delete(states, name)
+			}
+		}
+	})
 }
 
 // ---- running
@@ -294,6 +378,12 @@ func pidAlive(pid int) bool {
 		return false
 	}
 	err := syscall.Kill(pid, 0)
+	return err == nil || errors.Is(err, syscall.EPERM)
+}
+
+// groupAlive reports whether any process is left in the job's process group.
+func groupAlive(pgid int) bool {
+	err := syscall.Kill(-pgid, 0)
 	return err == nil || errors.Is(err, syscall.EPERM)
 }
 
@@ -326,14 +416,16 @@ func startJob(j scheduledJob, now time.Time, manual bool, tee io.Writer) (<-chan
 	if !filepath.IsAbs(prog) {
 		p, err := exec.LookPath(prog)
 		if err != nil {
-			return nil, fmt.Errorf("job %s: %w", j.Name, err)
+			err = fmt.Errorf("job %s: %w", j.Name, err)
+			_ = updateJobState(j.Name, func(s *jobState) { s.Detail = err.Error() })
+			return nil, err
 		}
 		prog = p
 	}
 	slot := latestSlot(now, j.After).Format(time.RFC3339)
 	var claimErr error
 	if err := updateJobState(j.Name, func(s *jobState) {
-		if s.Running && (s.PID == 0 || pidAlive(s.PID)) {
+		if s.Running && ((s.PID == 0 && now.Sub(s.LastStart) < jobClaimGrace) || pidAlive(s.PID)) {
 			claimErr = errJobRunning
 			return
 		}
@@ -360,7 +452,7 @@ func startJob(j scheduledJob, now time.Time, manual bool, tee io.Writer) (<-chan
 	}
 	logPath := jobLogFile(j.Name)
 	if fi, err := os.Stat(logPath); err == nil && fi.Size() > jobLogMax {
-		_ = os.Truncate(logPath, 0)
+		_ = os.Rename(logPath, logPath+".1") // keep the previous run's output
 	}
 	logf, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 	if err != nil {
@@ -368,6 +460,7 @@ func startJob(j scheduledJob, now time.Time, manual bool, tee io.Writer) (<-chan
 	}
 	fmt.Fprintf(logf, "--- %s start %s\n", now.Format(time.RFC3339), strings.Join(j.Command, " "))
 	cmd := exec.Command(prog, j.Command[1:]...)
+	cmd.Dir, _ = os.UserHomeDir() // a fixed directory, not whichever session started the daemon
 	cmd.Env = append(os.Environ(), "CULLY_JOB="+j.Name)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	var out io.Writer = logf
@@ -382,7 +475,7 @@ func startJob(j scheduledJob, now time.Time, manual bool, tee io.Writer) (<-chan
 	pid := cmd.Process.Pid
 	_ = syscall.Setpriority(syscall.PRIO_PROCESS, pid, 10)
 	jobInflight.Store(j.Name, true)
-	_ = updateJobState(j.Name, func(s *jobState) { s.PID = pid })
+	_ = updateJobState(j.Name, func(s *jobState) { s.Running, s.PID = true, pid })
 
 	done := make(chan jobResult, 1)
 	go func() {
@@ -398,13 +491,14 @@ func startJob(j scheduledJob, now time.Time, manual bool, tee io.Writer) (<-chan
 		case <-time.After(j.timeout()):
 			res.TimedOut = true
 			_ = syscall.Kill(-pid, syscall.SIGTERM)
-			var err error
-			select {
-			case err = <-waitc:
-			case <-time.After(jobKillGrace):
-				_ = syscall.Kill(-pid, syscall.SIGKILL)
-				err = <-waitc
+			// Give the group a moment to leave, then kill whatever is still in
+			// it, including a descendant that ignored SIGTERM after the leader
+			// exited.
+			for deadline := time.Now().Add(jobKillGrace); time.Now().Before(deadline) && groupAlive(pid); {
+				time.Sleep(50 * time.Millisecond)
 			}
+			_ = syscall.Kill(-pid, syscall.SIGKILL)
+			err := <-waitc
 			res.Exit = exitCodeOf(err)
 			if res.Exit == 0 {
 				res.Exit = -1
@@ -428,11 +522,14 @@ func reconcileJobs(jobs []scheduledJob, now time.Time) {
 		timeouts[j.Name] = j.timeout()
 	}
 	for name, st := range readJobStates() {
-		if !st.Running {
+		if st == nil || !st.Running {
 			continue
 		}
 		if _, mine := jobInflight.Load(name); mine {
 			continue
+		}
+		if st.PID == 0 && now.Sub(st.LastStart) < jobClaimGrace {
+			continue // another process is starting this job right now
 		}
 		limit := timeouts[name]
 		if limit == 0 {
@@ -456,6 +553,11 @@ func checkScheduledJobs(now time.Time) {
 		daemonLog("jobs: %v", err)
 		return
 	}
+	keep := map[string]bool{}
+	for _, j := range jobs {
+		keep[j.Name] = true
+	}
+	pruneJobStates(keep)
 	reconcileJobs(jobs, now)
 	states := readJobStates()
 	for _, j := range jobs {
@@ -528,7 +630,18 @@ func RunJobs(w io.Writer, args []string) error {
 			if err != nil {
 				return err
 			}
-			res := <-done
+			sigc := make(chan os.Signal, 1)
+			signal.Notify(sigc, os.Interrupt, syscall.SIGTERM)
+			defer signal.Stop(sigc)
+			var res jobResult
+			select {
+			case res = <-done:
+			case <-sigc: // stop the job with us instead of orphaning it
+				if st := readJobStates()[j.Name]; st != nil && st.PID > 0 {
+					_ = syscall.Kill(-st.PID, syscall.SIGTERM)
+				}
+				res = <-done
+			}
 			if res.TimedOut {
 				return fmt.Errorf("job %s timed out", j.Name)
 			}
@@ -572,6 +685,10 @@ func RunJobs(w io.Writer, args []string) error {
 			next = "due now"
 		case st.FirstSeen.IsZero():
 			next = "starts after the daemon first sees it"
+		case strings.HasPrefix(why, "waiting to retry"):
+			next = st.LastEnd.Add(time.Duration(j.RetryMinutes)*time.Minute).Format("2006-01-02 15:04") + " (retry)"
+		case strings.HasPrefix(why, "attempt limit"):
+			next = latestSlot(now, j.After).AddDate(0, 0, 1).Format("2006-01-02 15:04") + " (attempt limit reached)"
 		default:
 			slot := latestSlot(now, j.After).AddDate(0, 0, 1)
 			if !st.LastSuccess.IsZero() {
