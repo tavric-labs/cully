@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.31.1
+
 - Remove a leftover Claude status line on setup. Releases before 0.27 wrote `cully _internal statusline` into Claude's `settings.json`; that command is gone, so plain `claude` showed an empty bar and `cully run claude` forwarded every refresh to it. `cully setup` and `cully uninstall claude` now remove only that exact entry, `cully run claude` stops forwarding to it, and a status line you wrote yourself is never touched.
 
 ## 0.31.0
