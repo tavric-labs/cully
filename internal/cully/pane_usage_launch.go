@@ -67,7 +67,8 @@ func paneUsageArgs(agent string, args []string) []string {
 			return args
 		}
 		status := map[string]any{"type": "command", "command": quote(exe) + " _internal usage"}
-		if original, present := settings["statusLine"]; present {
+		// A status line left by Cully before it was removed has nothing to forward to.
+		if original, present := settings["statusLine"]; present && !isRemovedCullyStatusLine(original) {
 			user, ok := original.(map[string]any)
 			if !ok || user["type"] != "command" {
 				return args

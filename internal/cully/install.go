@@ -170,6 +170,10 @@ func installClaude() error {
 	setEventHook(m, "SessionEnd", quote(exe)+" _internal cleanup", "cleanup")
 	setClaudePaneSignalHook(m, exe)
 	setGuardHook(m, exe, "claude", claudeGuardMatcher)
+	if isRemovedCullyStatusLine(m["statusLine"]) {
+		delete(m, "statusLine")
+		fmt.Println("Removed the old Cully status line; the Cully panel under cully run replaces it.")
+	}
 
 	if err := writeSettings(settingsPath, m); err != nil {
 		return err
@@ -295,6 +299,9 @@ func uninstallClaude() error {
 		removeEventHook(m, "SessionEnd", quote(exe)+" _internal cleanup", "cleanup")
 		removeEventHook(m, "PostToolUse", "", "pane-signal claude")
 		removeEventHook(m, "PreToolUse", "", "guard claude")
+		if isRemovedCullyStatusLine(m["statusLine"]) {
+			delete(m, "statusLine")
+		}
 		if err := writeSettings(settingsPath, m); err != nil {
 			return err
 		}
@@ -508,6 +515,20 @@ func filterOutCullyCommand(groups []any, cmd, subcommand string) []any {
 		out = append(out, gm)
 	}
 	return out
+}
+
+// isRemovedCullyStatusLine reports a statusLine setting that older Cully
+// releases wrote: it runs `cully _internal statusline`, a command that no longer
+// exists, so Claude would show an empty bar. A user's own status line is never
+// matched.
+func isRemovedCullyStatusLine(v any) bool {
+	sl, ok := v.(map[string]any)
+	if !ok || sl["type"] != "command" {
+		return false
+	}
+	cmd, _ := sl["command"].(string)
+	cmd = strings.TrimSpace(cmd)
+	return strings.HasSuffix(cmd, " _internal statusline") && strings.Contains(cmd, "cully")
 }
 
 func isCullySubcommand(cmd, subcommand string) bool {

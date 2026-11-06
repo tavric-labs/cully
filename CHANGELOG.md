@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Remove a leftover Claude status line on setup. Releases before 0.27 wrote `cully _internal statusline` into Claude's `settings.json`; that command is gone, so plain `claude` showed an empty bar and `cully run claude` forwarded every refresh to it. `cully setup` and `cully uninstall claude` now remove only that exact entry, `cully run claude` stops forwarding to it, and a status line you wrote yourself is never touched.
+
 ## 0.31.0
 
 - Add scheduled jobs. The Cully daemon starts a command you list in `~/.cully/jobs.json` once a day after a local time you choose, detached and at low priority, with no `launchd`, `cron` or `systemd` entry. A night missed while the computer slept or no Cully session was running is made up at the next check; a new job waits for its first scheduled time, runs one at a time, is retried after a failed attempt up to a limit, and is stopped with its child processes after its timeout. `cully jobs` lists jobs and when each is due, and `cully jobs run NAME` runs one now. Jobs are exact argument lists with no shell, started in your home directory, and Cully refuses a file that group or others can write; Cully itself never creates or edits it. State updates are locked across the daemon and `cully jobs run`, a timeout also kills descendants that ignore SIGTERM, and a corrupt state file is moved aside rather than overwritten. See [scheduled jobs](docs/scheduled-jobs.md). Set `CULLY_JOBS_DISABLE=1` to stop the daemon from starting jobs.

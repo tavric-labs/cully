@@ -205,3 +205,24 @@ func TestUsageLaunchPreservesUserChoices(t *testing.T) {
 		t.Fatal("saved Codex settings changed")
 	}
 }
+
+func TestUsageLaunchDropsRemovedCullyStatusLine(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("CLAUDE_CONFIG_DIR", filepath.Join(root, ".claude"))
+	if err := os.MkdirAll(ConfigDir(), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	saved := `{"statusLine":{"type":"command","command":"'/home/u/.local/bin/cully' _internal statusline","padding":0}}`
+	if err := os.WriteFile(filepath.Join(ConfigDir(), "settings.json"), []byte(saved), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	args := paneUsageArgs("claude", nil)
+	var overlay map[string]any
+	if len(args) != 2 || args[0] != "--settings" || json.Unmarshal([]byte(args[1]), &overlay) != nil {
+		t.Fatal("expected a session-only overlay", args)
+	}
+	command := overlay["statusLine"].(map[string]any)["command"].(string)
+	if !strings.HasSuffix(command, " _internal usage") || strings.Contains(command, "--forward") {
+		t.Fatal("a removed Cully status line was still forwarded to", command)
+	}
+}
