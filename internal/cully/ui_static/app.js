@@ -184,7 +184,7 @@
     S.feed = null;
     $('stage').className = 'stage';
     renderRail();
-    if (S.route.name !== 'agent') drawTaskPanel(null);
+    if (S.route.name !== 'agent') { drawTaskPanel(null); $('view-agents').classList.remove('rail-hidden'); } // hiding the panel applies to the task window only
     if (S.route.name === 'agent') mountAgent(S.route.id);
     else if (S.route.name === 'home') mountHome();
     else if (S.route.name === 'board') renderBoard();
@@ -551,7 +551,15 @@
     const d = await panelData();
     if (!a || S.route.name !== 'agent' || S.route.id !== a.id) return;
     const c = a.context; const u = a.usage; const run = a.run;
-    const sec = (title, ...kids) => h('section', { class: 'tp-sec' }, h('div', { class: 'tp-h' }, title), ...kids);
+    // Sections fold. Now, Context window and Usage limits start open; the rest start closed and stay as you leave them.
+    const lsGet = () => { try { return JSON.parse(localStorage.getItem('cully-tp-open') || '{}'); } catch (_) { return {}; } };
+    const lsSet = (o) => { try { localStorage.setItem('cully-tp-open', JSON.stringify(o)); } catch (_) { /* optional */ } };
+    const sec = (title, ...kids) => {
+      const saved = lsGet(); const open = title in saved ? saved[title] : ['Now', 'Context window', 'Usage limits'].includes(title);
+      const d = h('details', { class: 'tp-sec', ...(open ? { open: true } : {}) }, h('summary', { class: 'tp-h' }, title), ...kids);
+      d.addEventListener('toggle', () => { const o = lsGet(); o[title] = d.open; lsSet(o); });
+      return d;
+    };
     const kv = (k, v) => h('div', { class: 'kv' }, h('span', { class: 'faint' }, k), h('b', {}, v));
     const elapsedS = Math.round((Date.now() - new Date(a.created).getTime()) / 1000);
     const lim = a.limits;
@@ -666,7 +674,10 @@
         item('eye', 'Review the change', 'Start a read-only review of this change', () => startReview(a)),
         finished ? null : item('send', 'Send to another task', "Send this agent's reply or changes to another agent", () => openRelay(a)),
         item('plus', 'Continue in a new task', 'Start a new task from where this one is', () => continueFrom(a))));
-    $('ahead').replaceChildren(h('h2', {}, a.title), h('span', { class: 'pill ' + a.state }, dot(a.state), stateLabel(a.state)),
+    const railHidden = (() => { try { return localStorage.getItem('cully-rail-hidden') === '1'; } catch (_) { return false; } })();
+    $('view-agents').classList.toggle('rail-hidden', railHidden);
+    const railBtn = h('button', { class: 'btn ghost small', title: railHidden ? 'Show the task list and usage panel' : 'Hide the task list and usage panel so the chat has the whole window', 'aria-pressed': String(!railHidden), onclick: () => { try { localStorage.setItem('cully-rail-hidden', railHidden ? '0' : '1'); } catch (_) { /* optional */ } drawAgentChrome(a); } }, icon('branch'), railHidden ? 'Show panel' : 'Hide panel');
+    $('ahead').replaceChildren(railBtn, h('h2', {}, a.title), h('span', { class: 'pill ' + a.state }, dot(a.state), stateLabel(a.state)),
       h('span', { class: 'sp' }, sideBtn, more, finished ? null : stop));
     drawContextNote(a);
     drawTaskPanel(a);

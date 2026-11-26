@@ -945,3 +945,13 @@ details.sgroup > summary { cursor: pointer; } details.sgroup > summary::-webkit-
 .msg.clamped .showall { position: absolute; z-index: 2; left: 14px; bottom: 8px; background: var(--raised); padding: 2px 10px; border: 1px solid var(--line2); border-radius: 12px; }
 .msg .showall { margin-top: 6px; }
 .msg pre { max-height: 340px; overflow: auto; }
+
+/* the left rail: one scroll for the whole rail, folding sections, and a way to hide it */
+.rail { overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+#rail { overflow: visible; flex: none; }
+#taskpanel { flex: none; }
+.tp-sec > summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: 8px; } .tp-sec > summary::-webkit-details-marker { display: none; }
+.tp-sec > summary::before { content: ""; width: 6px; height: 6px; border-right: 2px solid var(--faint); border-bottom: 2px solid var(--faint); transform: rotate(-45deg); transition: transform .15s; }
+.tp-sec[open] > summary::before { transform: rotate(45deg); }
+.tp-sec:not([open]) { padding-top: 8px; padding-bottom: 8px; }
+.view.agents-view.rail-hidden .rail { display: none; }
