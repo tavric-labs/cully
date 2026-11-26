@@ -1,0 +1,240 @@
+package cully
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"sort"
+	"strings"
+	"time"
+
+	mcpcat "github.com/mcp-runtime/cully/internal/transport/mcp"
+)
+
+// What a connected MCP server offers: its tools (with what each does and what
+// it takes), its prompts and its resources. Claude Code names every tool and
+// prompt it started with, so those names are always known after a task has
+// run. Descriptions and parameters are not in that list: the Cully server's own
+// are read from its source, and for any other server they are loaded on request
+// by one short headless Claude call that is allowed to look at that server's
+// tool definitions and call nothing. Resources are not reported at all.
+
+type uiParam struct {
+	Name        string `json:"name"`
+	Type        string `json:"type,omitempty"`
+	Required    bool   `json:"required"`
+	Description string `json:"description,omitempty"`
+}
+
+type uiToolDetail struct {
+	Name        string    `json:"name"`
+	Description string    `json:"description,omitempty"`
+	ReadOnly    bool      `json:"readOnly,omitempty"`
+	Params      []uiParam `json:"params"`
+}
+
+type uiServerDetail struct {
+	uiInfoServer
+	Tools       []uiToolDetail `json:"tools"`
+	Prompts     []string       `json:"prompts"`
+	Resources   []string       `json:"resources"`
+	DetailsFrom string         `json:"detailsFrom"` // where the descriptions came from, or empty
+	CanLoad     bool           `json:"canLoad"`     // descriptions can be loaded from the server on request
+	Note        string         `json:"note,omitempty"`
+	Known       bool           `json:"known"` // a task has run, so the tool names are known
+}
+
+func uiInitPath() string    { return filepath.Join(cullyDir(), "harness-init.json") }
+func uiCatalogPath() string { return filepath.Join(cullyDir(), "mcp-catalog.json") }
+
+type uiInitNames struct {
+	Tools    []string  `json:"tools"`
+	Commands []string  `json:"commands"`
+	Seen     time.Time `json:"seen"`
+}
+
+func (m *uiManager) rememberInit(tools, commands []string) {
+	m.infoMu.Lock()
+	defer m.infoMu.Unlock()
+	m.initNames = &uiInitNames{Tools: tools, Commands: commands, Seen: time.Now().UTC()}
+	if b, err := json.Marshal(m.initNames); err == nil {
+		uiWriteAtomic(uiInitPath(), b)
+	}
+}
+
+func (m *uiManager) initKnown() *uiInitNames {
+	m.infoMu.Lock()
+	defer m.infoMu.Unlock()
+	if m.initNames == nil {
+		if b, err := os.ReadFile(uiInitPath()); err == nil {
+			var n uiInitNames
+			if json.Unmarshal(b, &n) == nil {
+				m.initNames = &n
+			}
+		}
+	}
+	return m.initNames
+}
+
+func uiReadCatalog() map[string][]uiToolDetail {
+	out := map[string][]uiToolDetail{}
+	if b, err := os.ReadFile(uiCatalogPath()); err == nil {
+		_ = json.Unmarshal(b, &out)
+	}
+	return out
+}
+
+func (m *uiManager) serverDetail(agent, name string) (uiServerDetail, error) {
+	if !uiMCPName.MatchString(name) {
+		return uiServerDetail{}, errors.New("no such server")
+	}
+	info := m.harnessInfo(agent)
+	var d uiServerDetail
+	found := false
+	for _, s := range info.MCP {
+		if s.Name == name {
+			d.uiInfoServer, found = s, true
+		}
+	}
+	if !found {
+		return uiServerDetail{}, errors.New("no such server")
+	}
+	d.Tools, d.Prompts, d.Resources = []uiToolDetail{}, []string{}, []string{}
+	if agent != "claude" {
+		d.Note = "Cully lists a server's tools only for the harness tasks run in."
+		return d, nil
+	}
+	prefix := "mcp__" + name + "__"
+	if n := m.initKnown(); n != nil {
+		d.Known = true
+		for _, t := range n.Tools {
+			if strings.HasPrefix(t, prefix) {
+				d.Tools = append(d.Tools, uiToolDetail{Name: strings.TrimPrefix(t, prefix), Params: []uiParam{}})
+			}
+		}
+		for _, c := range n.Commands {
+			if strings.HasPrefix(strings.TrimPrefix(c, "/"), prefix) {
+				d.Prompts = append(d.Prompts, strings.TrimPrefix(strings.TrimPrefix(c, "/"), prefix))
+			}
+		}
+	}
+	sort.Slice(d.Tools, func(i, j int) bool { return d.Tools[i].Name < d.Tools[j].Name })
+	sort.Strings(d.Prompts)
+	d.Note = "Claude Code does not report a server's resources, so Cully cannot list them."
+	if name == "cully" {
+		if cat, err := mcpcat.Catalog("ui"); err == nil {
+			d.Tools, d.DetailsFrom = d.Tools[:0], "Cully's own tool list"
+			for _, t := range cat {
+				x := uiToolDetail{Name: t.Name, Description: t.Description, ReadOnly: t.ReadOnly, Params: []uiParam{}}
+				for _, p := range t.Params {
+					x.Params = append(x.Params, uiParam{Name: p.Name, Type: p.Type, Required: p.Required, Description: p.Description})
+				}
+				d.Tools = append(d.Tools, x)
+			}
+			d.Known = true
+			return d, nil
+		}
+	}
+	if cached := uiReadCatalog()[agent+"|"+name]; len(cached) > 0 {
+		byName := map[string]uiToolDetail{}
+		for _, t := range cached {
+			byName[t.Name] = t
+		}
+		for i, t := range d.Tools {
+			if c, ok := byName[t.Name]; ok {
+				d.Tools[i] = c
+			}
+		}
+		d.DetailsFrom = "loaded from the server"
+	}
+	d.CanLoad = d.Known && len(d.Tools) > 0
+	return d, nil
+}
+
+// uiToolDetailsCall asks a headless Claude, connected to only this server, to read its tool definitions.
+var uiToolDetailsCall = func(cwd, server string, def json.RawMessage, tools []string) ([]uiToolDetail, error) {
+	dir, err := os.MkdirTemp("", "cully-mcp-")
+	if err != nil {
+		return nil, err
+	}
+	defer os.RemoveAll(dir)
+	cfg := filepath.Join(dir, "mcp.json")
+	b, _ := json.Marshal(map[string]any{"mcpServers": map[string]json.RawMessage{server: def}})
+	if err := os.WriteFile(cfg, b, 0o600); err != nil {
+		return nil, err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, claudeExecutable(), "-p", "--model", "haiku", "--permission-mode", "dontAsk", "--no-session-persistence",
+		"--tools", "ToolSearch", "--allowedTools", "ToolSearch", "--strict-mcp-config", "--mcp-config", cfg)
+	cmd.Dir = cwd
+	var names []string
+	for _, t := range tools {
+		names = append(names, "mcp__"+server+"__"+t)
+	}
+	cmd.Stdin = strings.NewReader("Use ToolSearch with the query select:" + strings.Join(names, ",") + " to load these tool definitions. Do not call any of the tools. Then reply with ONLY a JSON array, one object per tool, copied from the definitions: [{\"name\":\"<tool name without the mcp__ prefix>\",\"description\":\"<its description>\",\"params\":[{\"name\":\"\",\"type\":\"\",\"required\":true,\"description\":\"\"}]}]. No other text.\n")
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, err
+	}
+	s := string(out)
+	i, j := strings.Index(s, "["), strings.LastIndex(s, "]")
+	if i < 0 || j < i {
+		return nil, errors.New("the server's tool definitions could not be read")
+	}
+	var list []uiToolDetail
+	if json.Unmarshal([]byte(s[i:j+1]), &list) != nil || len(list) == 0 {
+		return nil, errors.New("the server's tool definitions could not be read")
+	}
+	return list, nil
+}
+
+// loadServerDetails reads and remembers the descriptions and parameters of one server's tools.
+func (m *uiManager) loadServerDetails(agent, name string) (uiServerDetail, error) {
+	if agent != "claude" {
+		return uiServerDetail{}, errors.New("Cully can load tool details only for the harness tasks run in")
+	}
+	d, err := m.serverDetail(agent, name)
+	if err != nil {
+		return d, err
+	}
+	if len(d.Tools) == 0 || name == "cully" {
+		return d, nil
+	}
+	def, ok := uiMCPDefsRaw()[name]
+	if !ok {
+		return d, errors.New("no such server")
+	}
+	var names []string
+	for _, t := range d.Tools {
+		names = append(names, t.Name)
+	}
+	if len(names) > 60 {
+		names = names[:60]
+	}
+	cwd := ConfigDir()
+	if repos := m.repoList(); len(repos) > 0 {
+		cwd = repos[0].Path
+	}
+	list, err := uiToolDetailsCall(cwd, name, def, names)
+	if err != nil {
+		return d, errors.New("could not read the tool details: " + err.Error())
+	}
+	for i := range list {
+		if list[i].Params == nil {
+			list[i].Params = []uiParam{}
+		}
+		list[i].Description = uiClipWords(m.cfg.Tokens.redact(list[i].Description), 600)
+	}
+	all := uiReadCatalog()
+	all[agent+"|"+name] = list
+	if b, err := json.Marshal(all); err == nil {
+		uiWriteAtomic(uiCatalogPath(), b)
+	}
+	return m.serverDetail(agent, name)
+}
+
+func uiMCPDefsRaw() map[string]json.RawMessage { return uiMCPDefs() }

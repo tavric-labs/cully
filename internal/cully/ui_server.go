@@ -133,6 +133,8 @@ func newUIServer(m *uiManager, token string, loopback bool) http.Handler {
 	mux.Handle("POST /api/rules/{id}/approve", s.api(s.rulesApproveH))
 	mux.Handle("POST /api/rules/{id}/dismiss", s.api(s.rulesDismissH))
 	mux.Handle("GET /api/harness", s.api(s.harnessGet))
+	mux.Handle("GET /api/harness/server", s.api(s.harnessServerGet))
+	mux.Handle("POST /api/harness/server/details", s.api(s.harnessServerLoad))
 	mux.Handle("GET /api/usage", s.api(s.usageGet))
 	mux.Handle("GET /api/agent-suggestions", s.api(s.agentSuggestListH))
 	mux.Handle("POST /api/agent-suggestions/run", s.api(s.agentSuggestRunH))
@@ -1157,4 +1159,29 @@ func (s *uiServer) rulesDismissH(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *uiServer) harnessServerGet(w http.ResponseWriter, r *http.Request) {
+	d, err := s.m.serverDetail(r.URL.Query().Get("agent"), r.URL.Query().Get("name"))
+	if err != nil {
+		uiError(w, http.StatusNotFound, err.Error())
+		return
+	}
+	uiJSON(w, http.StatusOK, d)
+}
+
+func (s *uiServer) harnessServerLoad(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Agent string `json:"agent"`
+		Name  string `json:"name"`
+	}
+	if !uiDecode(w, r, &body) {
+		return
+	}
+	d, err := s.m.loadServerDetails(body.Agent, body.Name)
+	if err != nil {
+		uiError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	uiJSON(w, http.StatusOK, d)
 }

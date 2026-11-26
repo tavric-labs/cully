@@ -177,6 +177,14 @@ Each task has a panel down the left side: what it is doing, how full its context
 
 Claude Code compacts its own history before the context window fills, so a full window is not treated as a problem. The task panel shows how many times it has been compacted, and offers a fresh task from a handoff only after three or more compactions, when detail from early on is likely gone.
 
+## Saving agents to Cully memory
+
+In disk mode an agent lives in its own folder under the Cully folder. When the Cully MCP is connected, Cully also saves each approved agent to Cully memory (Postgres) through the new `cully_agent_save` tool, so it follows you to another machine; `cully_agents` lists your agents and `cully_agent_delete` removes one. The page has no MCP login of its own: a short headless Claude call, allowed to use only that one tool, makes the save, at most every ten minutes and only for agents that changed. Disk stays the source of truth, a failed save is retried, and the saved definition never includes a path on this machine. Migration 011 adds the table; it is private to the owner like every other record. Restoring agents from memory onto a new machine is not built yet.
+
+## Servers, tools and prompts
+
+On the Harness page each connected MCP server is a card with a switch for whether tasks load it. Open a card to see its tools, prompts and resources in a scrollable list with search. Claude Code reports every tool and prompt name when a task starts, so those are known after the first task. Cully's own server lists every tool with what it does and what it takes, read from its source. For any other server, **Load descriptions and parameters** asks your Claude once to read that server's tool definitions (a few thousand tokens) and remembers the answer. Claude Code does not report resources, so the Resources tab says so.
+
 ## Security model
 
 - Every API call needs the token (cookie or bearer); changes also need the `X-Cully-UI` header; loopback binds reject other `Host` names.

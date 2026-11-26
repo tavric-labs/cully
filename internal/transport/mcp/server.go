@@ -81,6 +81,21 @@ func toolRegistrations() []toolRegistration {
 				return memory.Request{Operation: "optimization_decide", OptimizationDecide: &v}
 			})
 		}},
+		{name: "cully_agent_save", description: "Save or update one named agent for the signed-in owner: its id, name, scope (project or global), whether the user approved it, its definition as a JSON object, and its short notes. Use it only for an agent the user approved or changed in the Cully UI. Never include credentials, transcripts or command lines.", write: true, register: func(t toolRegistration, server *sdk.Server, service memory.Service, identity func(context.Context, bool) (string, error)) {
+			add(server, service, identity, t.name, t.description, t.write, func(v memory.AgentInput) memory.Request {
+				return memory.Request{Operation: "agent_save", AgentSave: &v}
+			})
+		}},
+		{name: "cully_agents", description: "List the signed-in owner's named agents (up to 20) with their definitions and notes, so an agent created on one machine can be restored on another.", register: func(t toolRegistration, server *sdk.Server, service memory.Service, identity func(context.Context, bool) (string, error)) {
+			add(server, service, identity, t.name, t.description, t.write, func(v memory.AgentQueryInput) memory.Request {
+				return memory.Request{Operation: "agent_list", AgentQuery: &v}
+			})
+		}},
+		{name: "cully_agent_delete", description: "Delete one named agent of the signed-in owner by its agent_id. Use it only when the user removes the agent.", write: true, register: func(t toolRegistration, server *sdk.Server, service memory.Service, identity func(context.Context, bool) (string, error)) {
+			add(server, service, identity, t.name, t.description, t.write, func(v memory.AgentRefInput) memory.Request {
+				return memory.Request{Operation: "agent_delete", AgentRef: &v}
+			})
+		}},
 		{name: "cully_workspace_read", description: "Read an authorized team workspace: whoami, projects, board, inbox, task_get (portable checkpoint/review packet), lessons (up to three). Requires OAuth; private memory remains separate.", register: registerWorkspace},
 		{name: "cully_workspace_write", description: "Explicit team changes: team_create, team_member, project_create, project_member, task_create, task_claim, task_checkpoint, task_release, task_state, task_submit, task_approve, learning_draft, learning_publish, learning_unshare, learning_edit, learning_delete, playbook_adopt. Requires OAuth and project roles. Supply the current version for task and learning changes. Use manual agent launch; evidence is reported, never an independent attestation. Publishing a lesson is an explicit sharing action.", write: true, register: registerWorkspace},
 		{name: "cully_log", description: "Save a private, authenticated-owner-scoped work record.", write: true, register: func(t toolRegistration, server *sdk.Server, service memory.Service, identity func(context.Context, bool) (string, error)) {

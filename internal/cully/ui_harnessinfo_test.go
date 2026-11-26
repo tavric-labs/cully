@@ -95,7 +95,7 @@ func TestHarnessPageIsInTheNavigationAndShowsServersSkillsAndHooks(t *testing.T)
 		t.Error("index.html has no Harness page")
 	}
 	b, _ := uiStaticFS.ReadFile("ui_static/app.js")
-	for _, want := range []string{"function renderHarness", "Connected servers", "Loaded by tasks", "Not loaded by tasks", "Skills", "Hooks", "Tasks run here", "#/harness/permissions", "/api/harness?agent="} {
+	for _, want := range []string{"function renderHarness", "Connected servers", "function openServerModal", "role: 'switch'", "Load descriptions and parameters", "Resources", "Tasks run here", "#/harness/permissions", "/api/harness?agent="} {
 		if !strings.Contains(string(b), want) {
 			t.Errorf("app.js lacks %q", want)
 		}

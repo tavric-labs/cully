@@ -47,6 +47,9 @@ func (s *Store) Execute(ctx context.Context, owner string, r memory.Request) (me
 	if r.Operation == "workspace" {
 		return s.workspace(ctx, owner, *r.Workspace)
 	}
+	if r.Operation == "agent_save" || r.Operation == "agent_list" || r.Operation == "agent_delete" {
+		return s.agentOp(ctx, owner, r)
+	}
 	if r.Operation == "recall" {
 		return s.Recall(ctx, owner, *r.Search)
 	}

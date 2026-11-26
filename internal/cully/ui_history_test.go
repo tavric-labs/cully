@@ -281,7 +281,16 @@ func TestRunningNowGathersEverythingInOnePlace(t *testing.T) {
 
 func TestSessionsPageHasTimeTabsHarnessBadgesAndTheRunningPanel(t *testing.T) {
 	b, _ := uiStaticFS.ReadFile("ui_static/app.js")
-	for _, want := range []string{"'Today'", "'Last 7 days'", "'Last 15 days'", "'Last 30 days'", "'Older'", "agent=all", "harnessChip", "Running now", "/api/running", "Agents at work", "Sessions open in terminals"} {
+	for _, want := range []string{"'Today'", "'Last 7 days'", "'Last 15 days'", "'Last 30 days'", "'Older'", "agent=all", "harnessChip", "Background work", "/api/running", "Open in your terminals"} {
+		if !strings.Contains(string(b), want) {
+			t.Errorf("app.js lacks %q", want)
+		}
+	}
+}
+
+func TestBoardIsRedesignedAndDoesNotRedrawWhenNothingChanged(t *testing.T) {
+	b, _ := uiStaticFS.ReadFile("ui_static/app.js")
+	for _, want := range []string{"Background work", "Open in your terminals", "whose terminal window was closed", "S.boardSig", "dataset.sig", "btiles", "Things Cully is doing for you that are not tasks"} {
 		if !strings.Contains(string(b), want) {
 			t.Errorf("app.js lacks %q", want)
 		}

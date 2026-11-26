@@ -757,23 +757,37 @@
     document.removeEventListener('keydown', escClose);
     document.addEventListener('keydown', escClose);
   }
-  // Everything running for the user right now besides the task columns below: named agents,
-  // eval runs, scouts, advisor reviews, session naming, and sessions open in any harness.
+  // ---------- board ----------
+  // The board answers two questions: what needs me, and what is Cully doing for me right now.
+  // It redraws only when something it shows has changed, so it never flickers.
   function drawRunning(r) {
     const box = $('running');
     if (!box) return;
+    const sig = JSON.stringify(r);
+    if (box.dataset.sig === sig && box.childElementCount) return;
+    box.dataset.sig = sig;
     if (!r) { box.replaceChildren(); return; }
-    const sec = (title, rows) => (rows.length ? h('div', { class: 'rn-sec' }, h('span', { class: 'opt-label' }, title), h('ul', { class: 'rn-list' }, ...rows)) : null);
-    const row = (...kids) => h('li', {}, ...kids);
-    const agents = r.agents.map((a) => row(h('span', { class: 'dot working' }), h('b', {}, a.name), h('span', { class: 'chip' }, a.scope === 'global' ? 'All projects' : 'Project'), h('span', { class: 'faint small' }, 'working for ' + ago(a.started).replace(' ago', '')), a.taskId ? h('a', { class: 'linkbtn', href: '#/task/' + a.taskId }, 'Open the task') : null));
-    const evals = r.evals.map((e) => row(h('span', { class: 'dot working' }), h('b', {}, 'Eval'), h('span', {}, e.task), h('span', { class: 'chip run-running' }, e.status === 'judging' ? 'Judging' : 'Running'), e.agentId ? h('a', { class: 'linkbtn', href: '#/task/' + e.agentId }, 'Open') : null));
-    const scouts = r.scouts.map((c) => row(h('span', { class: 'dot working' }), h('b', {}, 'Scout'), h('span', {}, c.query), h('span', { class: 'faint small' }, c.steps + (c.steps === 1 ? ' step' : ' steps')), h('a', { class: 'linkbtn', href: '#/dashboard/scout' }, 'Watch it')));
-    const advisor = r.advisor.map((a) => row(h('span', { class: 'dot working' }), h('b', {}, 'Advisor'), h('span', {}, 'reviewing ' + a.title), h('a', { class: 'linkbtn', href: '#/dashboard/advisor' }, 'See advice')));
-    const naming = r.naming.on && r.naming.pending > 0 ? [row(h('span', { class: 'dot working' }), h('b', {}, 'Naming sessions'), h('span', { class: 'faint small' }, r.naming.done + ' of ' + (r.naming.done + r.naming.pending) + ' done'), h('a', { class: 'linkbtn', href: '#/dashboard/library' }, 'Session library'))] : [];
-    const sessions = r.sessions.map((x) => row(harnessChip(x.agent), h('b', {}, x.name), x.branch ? h('span', { class: 'chip mono' }, icon('branch'), x.branch) : null, h('span', { class: 'faint small' }, x.via === 'cully' ? 'In the Cully terminal' : x.detached ? 'Terminal closed' : 'In a terminal'), x.started && !x.started.startsWith('0001') ? h('span', { class: 'faint small' }, 'open for ' + ago(x.started).replace(' ago', '')) : null));
-    const parts = [sec('Agents at work', agents), sec('Evals', evals), sec('Scouts', scouts), sec('Advisor', advisor), sec('Background', naming), sec('Sessions open in terminals', sessions)].filter(Boolean);
-    box.replaceChildren(h('section', { class: 'lib-card running-now' }, h('div', { class: 'row' }, h('b', {}, 'Running now'), h('span', { class: 'faint small' }, 'Tasks are in the columns below. Everything else Cully and your harnesses are doing is here.')),
-      parts.length ? h('div', { class: 'rn-grid' }, ...parts) : h('p', { class: 'faint small' }, 'Nothing else is running right now.')));
+    const work = [];
+    const line = (ic, title, text, extra, href, label) => h('li', { class: 'bg-row' }, h('span', { class: 'bg-ic' }, icon(ic)), h('div', { class: 'bg-main' }, h('b', {}, title), h('span', { class: 'faint' }, text), extra),
+      href ? h('a', { class: 'btn ghost small', href }, label) : null);
+    for (const a of r.agents) work.push(line('spark', a.name, (a.scope === 'global' ? 'An agent for all your projects is' : 'An agent is') + ' doing its work now, for ' + ago(a.started).replace(' ago', ''), null, a.taskId ? '#/task/' + a.taskId : null, 'Open the task'));
+    for (const e of r.evals) work.push(line('check', 'Eval running', e.task + (e.status === 'judging' ? ' (being judged)' : ''), null, e.agentId ? '#/task/' + e.agentId : '#/dashboard/evals', 'Open'));
+    for (const c of r.scouts) work.push(line('search', 'Scout searching the web', c.query + ', ' + c.steps + (c.steps === 1 ? ' step' : ' steps') + ' so far', null, '#/dashboard/scout', 'Watch it'));
+    for (const a of r.advisor) work.push(line('spark', 'Advisor reviewing', a.title, null, '#/dashboard/advisor', 'See advice'));
+    if (r.naming.on && r.naming.pending > 0) {
+      const total = r.naming.done + r.naming.pending; const bar = h('span', { class: 'fbar' }, fill(Math.round(r.naming.done * 100 / total)));
+      work.push(line('pencil', 'Naming your past sessions', r.naming.done + ' of ' + total + ' done, a few every hour', bar, '#/dashboard/library', 'Session library'));
+    }
+    const live = r.sessions.filter((x) => !x.detached); const idle = r.sessions.filter((x) => x.detached);
+    const sessRow = (x) => h('tr', {}, h('td', {}, harnessChip(x.agent)), h('td', {}, h('b', {}, x.name)), h('td', { class: 'mono-s faint' }, x.branch || ''), h('td', { class: 'faint' }, x.via === 'cully' ? 'Cully terminal' : 'Terminal'),
+      h('td', { class: 'faint' }, x.started && !x.started.startsWith('0001') ? ago(x.started).replace(' ago', '') : ''), h('td', {}, x.snapshot && x.snapshot.context ? h('span', { class: 'chip ctx ' + (x.snapshot.context.near ? 'warn' : '') }, x.snapshot.context.percent + '%') : h('span', { class: 'faint small' }, x.agent === 'cursor' ? 'not recorded' : '')));
+    const table = (rows) => h('table', { class: 'bg-table' }, h('thead', {}, h('tr', {}, ...['Harness', 'Folder', 'Branch', 'Where', 'Open for', 'Context'].map((c) => h('th', {}, c)))), h('tbody', {}, ...rows.map(sessRow)));
+    box.replaceChildren(
+      h('section', { class: 'bsec' }, h('div', { class: 'bsec-h' }, h('h3', {}, 'Background work'), h('span', { class: 'faint small' }, 'Things Cully is doing for you that are not tasks')),
+        work.length ? h('ul', { class: 'bg-list' }, ...work) : h('p', { class: 'faint small' }, 'Nothing in the background right now.')),
+      h('section', { class: 'bsec' }, h('div', { class: 'bsec-h' }, h('h3', {}, 'Open in your terminals'), h('span', { class: 'faint small' }, 'Sessions of Claude, Codex and Cursor running on this computer')),
+        live.length ? table(live) : h('p', { class: 'faint small' }, 'No session is open in a terminal right now.'),
+        idle.length ? h('details', { class: 'bg-idle' }, h('summary', {}, idle.length + (idle.length === 1 ? ' idle process' : ' idle processes') + ' whose terminal window was closed'), h('p', { class: 'faint small' }, 'These are still running in the background, but nobody can type into them any more. They are not shown above.'), table(idle)) : null));
   }
   async function refreshRunning() { try { drawRunning(await api('/api/running')); } catch (_) { /* optional */ } }
 
@@ -782,38 +796,41 @@
     let queue = [];
     try { queue = await api('/api/queue'); } catch (_) { /* optional */ }
     const prefs = boardPrefs();
+    const sigOf = JSON.stringify([S.agents.map((a) => [a.id, a.state, a.last, (a.files || []).length, a.updated, a.context && a.context.percent, a.group, a.option, a.usage && a.usage.tokens, a.harness && a.harness.status]), queue.map((x) => x.id), S.overlaps, prefs, S.finishedAll]);
+    const box = $('board');
+    if (S.boardSig === sigOf && box.childElementCount) { refreshRunning(); return; }
+    S.boardSig = sigOf;
     const repoName = (p) => p.split('/').filter(Boolean).pop() || p;
     const repos = [...new Set(S.agents.map((a) => a.repo))];
-    const cols = [['queued', 'Up next', 'Waiting for a free slot'], ['preparing', 'Starting', 'Gathering context and a clean branch'], ['working', 'Working', 'Agents busy right now'], ['waiting', 'Needs you', 'Waiting for your reply'], ['finished', 'Finished', 'Review, then continue elsewhere']];
-    const bucket = (a) => (a.state === 'preparing' ? 'preparing' : a.state === 'working' ? 'working' : a.state === 'waiting' ? 'waiting' : 'finished');
+    const bucket = (a) => (a.state === 'preparing' || a.state === 'working' ? 'working' : a.state === 'waiting' ? 'waiting' : 'finished');
     const q = prefs.q.trim().toLowerCase();
     const shown = S.agents.filter((a) => (!prefs.repo || a.repo === prefs.repo) && (!q || (a.title + ' ' + a.branch + ' ' + (a.files || []).join(' ')).toLowerCase().includes(q)));
     const title = (id) => (S.agents.find((a) => a.id === id) || {}).title || id;
-    if (!S.agents.length && !queue.length) {
-      $('board').replaceChildren(h('div', { id: 'running' }), h('div', { class: 'empty-state' }, h('h2', {}, 'No tasks yet'), h('p', { class: 'faint' }, 'Give Cully a task and it shows up here, moving from Starting to Finished.'), h('a', { class: 'btn', href: '#/' }, icon('plus'), 'Start a task')));
-      refreshRunning();
-      return;
-    }
-    const count = (k) => (k === 'queued' ? queue.length : shown.filter((a) => bucket(a) === k).length);
-    const strip = h('div', { class: 'bstrip' }, ...cols.map(([k, l]) => h('div', { class: 'bstat ' + k }, h('b', {}, String(count(k))), h('span', {}, l))));
+    const COLS = [['waiting', 'Needs you', 'Waiting for your reply'], ['working', 'Working', 'Busy right now'], ['queued', 'Up next', 'Waiting for a free slot'], ['finished', 'Finished', 'Review it, then carry on elsewhere']];
+    const listOf = (k) => (k === 'queued' ? queue : shown.filter((a) => bucket(a) === k));
+    const tiles = h('div', { class: 'btiles' }, ...COLS.map(([k, l]) => h('div', { class: 'btile ' + k }, h('b', {}, String(listOf(k).length)), h('span', {}, l))));
     const search = h('input', { type: 'search', class: 'bsearch', placeholder: 'Search tasks, branches or files', 'aria-label': 'Search the board', value: prefs.q, autocomplete: 'off' });
     search.addEventListener('input', () => { saveBoardPrefs({ ...boardPrefs(), q: search.value }); renderBoard().then(() => { const el = document.querySelector('.bsearch'); if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); } }); });
     const sel = repos.length > 1 ? h('select', { 'aria-label': 'Folder', onchange: (e) => { saveBoardPrefs({ ...boardPrefs(), repo: e.target.value }); renderBoard(); } },
       h('option', { value: '' }, 'All folders'), ...repos.map((r) => h('option', Object.assign({ value: r }, r === prefs.repo ? { selected: true } : {}), repoName(r)))) : null;
-    const tools = h('div', { class: 'row btools' }, search, sel, h('a', { class: 'btn', href: '#/' }, icon('plus'), 'New task'));
+    const head = h('div', { class: 'bhead2' }, h('div', {}, h('h2', {}, 'Board'), h('p', { class: 'faint' }, 'Your tasks, by what they need from you. Below: what Cully is doing in the background and what is open in your terminals.')),
+      h('div', { class: 'row btools' }, search, sel, h('a', { class: 'btn', href: '#/' }, icon('plus'), 'New task')));
     const overlapBanner = S.overlaps.map((o) => h('div', { class: 'overlap' }, icon('alert'), ' ', h('b', {}, o.file), ' is being edited by ' + joinNames(o.agents.map(title)) + '. Expect a merge conflict, or ask one of them to wait.'));
-    const board = h('div', { class: 'cols' }, ...cols.map(([key, label, hint]) => {
-      const list = key === 'queued' ? queue : shown.filter((a) => bucket(a) === key);
-      const groups = key === 'finished' || key === 'working' || key === 'waiting' ? [...new Set(list.filter((a) => a.group).map((a) => a.group))].filter((g) => S.agents.filter((a) => a.group === g).length > 1) : [];
-      const sec = h('section', { class: 'bcol ' + key }, h('h3', {}, label, h('span', {}, String(list.length))), h('p', { class: 'bhint' }, hint),
-        ...groups.map((g) => h('button', { class: 'btn ghost small cmpbtn', onclick: () => openCompare(g) }, icon('eye'), 'Compare options: ' + (S.agents.find((a) => a.group === g) || {}).title.replace(/ \(option .\)$/, ''))),
-        ...(list.length ? list.map((x) => (key === 'queued' ? queueCard(x) : boardCard(x, S.overlaps))) : [h('div', { class: 'none' }, key === 'waiting' ? 'Nothing needs you.' : key === 'queued' ? 'No queued tasks. Use Queue for later when you start one.' : 'Nothing here.')]));
+    const board = h('div', { class: 'cols' }, ...COLS.map(([key, label, hint]) => {
+      const all = listOf(key);
+      const list = key === 'finished' && !S.finishedAll ? all.slice(0, 6) : all;
+      const groups = key !== 'queued' ? [...new Set(all.filter((a) => a.group).map((a) => a.group))].filter((g) => S.agents.filter((a) => a.group === g).length > 1) : [];
+      const sec = h('section', { class: 'bcol ' + key }, h('h3', {}, label, h('span', {}, String(all.length))), h('p', { class: 'bhint' }, hint),
+        ...groups.map((g) => h('button', { class: 'btn ghost small cmpbtn', onclick: () => openCompare(g) }, icon('eye'), 'Compare options: ' + ((S.agents.find((a) => a.group === g) || {}).title || '').replace(/ \(option .\)$/, ''))),
+        ...(list.length ? list.map((x) => (key === 'queued' ? queueCard(x) : boardCard(x, S.overlaps))) : [h('div', { class: 'none' }, key === 'waiting' ? 'Nothing needs you.' : key === 'queued' ? 'No queued tasks. Use Queue for later when you start one.' : key === 'working' ? 'Nothing is running.' : 'Nothing finished yet.')]),
+        key === 'finished' && all.length > 6 ? h('button', { class: 'linkbtn', onclick: () => { S.finishedAll = !S.finishedAll; renderBoard(); } }, S.finishedAll ? 'Show fewer' : 'Show all ' + all.length) : null);
       sec.addEventListener('dragover', (e) => { e.preventDefault(); sec.classList.add('over'); });
       sec.addEventListener('dragleave', () => sec.classList.remove('over'));
-      sec.addEventListener('drop', (e) => { sec.classList.remove('over'); dropOn(key, e); });
+      sec.addEventListener('drop', (e) => { sec.classList.remove('over'); dropOn(key === 'working' ? 'preparing' : key, e); });
       return sec;
     }));
-    $('board').replaceChildren(h('div', { id: 'running' }), h('div', { class: 'bhead' }, strip, tools), ...overlapBanner, board);
+    const empty = !S.agents.length && !queue.length ? h('div', { class: 'empty-state' }, h('h2', {}, 'No tasks yet'), h('p', { class: 'faint' }, 'Give Cully a task and it shows up here, moving from Working to Finished.'), h('a', { class: 'btn', href: '#/' }, icon('plus'), 'Start a task')) : null;
+    box.replaceChildren(head, tiles, ...overlapBanner, empty || board, h('div', { id: 'running' }));
     refreshRunning();
     clearInterval(S.runTimer);
     S.runTimer = setInterval(() => { if (S.route.name !== 'board') { clearInterval(S.runTimer); return; } refreshRunning(); }, 5000);
@@ -1202,44 +1219,117 @@
   }
 
   // ---------- the harness page: everything about the program that runs the model ----------
-  const HARNESS_TABS = [['overview', 'Overview'], ['permissions', 'Permissions'], ['servers', 'Connected servers'], ['skills', 'Skills'], ['hooks', 'Hooks'], ['more', 'Plugins and commands']];
+  const HARNESS_SECTIONS = [['overview', 'Overview'], ['permissions', 'Permissions'], ['servers', 'Connected servers'], ['skills', 'Skills'], ['hooks', 'Hooks'], ['more', 'Plugins and commands']];
   async function renderHarness() {
     const box = $('harness');
     const tasksAgent = (mcpUsed()[0] || { agent: 'claude' }).agent;
     const agent = S.harnessAgent || tasksAgent;
-    const tab = S.route.tab && HARNESS_TABS.some((t) => t[0] === S.route.tab) ? S.route.tab : 'overview';
-    const go = (a, t) => { S.harnessAgent = a; location.hash = '#/harness/' + t; if (S.route.name === 'harness' && S.route.tab === t) renderHarness(); };
-    const picker = h('div', { class: 'seg', role: 'group', 'aria-label': 'Harness' }, ...['claude', 'codex', 'cursor'].map((a) => h('button', { type: 'button', class: a === agent ? 'on' : '', onclick: () => go(a, tab === 'permissions' && a !== tasksAgent ? 'overview' : tab) }, AGENT_LABEL[a] + (a === tasksAgent ? ' (tasks run here)' : ''))));
-    box.replaceChildren(toolbar('Harness', 'The program that runs the model. Tasks run in the one this page was opened through; sessions, the library, the advisor and the scout cover all three.', picker), h('p', { class: 'faint' }, 'Loading…'));
-    let info; try { info = await api('/api/harness?agent=' + agent); } catch (e) { box.replaceChildren(h('div', { class: 'err' }, e.message)); return; }
+    const section = S.route.tab && HARNESS_SECTIONS.some((t) => t[0] === S.route.tab) ? S.route.tab : 'overview';
+    const go = (a, t) => { S.harnessAgent = a; if (location.hash === '#/harness/' + t) renderHarness(); else location.hash = '#/harness/' + t; };
+    const infos = {};
+    try { await Promise.all(['claude', 'codex', 'cursor'].map(async (a) => { infos[a] = await api('/api/harness?agent=' + a); })); } catch (e) { box.replaceChildren(h('div', { class: 'err' }, e.message)); return; }
     if (S.route.name !== 'harness') return;
-    const tabs = h('div', { class: 'seg tabs-seg', role: 'tablist', 'aria-label': 'Harness sections' }, ...HARNESS_TABS.filter((t) => t[0] !== 'permissions' || info.tasksUseIt).map(([k, l]) => h('button', { type: 'button', role: 'tab', class: k === tab ? 'on' : '', 'aria-selected': String(k === tab), onclick: () => go(agent, k) }, l + (k === 'servers' ? ' ' + info.mcp.length : k === 'skills' ? ' ' + info.skills.length : k === 'hooks' ? ' ' + info.hooks.length : ''))));
-    const body = h('div', {});
-    const card = (title, ...kids) => h('section', { class: 'lib-card' }, title ? h('b', {}, title) : null, ...kids);
-    const kv = (k, v) => h('div', { class: 'kv' }, h('span', { class: 'faint' }, k), h('b', {}, v));
-    const none = (t) => h('p', { class: 'faint small' }, t);
-    if (tab === 'overview') {
-      body.append(card(info.name, h('div', { class: 'row' }, harnessChip(agent), info.installed ? h('span', { class: 'chip ok' }, 'Installed') : h('span', { class: 'chip warn' }, 'Not found'), info.tasksUseIt ? h('span', { class: 'chip ok' }, 'Tasks run here') : h('span', { class: 'chip' }, 'Tasks do not run here yet')),
-        h('div', { class: 'tp-sec' }, kv('Version', info.version || 'Not found'), kv('Model', info.model || 'Its default'), kv('Its own permission mode', info.mode || 'Not set'), kv('Permission rules it holds', info.allow + ' allow, ' + info.deny + ' deny'), kv('Connected servers', String(info.mcp.length)), kv('Skills', String(info.skills.length)), kv('Hooks', info.hooks.length + (info.hooks.length === 1 ? ' event' : ' events')), kv('Plugins', String(info.plugins.length)), kv('Commands', String(info.commands.length)), kv('Instruction files', info.instructions.join(', ') || 'None')),
-        info.tasksUseIt ? h('p', { class: 'faint small' }, 'Every task Cully starts goes through ' + info.name + ': it runs the model, uses these servers and skills, and obeys the permissions on the next tab.') : h('p', { class: 'faint small' }, 'Cully reads this harness\'s setup so you can see it next to the others, and its sessions appear everywhere. Tasks started from this page run in ' + AGENT_LABEL[tasksAgent] + '.'),
-        ...info.notes.map((n) => h('p', { class: 'faint small' }, n))));
-    } else if (tab === 'permissions') {
+    const info = infos[agent];
+    // 1. choose a harness
+    const picker = h('div', { class: 'hpick', role: 'group', 'aria-label': 'Harness' }, ...['claude', 'codex', 'cursor'].map((a) => { const i = infos[a];
+      return h('button', { type: 'button', class: 'hcard' + (a === agent ? ' on' : ''), 'aria-pressed': String(a === agent), onclick: () => go(a, a !== tasksAgent && section === 'permissions' ? 'overview' : section) },
+        h('span', { class: 'hc-name' }, h('span', { class: 'dot ' + (i.installed ? 'working' : '') }), AGENT_LABEL[a]),
+        h('span', { class: 'hc-ver faint small' }, i.installed ? i.version : 'Not found'),
+        h('span', { class: 'hc-meta faint small' }, i.mcp.length + ' servers, ' + i.skills.length + ' skills'),
+        a === tasksAgent ? h('span', { class: 'chip ok' }, 'Tasks run here') : null); }));
+    // 2. choose a section
+    const counts = { servers: info.mcp.length, skills: info.skills.length, hooks: info.hooks.length };
+    const nav = h('nav', { class: 'hnav', 'aria-label': 'Harness sections' }, ...HARNESS_SECTIONS.filter((t) => t[0] !== 'permissions' || info.tasksUseIt).map(([k, l]) => h('a', { href: '#/harness/' + k, class: k === section ? 'on' : '', 'aria-current': k === section ? 'page' : null, onclick: (e) => { e.preventDefault(); go(agent, k); } }, l, counts[k] != null ? h('span', { class: 'n' }, String(counts[k])) : null)));
+    const body = h('div', { class: 'hbody' });
+    const card = (title, sub, ...kids) => h('section', { class: 'lib-card' }, h('div', { class: 'hc-title' }, h('h3', {}, title), sub ? h('p', { class: 'faint small' }, sub) : null), ...kids);
+    const tile = (n, l) => h('div', { class: 'btile' }, h('b', {}, n), h('span', {}, l));
+    if (section === 'overview') {
+      body.append(card(info.name + (info.installed ? ' ' + info.version : ''), info.tasksUseIt ? 'Every task Cully starts runs in this harness: it carries out the work, uses the servers and skills below, and obeys the permissions.' : 'Cully reads this harness\'s setup so you can compare it with the others. Tasks started here run in ' + AGENT_LABEL[tasksAgent] + '.',
+        h('div', { class: 'btiles' }, tile(info.model || 'Default', 'Model'), tile(info.mode || 'Not set', 'Its permission mode'), tile(info.allow + ' / ' + info.deny, 'Allow and deny rules'), tile(String(info.mcp.length), 'Connected servers'), tile(String(info.skills.length), 'Skills'), tile(String(info.hooks.length), 'Hook events'), tile(String(info.plugins.length), 'Plugins'), tile(String(info.commands.length), 'Commands')),
+        h('div', { class: 'row' }, ...info.instructions.map((x) => h('span', { class: 'chip mono' }, x))), ...info.notes.map((n) => h('p', { class: 'faint small' }, n))));
+    } else if (section === 'permissions') {
       const holder = h('div', {}); body.append(holder); renderPermissions(holder, () => null);
-    } else if (tab === 'servers') {
+    } else if (section === 'servers') {
       const tools = info.tasksUseIt ? await api('/api/admin/tools').catch(() => null) : null;
-      const only = tools ? tools.mcp.only : [];
-      body.append(card('Connected servers', none(info.tasksUseIt ? (only.length ? 'Tasks load only ' + only.join(', ') + '. Change this under Permissions.' : 'Tasks load all of these. Each one adds its tool descriptions to every turn; limit them under Permissions to save tokens.') : 'Servers this harness has set up.'),
-        info.mcp.length ? h('ul', { class: 'hrows' }, ...info.mcp.map((m) => h('li', { class: 'hrow' }, h('div', { class: 'hmain' }, h('div', { class: 'ht mono-s' }, m.name, m.status ? h('span', { class: 'chip ' + (/connect/i.test(m.status) ? 'ok' : 'warn') }, m.status) : null), h('div', { class: 'faint small' }, m.kind + (m.target ? ', ' + m.target : ''))),
-          info.tasksUseIt ? h('div', { class: 'row hact' }, h('span', { class: 'chip ' + (!only.length || only.includes(m.name) ? 'ok' : '') }, !only.length || only.includes(m.name) ? 'Loaded by tasks' : 'Not loaded by tasks')) : null))) : none('None found.')));
-    } else if (tab === 'skills') {
-      body.append(card('Skills', none('Instructions the harness loads when they apply. Only names and descriptions are shown.'), info.skills.length ? h('ul', { class: 'hrows' }, ...info.skills.map((k) => h('li', { class: 'hrow' }, h('div', { class: 'hmain' }, h('div', { class: 'ht' }, k.name), k.description ? h('p', { class: 'hdesc' }, k.description) : null)))) : none('None found in ' + info.name + '\'s own skills folder.')));
-    } else if (tab === 'hooks') {
-      body.append(card('Hooks', none('Programs the harness runs on events, such as before a tool or when a session ends. Only the program names are shown, never their arguments.'), info.hooks.length ? h('ul', { class: 'hrows' }, ...info.hooks.map((k) => h('li', { class: 'hrow' }, h('div', { class: 'hmain' }, h('div', { class: 'ht' }, k.event, h('span', { class: 'chip' }, k.count + (k.count === 1 ? ' hook' : ' hooks'))), k.runs.length ? h('div', { class: 'row' }, ...k.runs.map((r) => h('span', { class: 'chip mono' }, r))) : null)))) : none('No hooks are set up.')));
+      const chosen = new Set(tools ? tools.mcp.only : []);
+      const initial = [...chosen].sort().join(',');
+      const bar = h('div', { class: 'savebar', hidden: true });
+      const summary = h('p', { class: 'faint small' });
+      const syncBar = () => {
+        const changed = [...chosen].sort().join(',') !== initial;
+        summary.textContent = info.tasksUseIt ? (chosen.size ? 'Tasks load ' + chosen.size + ' of ' + info.mcp.length + ' servers.' : 'Tasks load all ' + info.mcp.length + ' servers.') + ' Each server adds its tool descriptions to every turn, so loading fewer saves tokens.' : 'Servers this harness has set up.';
+        bar.hidden = !changed;
+        for (const sw of body.querySelectorAll('[role=switch]')) sw.setAttribute('aria-checked', String(!chosen.size || chosen.has(sw.dataset.name)));
+        for (const c of body.querySelectorAll('.scard')) c.classList.toggle('off', chosen.size > 0 && !chosen.has(c.dataset.name));
+      };
+      bar.append(h('span', {}, 'You have unsaved changes.'), h('button', { class: 'btn', onclick: async () => {
+        try { await api('/api/admin/tools', { method: 'PUT', body: JSON.stringify({ presets: Object.fromEntries(tools.presets.map((p) => [p.id, p.on])), allow: tools.allow, deny: tools.deny, mcpOnly: [...chosen] }) }); toast('Saved. New tasks load ' + (chosen.size ? chosen.size + ' servers' : 'all servers') + '.'); renderHarness(); } catch (e) { toast(e.message, true); }
+      } }, icon('check'), 'Save'), h('button', { class: 'btn ghost', onclick: () => renderHarness() }, 'Discard'));
+      const grid = h('div', { class: 'sgrid' }, ...info.mcp.map((m) => {
+        const loaded = () => !chosen.size || chosen.has(m.name);
+        const sw = info.tasksUseIt ? h('button', { type: 'button', class: 'switch', role: 'switch', 'aria-checked': String(loaded()), 'aria-label': 'Tasks load ' + m.name, 'data-name': m.name, title: 'Whether tasks load this server', onclick: (e) => { e.stopPropagation(); if (!chosen.size) for (const x of info.mcp) chosen.add(x.name); if (chosen.has(m.name)) chosen.delete(m.name); else chosen.add(m.name); if (chosen.size === info.mcp.length) chosen.clear(); syncBar(); } }, h('i', {})) : null;
+        const open = () => openServerModal(agent, m, info);
+        const c = h('div', { class: 'scard', role: 'button', tabindex: '0', 'data-name': m.name, 'aria-label': 'Open ' + m.name, onclick: open, onkeydown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); } } },
+          h('div', { class: 'sc-top' }, h('b', { class: 'sc-name' }, m.name), sw),
+          h('div', { class: 'sc-target faint small' }, (m.kind === 'http' ? 'Web address ' : 'Program ') + (m.target || '')),
+          h('div', { class: 'row' }, m.status ? h('span', { class: 'chip ' + (/connect/i.test(m.status) ? 'ok' : 'warn') }, h('span', { class: 'dot ' + (/connect/i.test(m.status) ? 'working' : 'waiting') }), m.status) : h('span', { class: 'chip' }, 'Status shown after a task starts'), h('span', { class: 'sc-open faint small' }, 'Tools and prompts ›')));
+        return c;
+      }));
+      body.append(card('Connected servers', 'Click a server to see its tools, prompts and resources.', summary, info.mcp.length ? grid : h('p', { class: 'faint small' }, 'No servers are connected to ' + info.name + '.'), bar));
+      syncBar();
+    } else if (section === 'skills') {
+      const q = h('input', { type: 'search', class: 'bsearch', placeholder: 'Search skills', 'aria-label': 'Search skills', autocomplete: 'off' });
+      const list = h('div', { class: 'kgrid' });
+      const draw = () => { const t = q.value.trim().toLowerCase(); const rows = info.skills.filter((k) => !t || (k.name + ' ' + (k.description || '')).toLowerCase().includes(t)); list.replaceChildren(...(rows.length ? rows.map((k) => h('div', { class: 'kcard' }, h('b', {}, k.name), k.description ? h('p', { class: 'faint small' }, k.description) : h('p', { class: 'faint small' }, 'No description.'))) : [h('p', { class: 'faint small' }, 'No skills match.')])); };
+      q.addEventListener('input', draw); draw();
+      body.append(card('Skills', 'Instructions the harness loads when they apply. Only the name and description are shown.', info.skills.length ? q : null, info.skills.length ? list : h('p', { class: 'faint small' }, 'None found in ' + info.name + '\'s own skills folder.')));
+    } else if (section === 'hooks') {
+      body.append(card('Hooks', 'Programs the harness runs on events, such as before a tool or when a session ends. Only program names are shown, never arguments.',
+        info.hooks.length ? h('div', { class: 'kgrid' }, ...info.hooks.map((k) => h('div', { class: 'kcard' }, h('div', { class: 'row' }, h('b', {}, k.event), h('span', { class: 'chip' }, k.count + (k.count === 1 ? ' hook' : ' hooks'))), k.runs.length ? h('div', { class: 'row' }, ...k.runs.map((r) => h('span', { class: 'chip mono' }, r))) : null))) : h('p', { class: 'faint small' }, 'No hooks are set up.')));
     } else {
-      const list = (title, items) => card(title, items.length ? h('div', { class: 'row' }, ...items.map((x) => h('span', { class: 'chip mono' }, x))) : none('None.'));
+      const list = (title, items) => card(title, null, items.length ? h('div', { class: 'row' }, ...items.map((x) => h('span', { class: 'chip mono' }, x))) : h('p', { class: 'faint small' }, 'None.'));
       body.append(list('Plugins', info.plugins), list('Slash commands', info.commands), list('Subagents', info.subagents), list('Instruction files', info.instructions));
     }
-    box.replaceChildren(toolbar('Harness', 'The program that runs the model. Tasks run in the one this page was opened through; sessions, the library, the advisor and the scout cover all three.', picker), tabs, body);
+    box.replaceChildren(h('div', { class: 'bhead2' }, h('div', {}, h('h2', {}, 'Harness'), h('p', { class: 'faint' }, 'The program that runs the model. Tasks run in the one this page was opened through; sessions, the library, the advisor and the scout cover all three.'))), picker, h('div', { class: 'hlayout' }, nav, body));
+  }
+
+  // A connected server in detail: its tools (what each does and what it takes), its prompts and its resources.
+  async function openServerModal(agent, m, info) {
+    const body = h('div', { class: 'mbody smodal' }, h('p', { class: 'faint' }, 'Loading…'));
+    const modal = h('div', { class: 'modal wide', role: 'dialog', 'aria-modal': 'true', 'aria-label': m.name },
+      h('header', {}, h('h2', {}, m.name), m.status ? h('span', { class: 'chip ' + (/connect/i.test(m.status) ? 'ok' : 'warn') }, m.status) : null, h('button', { class: 'btn ghost small sp', onclick: closeMCP }, 'Close')), body);
+    const bg = h('div', { class: 'modal-bg', onclick: (e) => { if (e.target === bg) closeMCP(); } }, modal);
+    $('modal-root').replaceChildren(bg);
+    S.modal = { agent: 'server' };
+    document.removeEventListener('keydown', escClose);
+    document.addEventListener('keydown', escClose);
+    let tab = 'tools';
+    async function draw(d) {
+      const q = h('input', { type: 'search', class: 'bsearch', placeholder: 'Search', 'aria-label': 'Search this server', autocomplete: 'off', value: S.srvQ || '' });
+      const list = h('div', { class: 'slist', tabindex: '0', 'aria-label': 'Scrollable list' });
+      const fill2 = () => {
+        const t = q.value.trim().toLowerCase(); S.srvQ = q.value;
+        if (tab === 'tools') {
+          const rows = d.tools.filter((x) => !t || (x.name + ' ' + (x.description || '')).toLowerCase().includes(t));
+          list.replaceChildren(...(rows.length ? rows.map((x) => h('details', { class: 'tool' }, h('summary', {}, h('code', {}, x.name), x.readOnly ? h('span', { class: 'chip' }, 'Read only') : null, x.description ? h('span', { class: 'td faint small' }, x.description.length > 110 ? x.description.slice(0, 110) + '…' : x.description) : null),
+            x.description ? h('p', { class: 'tdesc' }, x.description) : h('p', { class: 'faint small' }, 'No description yet.'),
+            x.params && x.params.length ? h('table', { class: 'ptable' }, h('thead', {}, h('tr', {}, ...['Parameter', 'Type', 'Needed', 'What it is'].map((c) => h('th', {}, c)))), h('tbody', {}, ...x.params.map((p) => h('tr', {}, h('td', {}, h('code', {}, p.name)), h('td', { class: 'faint' }, p.type || ''), h('td', {}, p.required ? 'Required' : 'Optional'), h('td', { class: 'faint' }, p.description || ''))))) : (d.detailsFrom ? h('p', { class: 'faint small' }, 'Takes no parameters.') : null))) : [h('p', { class: 'faint small' }, d.known ? 'No tools match.' : 'Start any task, then come back: Claude reports each server\'s tools when it starts.')]));
+        } else if (tab === 'prompts') {
+          const rows = d.prompts.filter((x) => !t || x.toLowerCase().includes(t));
+          list.replaceChildren(...(rows.length ? rows.map((x) => h('div', { class: 'kcard' }, h('code', {}, '/' + x))) : [h('p', { class: 'faint small' }, d.known ? 'This server offers no prompts.' : 'Shown after a task has started.')]));
+        } else list.replaceChildren(h('p', { class: 'faint small' }, d.note || 'Resources are not listed.'), h('p', { class: 'faint small' }, 'Resources are files or records a server can hand to the harness. Claude Code does not report them, so Cully cannot show them here.'));
+      };
+      q.addEventListener('input', fill2);
+      const tabs = h('div', { class: 'seg tabs-seg', role: 'tablist' }, ...[['tools', 'Tools ' + d.tools.length], ['prompts', 'Prompts ' + d.prompts.length], ['resources', 'Resources']].map(([k, l]) => h('button', { type: 'button', role: 'tab', class: k === tab ? 'on' : '', 'aria-selected': String(k === tab), onclick: () => { tab = k; draw(d); } }, l)));
+      const loadBtn = d.canLoad && !d.detailsFrom ? h('button', { class: 'btn small' }, icon('spark'), 'Load descriptions and parameters') : null;
+      if (loadBtn) loadBtn.addEventListener('click', async () => { loadBtn.disabled = true; loadBtn.textContent = 'Reading the server…'; try { draw(await api('/api/harness/server/details', { method: 'POST', body: JSON.stringify({ agent, name: m.name }) })); } catch (e) { toast(e.message, true); loadBtn.disabled = false; loadBtn.textContent = 'Load descriptions and parameters'; } });
+      body.replaceChildren(h('div', { class: 'faint small' }, (d.kind === 'http' ? 'Web address ' : 'Program ') + (d.target || '')),
+        tabs, tab !== 'resources' ? h('div', { class: 'row' }, q, loadBtn) : null,
+        loadBtn ? h('p', { class: 'faint small' }, 'Claude Code lists a server\'s tool names but not what they do. Loading asks your Claude once, for this server only, to read the tool definitions; it uses a few thousand tokens.') : null,
+        d.detailsFrom ? h('p', { class: 'faint small' }, 'Descriptions: ' + d.detailsFrom + '.') : null, list);
+      fill2();
+    }
+    try { draw(await api('/api/harness/server?agent=' + agent + '&name=' + encodeURIComponent(m.name))); } catch (e) { body.replaceChildren(h('div', { class: 'err' }, e.message)); }
   }
 
   // ---------- harness permissions ----------
@@ -1272,12 +1362,6 @@
     out.replaceChildren(head(),
       h('p', { class: 'faint' }, 'The harness is the program that runs the model (Claude Code). Tasks Cully starts run on their own, so nothing can answer a permission question: these settings decide what the harness lets them do. They apply to tasks you start after saving.'),
       h('section', { class: 'group' }, h('header', {}, h('span', { class: 'gt' }, 'What the harness may do')), groups),
-      h('section', { class: 'group' }, h('header', {}, h('span', { class: 'gt' }, 'Connected tools to load')),
-        h('p', { class: 'faint small' }, 'Every connected server adds its tool descriptions to every turn the task takes, so loading fewer saves tokens. Pick the ones tasks need, or none to load them all. Servers found in your Claude settings are listed.'),
-        v.mcp.available.length ? h('div', { class: 'toolgroups' }, ...v.mcp.available.map((n) => {
-          const cb = h('input', Object.assign({ type: 'checkbox', id: 'mcp-' + n, onchange: (e) => { state.mcp = e.target.checked ? [...state.mcp, n] : state.mcp.filter((x) => x !== n); } }, state.mcp.includes(n) ? { checked: true } : {}));
-          return h('label', { class: 'toolgroup', for: 'mcp-' + n }, cb, h('span', {}, h('b', { class: 'mono' }, n)));
-        })) : h('p', { class: 'faint small' }, 'No connected servers were found in your Claude settings.')),
       h('section', { class: 'group' }, h('header', {}, h('span', { class: 'gt' }, 'Extra tools to allow')),
         h('p', { class: 'faint small' }, 'Add a tool by name, for example mcp__gitlab__get_issue for one tool of a connected server, or Bash(go test:*) for one kind of command.'), listEditor('allowed', state.allow, 'mcp__server__tool')),
       h('section', { class: 'group' }, h('header', {}, h('span', { class: 'gt' }, 'Always blocked'), h('button', { class: 'linkbtn sp', onclick: () => { state.deny = [...v.defaultDeny]; drawDeny(); } }, 'Reset to defaults')),
@@ -2423,6 +2507,7 @@
   // ---------- folder switcher ----------
   function drawFolderChip() {
     const btn = $('folderbtn');
+    if (!btn) { drawWhere(); return; } // the folder lives in the bar below the header, not in the navigation
     const list = (S.info && S.info.repoInfo) || [];
     const cur = list.find((r) => r.path === S.opts.repo) || list[0];
     btn.replaceChildren(icon('folder'), h('span', { class: 'lbl' }, cur ? cur.name : 'Add a folder'));
@@ -2431,6 +2516,7 @@
   }
   function mountFolderMenu() {
     const btn = $('folderbtn');
+    if (!btn) return;
     let menu = null;
     const outside = (e) => { if (menu && !menu.contains(e.target) && !btn.contains(e.target)) close(); };
     function close() { if (menu) { menu.remove(); menu = null; document.removeEventListener('click', outside, true); } }

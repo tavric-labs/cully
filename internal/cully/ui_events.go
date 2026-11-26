@@ -47,19 +47,21 @@ func (s uiMCPServer) NeedsAuth() bool {
 }
 
 type uiParsed struct {
-	Final     string // the full, unclipped text of a result event
-	MCP       []uiMCPServer
-	Events    []uiEvent
-	TurnDone  bool
-	Uses      map[string]uiToolUse
-	Results   []uiToolResult
-	Usage     *uiTokens // tokens the turn reported, when it did
-	Model     string    // the model the agent said it is using, from its start line
-	Context   int       // tokens in the context after this call, when it reported them
-	Window    int       // the model's context window, as reported with a result
-	Cost      float64   // what the session has cost so far at list price, as reported
-	Limits    *uiLimits // the account's usage limits, when the agent reported them
-	Compacted bool      // the harness compacted the history on this line
+	Final        string // the full, unclipped text of a result event
+	MCP          []uiMCPServer
+	Events       []uiEvent
+	TurnDone     bool
+	Uses         map[string]uiToolUse
+	Results      []uiToolResult
+	Usage        *uiTokens // tokens the turn reported, when it did
+	Model        string    // the model the agent said it is using, from its start line
+	Context      int       // tokens in the context after this call, when it reported them
+	Window       int       // the model's context window, as reported with a result
+	Cost         float64   // what the session has cost so far at list price, as reported
+	Limits       *uiLimits // the account's usage limits, when the agent reported them
+	Compacted    bool      // the harness compacted the history on this line
+	InitTools    []string  // every tool the harness started with, as it names them
+	InitCommands []string  // its slash commands, which include MCP prompts
 }
 
 // uiWindow is one usage limit window: how much of it is used and when it resets.
@@ -150,6 +152,18 @@ func parseStreamLine(line []byte) uiParsed {
 		out.Events = append(out.Events, uiEvent{Kind: "system", Text: "agent " + sub})
 		if sub == "init" {
 			out.Model, _ = raw["model"].(string)
+			for _, v := range []struct {
+				key string
+				dst *[]string
+			}{{"tools", &out.InitTools}, {"slash_commands", &out.InitCommands}} {
+				if l, ok := raw[v.key].([]any); ok {
+					for _, x := range l {
+						if s, ok := x.(string); ok && len(*v.dst) < 2000 {
+							*v.dst = append(*v.dst, s)
+						}
+					}
+				}
+			}
 		}
 		if sub == "compact_boundary" {
 			out.Compacted = true

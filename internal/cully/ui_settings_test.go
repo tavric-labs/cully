@@ -155,7 +155,7 @@ func TestTasksCanLoadOnlyTheChosenMCPServers(t *testing.T) {
 
 func TestPermissionsPageOffersTheConnectedToolChoiceAndLibraryInsights(t *testing.T) {
 	b, _ := uiStaticFS.ReadFile("ui_static/app.js")
-	for _, want := range []string{"Connected tools to load", "mcpOnly: state.mcp", "function libraryInsights", "Your last two weeks", "Most used tools", "Look at these first"} {
+	for _, want := range []string{"mcpOnly: state.mcp", "function libraryInsights", "Your last two weeks", "Most used tools", "Look at these first"} {
 		if !strings.Contains(string(b), want) {
 			t.Errorf("app.js lacks %q", want)
 		}

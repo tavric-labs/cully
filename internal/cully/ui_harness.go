@@ -285,7 +285,7 @@ func (m *uiManager) runHelper(identID string, a *uiAgent) (name, report string, 
 	diff := a.diff()
 	v := a.snapshot()
 	prompt := uiHelperPrompt + "Goal the author was given:\n" + uiClip(a.req.Prompt, 2000) + "\n\nFiles changed: " + strings.Join(v.Files, ", ") + "\nThe author's worktree is " + a.worktree + ".\n\nChange:\n" + uiClip(diff, uiReviewDiff)
-	run, _, err := m.identityRunWith(identID, uiRunOpts{Prompt: prompt, ReadOnly: true, AddDirs: []string{a.worktree}, Rules: uiReviewRules, Title: "Review of " + uiClipWords(a.title, 40)})
+	run, _, err := m.identityRunWith(identID, uiRunOpts{NoMemory: true, Prompt: prompt, ReadOnly: true, AddDirs: []string{a.worktree}, Rules: uiReviewRules, Title: "Review of " + uiClipWords(a.title, 40)})
 	if err != nil {
 		return ident.Name, "", false, err
 	}

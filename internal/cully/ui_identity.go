@@ -44,6 +44,8 @@ type uiIdentity struct {
 	Instructions string          `json:"instructions"` // how it works and what it must not do
 	Scope        string          `json:"scope"`        // project: tied to a folder. global: for all your projects
 	Approved     bool            `json:"approved"`
+	Synced       bool            `json:"synced"` // saved to Cully memory since it last changed
+	SyncedAt     time.Time       `json:"syncedAt,omitempty"`
 	Folder       string          `json:"folder"`
 	Groups       map[string]bool `json:"groups"` // tool groups it may use
 	Mode         string          `json:"mode"`   // edit or plan
@@ -290,6 +292,7 @@ func (m *uiManager) identityCreate(in uiIdentityInput) (uiIdentity, error) {
 	}
 	id := &uiIdentity{ID: uiNewID(), Name: in.Name, Role: in.Role, Instructions: in.Instructions, Scope: in.Scope, Folder: in.Folder, Groups: in.Groups, Mode: in.Mode,
 		Schedule: in.Schedule, Enabled: in.Enabled && in.Schedule != "" && in.Approve, Approved: in.Approve, Created: time.Now().UTC(), Runs: []uiIdentityRun{}}
+	id.Synced = false
 	m.identities = append(all, id)
 	m.saveIdentitiesLocked()
 	return id.clone(), nil
@@ -320,6 +323,7 @@ func (m *uiManager) identityUpdate(id string, in uiIdentityInput) (uiIdentity, e
 		cur.Approved = true
 	}
 	cur.Schedule, cur.Enabled = in.Schedule, in.Enabled && in.Schedule != "" && cur.Approved
+	cur.Synced = false
 	if cur.dir() != oldDir { // renamed: its folder moves with it
 		_ = os.Rename(oldDir, cur.dir())
 	}
@@ -349,13 +353,19 @@ func (m *uiManager) identityDelete(id string) error {
 
 // uiIdentityPrompt is added to the system prompt, so the part that does not
 // change between runs stays at the front and can be cached.
-func uiIdentityPrompt(id uiIdentity) string {
+func uiIdentityPrompt(id uiIdentity) string { return uiIdentityPromptFor(id, true) }
+
+// uiIdentityPromptFor builds the identity text. withNotes is false for a reviewer: it does not
+// ask it to write notes.
+func uiIdentityPromptFor(id uiIdentity, withNotes bool) string {
 	var b strings.Builder
 	b.WriteString("You are " + id.Name + ", a named agent. What you do: " + id.Role + "\n")
 	if id.Instructions != "" {
 		b.WriteString("\nHow you work:\n" + id.Instructions + "\n")
 	}
-	b.WriteString("\nYou keep short notes between runs. When you finish, end your final reply with one line starting MEMORY: followed by up to three short facts worth remembering next time (decisions, where things are, what to avoid). Write nothing sensitive in it.\n")
+	if withNotes {
+		b.WriteString("\nYou keep short notes between runs. When you finish, end your final reply with one line starting MEMORY: followed by up to three short facts worth remembering next time (decisions, where things are, what to avoid). Write nothing sensitive in it.\n")
+	}
 	if id.Memory != "" {
 		b.WriteString("\nYour notes from earlier runs. They may be out of date; treat them as hints, not facts:\n<notes>\n" + id.Memory + "\n</notes>\n")
 	}
@@ -386,6 +396,10 @@ func uiMergeMemory(old, reply string) string {
 // someone else's work, so it gets a different request, is read only, and may
 // look at the worktree of the task it reviews.
 type uiRunOpts struct {
+	// NoMemory stops the run from being told to write notes and from changing the agent's notes
+	// afterwards. A reviewer's output is shaped by the work it reviews, which is not trusted,
+	// so it must never reach the agent's persistent notes.
+	NoMemory bool
 	Prompt   string
 	ReadOnly bool
 	AddDirs  []string
@@ -431,7 +445,7 @@ func (m *uiManager) identityRunWith(id string, o uiRunOpts) (uiIdentityRun, *uiA
 	if o.Title != "" {
 		title = o.Title
 	}
-	req := uiStartRequest{Title: title, Prompt: prompt, Mode: snap.Mode, groups: snap.Groups, appendSystem: uiIdentityPrompt(snap), identityName: snap.Name, addDirs: o.AddDirs, rules: o.Rules}
+	req := uiStartRequest{Title: title, Prompt: prompt, Mode: snap.Mode, groups: snap.Groups, appendSystem: uiIdentityPromptFor(snap, !o.NoMemory), identityName: snap.Name, addDirs: o.AddDirs, rules: o.Rules}
 	if o.ReadOnly {
 		req.Mode = "plan"
 	}
@@ -459,11 +473,11 @@ func (m *uiManager) identityRunWith(id string, o uiRunOpts) (uiIdentityRun, *uiA
 	cur.LastRun = run.Started
 	m.saveIdentitiesLocked()
 	uiIdentityMu.Unlock()
-	go m.finishIdentityRun(id, run.ID, a)
+	go m.finishIdentityRun(id, run.ID, a, !o.NoMemory)
 	return run, a, nil
 }
 
-func (m *uiManager) finishIdentityRun(identID, runID string, a *uiAgent) {
+func (m *uiManager) finishIdentityRun(identID, runID string, a *uiAgent, keepNotes bool) {
 	deadline := time.Now().Add(uiIdentityRunLimit)
 	for time.Now().Before(deadline) {
 		switch a.snapshot().State {
@@ -511,8 +525,9 @@ done:
 				x.Runs[i].Summary = uiClip(m.cfg.Tokens.redact(strings.TrimSpace(strings.Join(kept, "\n"))), 1500)
 			}
 		}
-		if status == "done" {
+		if status == "done" && keepNotes {
 			x.Memory = uiMergeMemory(x.Memory, m.cfg.Tokens.redact(last))
+			x.Synced = false
 		}
 		m.saveIdentitiesLocked()
 	}
@@ -538,6 +553,7 @@ func (m *uiManager) identityApprove(id string) (uiIdentity, error) {
 	for _, x := range m.loadIdentitiesLocked() {
 		if x.ID == id {
 			x.Approved = true
+			x.Synced = false
 			m.saveIdentitiesLocked()
 			return x.clone(), nil
 		}

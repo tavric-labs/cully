@@ -639,6 +639,7 @@ func (m *uiManager) runIndexer(ctx context.Context) {
 		m.identitiesDue()
 		m.agentSuggestIfDue()
 		m.rulesIfDue()
+		m.syncAgentsIfDue()
 	}
 	tick()
 	t := time.NewTicker(uiIndexTick)

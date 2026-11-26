@@ -149,6 +149,9 @@ type uiManager struct {
 		info uiHarnessInfo
 	}
 	lastMCP   map[string]string
+	syncMu    sync.Mutex
+	initNames *uiInitNames
+	syncAt    time.Time
 	snapMu    sync.Mutex
 	snapCache map[string]struct {
 		at   time.Time
@@ -754,6 +757,9 @@ func (a *uiAgent) handleLine(line []byte) {
 			a.journalToolResult(use, r.Failed)
 		}
 		a.harnessResult(r.ID, r.Failed)
+	}
+	if len(p.InitTools) > 0 && a.mgr != nil {
+		a.mgr.rememberInit(p.InitTools, p.InitCommands)
 	}
 	if p.Compacted {
 		a.mu.Lock()
