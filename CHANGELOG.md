@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Declare HTTPS egress to the Cully data API in MCP Runtime server metadata so memory calls can reach the remote service after administrator approval.
+- Declare HTTPS egress to the Cully data API in MCP Runtime server metadata so memory calls can reach the remote service after administrator approval; update deployment CLI pins to preserve the egress metadata.
 
 ## 0.31.1
 

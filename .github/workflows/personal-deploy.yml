@@ -17,8 +17,8 @@ env:
   MCP_IMAGE: ghcr.io/tavric-labs/cully-mcp:${{ inputs.tag }}
   DATA_IMAGE: ghcr.io/tavric-labs/cully-data:${{ inputs.tag }}
   MEM0_IMAGE: ghcr.io/tavric-labs/cully-mem0:${{ inputs.tag }}
-  MCP_RUNTIME_VERSION: v0.6.1
-  MCP_RUNTIME_SHA256: 0f8ea74b54be043763fbf105245b8894b00b2bbe17beb3516b44ae0c43fb0165
+  MCP_RUNTIME_VERSION: v0.22.0
+  MCP_RUNTIME_SHA256: 44513528806eb77ebcf923ee61556596530dd892c754f96ff7aeed7d357fb1c4
   MCP_PLATFORM_API_URL: https://platform.mcpruntime.org
   SERVER_NAME: cully
   IMAGE_REGISTRY: registry.mcpruntime.org/org/cully-mcp
