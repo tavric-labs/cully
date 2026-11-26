@@ -235,8 +235,8 @@
   const voiceAuto = () => { try { return localStorage.getItem(VOICE_LS) !== '0'; } catch (_) { return true; } };
   const voiceAutoSet = (on) => { try { localStorage.setItem(VOICE_LS, on ? '1' : '0'); } catch (_) {} };
   function voiceBlocked() {
-    if (window.isSecureContext && navigator.mediaDevices && window.MediaRecorder) return null;
-    return ['The browser blocks the microphone on this address.', 'A page may use the microphone only over https or on localhost. Either open Cully through an SSH tunnel (ssh -L 7777:127.0.0.1:7777 HOST, then http://127.0.0.1:7777), or start it with --tls-cert and --tls-key and open the https address.'];
+    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.MediaRecorder) return null;
+    return ['The browser blocks the microphone on this address.', 'Browsers allow the microphone only on https or localhost. To use it on this http address, allow it once in your browser. Chrome or Edge: open chrome://flags/#unsafely-treat-insecure-origin-as-secure (edge://flags/... in Edge), add ' + location.origin + ', set it to Enabled and relaunch. Firefox: in about:config set media.devices.insecure.enabled and media.getusermedia.insecure.enabled to true. Or open Cully through an SSH tunnel (ssh -L 7777:127.0.0.1:7777 HOST, then http://127.0.0.1:7777).'];
   }
   // Reports progress on the button while the speech model is installed, then says when it is ready.
   async function voiceWait(btn, rest) {
