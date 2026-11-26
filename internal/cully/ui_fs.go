@@ -44,9 +44,24 @@ func uiIsRepoRoot(dir string) bool {
 
 func uiWritable(dir string) bool { return syscall.Access(dir, 2) == nil }
 
+// uiExpandPath turns what a person types into a full path: ~ and ~/x mean the
+// home folder, and stray spaces and a trailing slash are dropped.
+func uiExpandPath(p string) string {
+	p = strings.TrimSpace(p)
+	if p == "~" || strings.HasPrefix(p, "~/") {
+		home, _ := os.UserHomeDir()
+		p = filepath.Join(home, strings.TrimPrefix(p, "~"))
+	}
+	if len(p) > 1 {
+		p = strings.TrimRight(p, "/")
+	}
+	return p
+}
+
 func uiBrowse(path string, showDot bool) (uiBrowseView, error) {
 	home, _ := os.UserHomeDir()
 	home, _ = canonicalDir(home)
+	path = uiExpandPath(path)
 	if path == uiHomeMarker {
 		path = home
 	}

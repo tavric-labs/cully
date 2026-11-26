@@ -699,3 +699,17 @@ ul.optimal .ol { flex: 1 1 240px; }
 .ok-t { color: var(--forest-hi); } .bad-t { color: var(--red); }
 ul.optimal .fbar { display: block; height: 8px; border-radius: 99px; background: var(--surface2); overflow: hidden; margin: 4px 0; }
 ul.optimal .fbar i { display: block; height: 100%; background: var(--forest-hi); }
+
+/* harness badges, session time tabs */
+.chip.harness { font-weight: 600; }
+.chip.h-claude { background: var(--peach); color: var(--peach-ink); }
+.chip.h-codex { background: var(--add-bg); color: var(--add-ink); }
+.chip.h-cursor { background: var(--surface2); color: var(--ink); border: 1px solid var(--line2); }
+.hmain .ht .chip.harness { font-size: 11.5px; }
+.tabs-seg { margin: 8px 0 12px; flex-wrap: wrap; }
+
+/* running now */
+.running-now { margin-bottom: 16px; }
+.rn-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px 22px; margin-top: 10px; }
+ul.rn-list { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 8px; }
+ul.rn-list li { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }

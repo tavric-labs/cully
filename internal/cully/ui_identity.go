@@ -247,7 +247,7 @@ func (m *uiManager) validateIdentity(in uiIdentityInput) (uiIdentityInput, error
 	if in.Scope != "project" && in.Scope != "global" {
 		return in, errors.New(`scope must be "project" or "global"`)
 	}
-	in.Folder = strings.TrimSpace(in.Folder)
+	in.Folder = uiExpandPath(in.Folder)
 	if in.Scope == "global" {
 		in.Folder = "" // a global agent belongs to no single project
 	}

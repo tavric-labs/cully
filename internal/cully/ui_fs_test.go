@@ -155,3 +155,26 @@ func TestAddFolderCanSetUpGitInAPlainFolder(t *testing.T) {
 		t.Fatal("git init in the home folder was allowed")
 	}
 }
+
+func TestTypedPathsAreExpandedSoAnyFolderCanBeChosen(t *testing.T) {
+	home, _ := canonicalDir(t.TempDir())
+	t.Setenv("HOME", home)
+	sub := filepath.Join(home, "work", "app")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for in, want := range map[string]string{"~": home, "~/work/app": sub, "  " + sub + "/  ": sub, "/": "/"} {
+		if got := uiExpandPath(in); got != want {
+			t.Errorf("uiExpandPath(%q) = %q, want %q", in, got, want)
+		}
+	}
+	for _, typed := range []string{"~/work/app", sub + "/", "  ~/work  "} {
+		if _, err := uiBrowse(typed, false); err != nil {
+			t.Errorf("browse(%q): %v", typed, err)
+		}
+	}
+	m, _, _ := uiTestManager(t, uiWriteScript(t, fakeClaude), "tok-aaa1")
+	if _, err := m.addRepoInit("~/work/app", true); err != nil {
+		t.Fatalf("a folder typed with ~ was refused: %v", err)
+	}
+}

@@ -106,7 +106,7 @@ func TestHistoryListsCodexSessions(t *testing.T) {
 	}
 }
 
-func TestHistoryEndpointIsScopedToTheAgentInUse(t *testing.T) {
+func TestHistoryEndpointCoversEveryHarness(t *testing.T) {
 	srv, _, _ := uiTestServer(t, true)
 	if r := uiDo(t, "GET", srv.URL+"/api/history", nil, nil); r.StatusCode != 401 {
 		t.Fatalf("no token: %d", r.StatusCode)
@@ -114,8 +114,11 @@ func TestHistoryEndpointIsScopedToTheAgentInUse(t *testing.T) {
 	if r := uiDo(t, "GET", srv.URL+"/api/history", nil, uiAuthed); r.StatusCode != 200 {
 		t.Fatalf("default: %d", r.StatusCode)
 	}
-	if r := uiDo(t, "GET", srv.URL+"/api/history?agent=codex", nil, uiAuthed); r.StatusCode != 400 {
-		t.Fatalf("other agent: %d", r.StatusCode)
+	if r := uiDo(t, "GET", srv.URL+"/api/history?agent=codex", nil, uiAuthed); r.StatusCode != 200 {
+		t.Fatalf("codex: %d", r.StatusCode)
+	}
+	if r := uiDo(t, "GET", srv.URL+"/api/history?agent=bogus", nil, uiAuthed); r.StatusCode != 400 {
+		t.Fatalf("unknown agent: %d", r.StatusCode)
 	}
 	if r := uiDo(t, "GET", srv.URL+"/api/history?days=abc", nil, uiAuthed); r.StatusCode != 400 {
 		t.Fatalf("bad days: %d", r.StatusCode)
@@ -239,5 +242,51 @@ func TestSessionsSayWhereTheyWereStarted(t *testing.T) {
 	h := m.history("claude", 7)
 	if len(h.Sessions) != 1 || h.Sessions[0].Origin != "Terminal" {
 		t.Fatalf("history = %+v", h.Sessions)
+	}
+}
+
+func TestHistoryAllMergesHarnessesNewestFirst(t *testing.T) {
+	m, repo, _ := uiResumeFixture(t)
+	t.Setenv("CODEX_HOME", t.TempDir())
+	uiWriteCodexRollout(t, uiTestSessB, repo)
+	all := m.history("all", 7)
+	if len(all.Sessions) != 2 {
+		t.Fatalf("all = %+v", all.Sessions)
+	}
+	agents := all.Sessions[0].Agent + "," + all.Sessions[1].Agent
+	if agents != "claude,codex" && agents != "codex,claude" {
+		t.Fatalf("agents = %s", agents)
+	}
+	if all.Sessions[0].Updated.Before(all.Sessions[1].Updated) {
+		t.Fatal("not newest first")
+	}
+	if all.Note == "" {
+		t.Fatal("the Cursor note is missing")
+	}
+}
+
+func TestRunningNowGathersEverythingInOnePlace(t *testing.T) {
+	srv, m, repo := uiTestServer(t, true)
+	if r := uiDo(t, "GET", srv.URL+"/api/running", nil, nil); r.StatusCode != 401 {
+		t.Fatalf("no token: %d", r.StatusCode)
+	}
+	in := uiIdentityInputFor(repo)
+	a, _ := m.identityCreate(in)
+	if _, err := m.identityRun(a.ID); err != nil {
+		t.Fatal(err)
+	}
+	var v uiRunningNow
+	uiReadJSON(t, uiDo(t, "GET", srv.URL+"/api/running", nil, uiAuthed), &v)
+	if len(v.Agents) != 1 || v.Agents[0].Name != "Release watcher" || v.Agents[0].TaskID == "" || v.Scouts == nil || v.Evals == nil || v.Sessions == nil {
+		t.Fatalf("running = %+v", v)
+	}
+}
+
+func TestSessionsPageHasTimeTabsHarnessBadgesAndTheRunningPanel(t *testing.T) {
+	b, _ := uiStaticFS.ReadFile("ui_static/app.js")
+	for _, want := range []string{"'Today'", "'Last 7 days'", "'Last 15 days'", "'Last 30 days'", "'Older'", "agent=all", "harnessChip", "Running now", "/api/running", "Agents at work", "Sessions open in terminals"} {
+		if !strings.Contains(string(b), want) {
+			t.Errorf("app.js lacks %q", want)
+		}
 	}
 }

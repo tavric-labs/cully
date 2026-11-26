@@ -261,6 +261,19 @@ func uiHistoryFiles(agent string) []uiHistFile {
 // all), newest first, skipping folders the user chose to hide and the
 // worktrees Cully's own agents use.
 func (m *uiManager) history(agent string, days int) uiHistory {
+	if agent == "all" {
+		out := uiHistory{Agent: "all", Days: days, Sessions: []uiPastSession{}}
+		for _, a := range []string{"claude", "codex", "cursor"} {
+			part := m.history(a, days)
+			out.Sessions = append(out.Sessions, part.Sessions...)
+			out.Older = out.Older || part.Older
+			if part.Note != "" {
+				out.Note = part.Note
+			}
+		}
+		sort.SliceStable(out.Sessions, func(i, j int) bool { return out.Sessions[i].Updated.After(out.Sessions[j].Updated) })
+		return out
+	}
 	h := uiHistory{Agent: agent, Days: days, Sessions: []uiPastSession{}}
 	if agent == "cursor" {
 		h.Note = "Cursor keeps its chats in a format Cully cannot read yet. Sessions running now are listed under Open now."

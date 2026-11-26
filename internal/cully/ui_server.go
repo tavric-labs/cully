@@ -126,6 +126,7 @@ func newUIServer(m *uiManager, token string, loopback bool) http.Handler {
 	mux.Handle("GET /api/sessions/evals", s.api(s.evalList))
 	mux.Handle("GET /api/evals/runs", s.api(s.evalRunsGet))
 	mux.Handle("GET /api/coach", s.api(s.coachGetH))
+	mux.Handle("GET /api/running", s.api(s.runningGet))
 	mux.Handle("GET /api/usage", s.api(s.usageGet))
 	mux.Handle("GET /api/agent-suggestions", s.api(s.agentSuggestListH))
 	mux.Handle("POST /api/agent-suggestions/run", s.api(s.agentSuggestRunH))
@@ -614,13 +615,13 @@ func repoPaths(list []uiRepoInfo) []string {
 }
 
 func (s *uiServer) sessionList(w http.ResponseWriter, r *http.Request) {
-	mine := []uiSession{}
-	for _, x := range s.m.sessions() {
-		if x.InUse {
-			mine = append(mine, x)
-		}
+	// Every harness on the machine, each marked with which one it is. Only a task
+	// started from this page is tied to the harness the page was opened through.
+	all := s.m.sessions()
+	if all == nil {
+		all = []uiSession{}
 	}
-	uiJSON(w, http.StatusOK, mine)
+	uiJSON(w, http.StatusOK, all)
 }
 
 func (s *uiServer) addRepo(w http.ResponseWriter, r *http.Request) {
@@ -830,15 +831,10 @@ func (s *uiServer) fanout(w http.ResponseWriter, r *http.Request) {
 func (s *uiServer) historyList(w http.ResponseWriter, r *http.Request) {
 	agent := r.URL.Query().Get("agent")
 	if agent == "" {
-		for _, a := range []string{"claude", "codex", "cursor"} {
-			if s.m.mcp.isInUse(a) {
-				agent = a
-				break
-			}
-		}
+		agent = "all" // every harness on the machine
 	}
-	if !uiKnownAgent(agent) || !s.m.mcp.isInUse(agent) {
-		uiError(w, http.StatusBadRequest, "this page was not opened through that agent")
+	if agent != "all" && !uiKnownAgent(agent) {
+		uiError(w, http.StatusBadRequest, "unknown agent")
 		return
 	}
 	days := 7
@@ -1075,4 +1071,8 @@ func (s *uiServer) identityApproveH(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	uiJSON(w, http.StatusOK, id)
+}
+
+func (s *uiServer) runningGet(w http.ResponseWriter, r *http.Request) {
+	uiJSON(w, http.StatusOK, s.m.running())
 }

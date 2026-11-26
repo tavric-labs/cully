@@ -191,6 +191,7 @@ func (m *uiManager) addRepo(path string) (uiRepoInfo, error) { return m.addRepoI
 // git repository becomes one, with an empty first commit, so agents can get
 // worktrees. It refuses the home folder and the filesystem root.
 func (m *uiManager) addRepoInit(path string, initGit bool) (uiRepoInfo, error) {
+	path = uiExpandPath(path)
 	if !filepath.IsAbs(path) {
 		return uiRepoInfo{}, errors.New("give the full path of the folder")
 	}

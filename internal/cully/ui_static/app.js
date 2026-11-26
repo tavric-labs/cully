@@ -621,6 +621,26 @@
     document.removeEventListener('keydown', escClose);
     document.addEventListener('keydown', escClose);
   }
+  // Everything running for the user right now besides the task columns below: named agents,
+  // eval runs, scouts, advisor reviews, session naming, and sessions open in any harness.
+  function drawRunning(r) {
+    const box = $('running');
+    if (!box) return;
+    if (!r) { box.replaceChildren(); return; }
+    const sec = (title, rows) => (rows.length ? h('div', { class: 'rn-sec' }, h('span', { class: 'opt-label' }, title), h('ul', { class: 'rn-list' }, ...rows)) : null);
+    const row = (...kids) => h('li', {}, ...kids);
+    const agents = r.agents.map((a) => row(h('span', { class: 'dot working' }), h('b', {}, a.name), h('span', { class: 'chip' }, a.scope === 'global' ? 'All projects' : 'Project'), h('span', { class: 'faint small' }, 'working for ' + ago(a.started).replace(' ago', '')), a.taskId ? h('a', { class: 'linkbtn', href: '#/agent/' + a.taskId }, 'Open the task') : null));
+    const evals = r.evals.map((e) => row(h('span', { class: 'dot working' }), h('b', {}, 'Eval'), h('span', {}, e.task), h('span', { class: 'chip run-running' }, e.status === 'judging' ? 'Judging' : 'Running'), e.agentId ? h('a', { class: 'linkbtn', href: '#/agent/' + e.agentId }, 'Open') : null));
+    const scouts = r.scouts.map((c) => row(h('span', { class: 'dot working' }), h('b', {}, 'Scout'), h('span', {}, c.query), h('span', { class: 'faint small' }, c.steps + (c.steps === 1 ? ' step' : ' steps')), h('a', { class: 'linkbtn', href: '#/dashboard/scout' }, 'Watch it')));
+    const advisor = r.advisor.map((a) => row(h('span', { class: 'dot working' }), h('b', {}, 'Advisor'), h('span', {}, 'reviewing ' + a.title), h('a', { class: 'linkbtn', href: '#/dashboard/advisor' }, 'See advice')));
+    const naming = r.naming.on && r.naming.pending > 0 ? [row(h('span', { class: 'dot working' }), h('b', {}, 'Naming sessions'), h('span', { class: 'faint small' }, r.naming.done + ' of ' + (r.naming.done + r.naming.pending) + ' done'), h('a', { class: 'linkbtn', href: '#/dashboard/library' }, 'Session library'))] : [];
+    const sessions = r.sessions.map((x) => row(harnessChip(x.agent), h('b', {}, x.name), x.branch ? h('span', { class: 'chip mono' }, icon('branch'), x.branch) : null, h('span', { class: 'faint small' }, x.via === 'cully' ? 'In the Cully terminal' : x.detached ? 'Terminal closed' : 'In a terminal'), x.started && !x.started.startsWith('0001') ? h('span', { class: 'faint small' }, 'open for ' + ago(x.started).replace(' ago', '')) : null));
+    const parts = [sec('Agents at work', agents), sec('Evals', evals), sec('Scouts', scouts), sec('Advisor', advisor), sec('Background', naming), sec('Sessions open in terminals', sessions)].filter(Boolean);
+    box.replaceChildren(h('section', { class: 'lib-card running-now' }, h('div', { class: 'row' }, h('b', {}, 'Running now'), h('span', { class: 'faint small' }, 'Tasks are in the columns below. Everything else Cully and your harnesses are doing is here.')),
+      parts.length ? h('div', { class: 'rn-grid' }, ...parts) : h('p', { class: 'faint small' }, 'Nothing else is running right now.')));
+  }
+  async function refreshRunning() { try { drawRunning(await api('/api/running')); } catch (_) { /* optional */ } }
+
   async function renderBoard() {
     try { S.overlaps = (await api('/api/board')).overlaps || []; } catch (_) { /* banner */ }
     let queue = [];
@@ -634,7 +654,8 @@
     const shown = S.agents.filter((a) => (!prefs.repo || a.repo === prefs.repo) && (!q || (a.title + ' ' + a.branch + ' ' + (a.files || []).join(' ')).toLowerCase().includes(q)));
     const title = (id) => (S.agents.find((a) => a.id === id) || {}).title || id;
     if (!S.agents.length && !queue.length) {
-      $('board').replaceChildren(h('div', { class: 'empty-state' }, h('h2', {}, 'No tasks yet'), h('p', { class: 'faint' }, 'Give Cully a task and it shows up here, moving from Starting to Finished.'), h('a', { class: 'btn', href: '#/' }, icon('plus'), 'Start a task')));
+      $('board').replaceChildren(h('div', { id: 'running' }), h('div', { class: 'empty-state' }, h('h2', {}, 'No tasks yet'), h('p', { class: 'faint' }, 'Give Cully a task and it shows up here, moving from Starting to Finished.'), h('a', { class: 'btn', href: '#/' }, icon('plus'), 'Start a task')));
+      refreshRunning();
       return;
     }
     const count = (k) => (k === 'queued' ? queue.length : shown.filter((a) => bucket(a) === k).length);
@@ -656,7 +677,10 @@
       sec.addEventListener('drop', (e) => { sec.classList.remove('over'); dropOn(key, e); });
       return sec;
     }));
-    $('board').replaceChildren(h('div', { class: 'bhead' }, strip, tools), ...overlapBanner, board);
+    $('board').replaceChildren(h('div', { id: 'running' }), h('div', { class: 'bhead' }, strip, tools), ...overlapBanner, board);
+    refreshRunning();
+    clearInterval(S.runTimer);
+    S.runTimer = setInterval(() => { if (S.route.name !== 'board') { clearInterval(S.runTimer); return; } refreshRunning(); }, 5000);
   }
 
   // A small score ring. Colour comes from classes, the arc from stroke-dasharray.
@@ -917,7 +941,7 @@
         return h('li', { class: 'hrow' },
           ring(x.health, 46),
           h('div', { class: 'hmain' },
-            h('div', { class: 'ht' }, x.title || x.name, h('span', { class: 'chip ' + (x.completed === 'yes' ? 'ok' : x.completed === 'no' ? 'warn' : '') }, DONE_LABEL[x.completed] || 'Unclear'), x.onTask === 'drifted' ? h('span', { class: 'chip warn' }, 'Drifted') : null),
+            h('div', { class: 'ht' }, harnessChip(x.agent), x.title || x.name, h('span', { class: 'chip ' + (x.completed === 'yes' ? 'ok' : x.completed === 'no' ? 'warn' : '') }, DONE_LABEL[x.completed] || 'Unclear'), x.onTask === 'drifted' ? h('span', { class: 'chip warn' }, 'Drifted') : null),
             x.task ? h('p', { class: 'hdesc' }, h('b', {}, 'Goal: '), x.task) : null,
             x.description ? h('p', { class: 'hdesc' }, h('b', {}, 'What it did: '), x.description) : null,
             x.drift ? h('p', { class: 'hdiff' }, h('b', {}, 'Drift: '), x.drift) : null,
@@ -973,7 +997,7 @@
         h('div', {}, h('span', { class: 'opt-label' }, 'Where sessions start'), h('ul', { class: 'fbars' }, ...Object.entries(origins).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([k, v]) => h('li', {}, h('span', { class: 'fname' }, k), h('span', { class: 'fbar' }, fill(Math.round(v / all.length * 100))), h('span', { class: 'faint small' }, String(v)))))),
         judged.length ? h('div', {}, h('span', { class: 'opt-label' }, 'How sessions ended'), h('div', { class: 'stackbar' }, ...[['Completed', done, 'good'], ['Partly', partly, 'mid'], ['Not completed', notDone, 'bad'], ['Unclear', judged.length - done - partly - notDone, 'dim']].filter((p) => p[1]).map(([l, n, c]) => { const i = h('i', { class: c, title: l + ': ' + n }); i.style.width = (n / judged.length * 100) + '%'; return i; })),
           h('div', { class: 'row legend' }, h('span', { class: 'chip ok' }, 'Completed ' + done), h('span', { class: 'chip' }, 'Partly ' + partly), h('span', { class: 'chip warn' }, 'Not completed ' + notDone))) : null),
-      attention.length ? h('div', {}, h('span', { class: 'opt-label' }, 'Look at these first'), h('ul', { class: 'attn-list' }, ...attention.map((x) => h('li', {}, ring(x.health, 34), h('div', {}, h('b', {}, x.title || x.name), h('div', { class: 'faint small' }, (x.signals || []).join('. ') || 'Low health'))))), h('a', { class: 'linkbtn', href: '#/dashboard/health' }, 'See all in Session health')) : null);
+      attention.length ? h('div', {}, h('span', { class: 'opt-label' }, 'Look at these first'), h('ul', { class: 'attn-list' }, ...attention.map((x) => h('li', {}, ring(x.health, 34), h('div', {}, h('b', {}, x.title || x.name), harnessChip(x.agent), h('div', { class: 'faint small' }, (x.signals || []).join('. ') || 'Low health'))))), h('a', { class: 'linkbtn', href: '#/dashboard/health' }, 'See all in Session health')) : null);
     return { kpis, card };
   }
   async function renderLibrary(out, head) {
@@ -998,7 +1022,7 @@
     const shown = S.libShown || 30;
     const rows = lib.sessions.slice(0, shown).map((x) => h('li', { class: 'hrow' },
       h('div', { class: 'hmain' },
-        h('div', { class: 'ht' }, x.title || x.name, x.source === 'ai' ? null : h('span', { class: 'chip' }, 'Not named yet')),
+        h('div', { class: 'ht' }, harnessChip(x.agent), x.title || x.name, x.source === 'ai' ? null : h('span', { class: 'chip' }, 'Not named yet')),
         x.description ? h('p', { class: 'hdesc' }, x.description) : null,
         h('div', { class: 'row' }, h('span', { class: 'chip' }, icon('folder'), x.name), x.origin ? h('span', { class: 'chip' }, x.origin) : null, x.branch ? h('span', { class: 'chip mono' }, icon('branch'), x.branch) : null,
           h('span', { class: 'chip' }, ago(x.updated)), h('span', { class: 'chip' }, dur(x.activeSec) + ' worked'),
@@ -1722,8 +1746,8 @@
       const segs = d ? d.path.split('/').filter(Boolean) : [];
       const crumbs = h('nav', { class: 'crumbs', 'aria-label': 'Path' }, h('button', { class: 'linkbtn', onclick: () => load('/') }, '/'),
         ...segs.map((seg, i) => h('button', { class: 'linkbtn', onclick: () => load('/' + segs.slice(0, i + 1).join('/')) }, seg)));
-      const pathIn = h('input', { type: 'text', placeholder: 'Or paste a full path', 'aria-label': 'Folder path', autocomplete: 'off', spellcheck: 'false' });
-      pathIn.addEventListener('keydown', (e) => { if (e.key === 'Enter' && pathIn.value.trim()) load(pathIn.value.trim()); });
+      const pathIn = h('input', { type: 'text', placeholder: 'Or type a path, such as ~/work or /srv/app', 'aria-label': 'Folder path', autocomplete: 'off', spellcheck: 'false' });
+      pathIn.addEventListener('keydown', (e) => { if (e.key === 'Enter' && pathIn.value.trim()) { const v = pathIn.value.trim(); load(v.startsWith('/') || v.startsWith('~') || !state.path ? v : state.path.replace(/\/$/, '') + '/' + v); } });
       body.replaceChildren(
         recent.length ? h('div', { class: 'row' }, h('span', { class: 'opt-label' }, 'Recent'), ...recent.map((r) => h('button', { class: 'chip', title: r.path, onclick: () => (r.git ? startIn(r.path) : load(r.path)) }, icon('folder'), r.name))) : null,
         h('div', { class: 'row crumbrow' }, crumbs, h('span', { class: 'sp row' },
@@ -1745,6 +1769,8 @@
   function openAddFolder() { openFolderChooser(); }
 
   const AGENT_LABEL = { claude: 'Claude', codex: 'Codex', cursor: 'Cursor' };
+  // Which harness (Claude Code, Codex, Cursor) a session belongs to. Only tasks started here are tied to one.
+  const harnessChip = (agent) => (agent ? h('span', { class: 'chip harness h-' + agent, title: 'The harness this session ran in' }, AGENT_LABEL[agent] || agent) : null);
   async function startHere(sess) {
     try { await addFolder(sess.repo); location.hash = '#/'; toast('Ready to start a task in ' + sess.name); } catch (e) { toast(e.message, true); }
   }
@@ -1759,8 +1785,8 @@
     const sig = JSON.stringify([list.map((x) => [x.pid, x.cwd, x.branch, x.via, x.detached]), hiddenClosed, !!S.showClosedSessions]);
     if (sig === S.sessSig && box.childElementCount) return;
     S.sessSig = sig;
-    const names = [...new Set(mcpUsed().map((m) => AGENT_LABEL[m.agent]))].join(' and ') || 'Claude';
-    const sub = 'Your ' + names + ' sessions on this computer: the ones open now first, then recent ones.';
+    const names = 'Claude, Codex and Cursor';
+    const sub = 'Every session on this computer, whichever harness it ran in: the ones open now first, then recent ones by when they were last active.';
     const kids = [toolbar('Sessions', sub, refreshBtn(async () => { S.sessions = await api('/api/sessions'); S.sessSig = ''; S.hist = null; renderSessions(); }))];
     kids.push(h('div', { id: 'active' }));
     const toggles = [];
@@ -1772,7 +1798,7 @@
     box.replaceChildren(...kids);
     drawActive();
     drawHistory();
-    if (!S.hist) loadHistory(7);
+    if (!S.hist) loadHistory(0);
   }
 
   // Shown when the browser will not let the page copy: the command is selectable here.
@@ -1840,7 +1866,7 @@
 
   // Past sessions the agent recorded on this machine, with a way to continue them.
   async function loadHistory(days) {
-    try { S.hist = await api('/api/history?days=' + days); S.histErr = ''; } catch (e) { S.histErr = e.message; }
+    try { S.hist = await api('/api/history?agent=all&days=0'); S.histErr = ''; } catch (e) { S.histErr = e.message; }
     drawHistory();
   }
   // Sessions open right now, drawn as cards like the recent ones. When the agent
@@ -1849,16 +1875,16 @@
     const box = $('active');
     if (!box) return;
     const list = (S.sessions || []).filter((x) => S.showClosedSessions || !x.detached);
-    if (!list.length) { box.replaceChildren(h('h3', { class: 'section-h' }, 'Open now'), emptyCard('Nothing is open right now', 'Open ' + (mcpUsed().map((m) => AGENT_LABEL[m.agent]).join(' or ') || 'Claude') + ' in a terminal and it appears here. Or start an agent from this page.', 'Start a task', '#/')); return; }
+    if (!list.length) { box.replaceChildren(h('h3', { class: 'section-h' }, 'Open now'), emptyCard('Nothing is open right now', 'Open Claude, Codex or Cursor in a terminal and it appears here. Or start a task from this page.', 'Start a task', '#/')); return; }
     const recorded = (S.hist && S.hist.sessions) || [];
     box.replaceChildren(h('h3', { class: 'section-h' }, 'Open now'), h('ul', { class: 'hrows active' }, ...list.map((x) => {
       const rec = recorded.find((r) => r.open && r.cwd === x.cwd);
       return h('li', { class: 'hrow' + (x.detached ? ' detached' : '') },
         h('div', { class: 'hmain' },
-          h('div', { class: 'ht' }, (rec && rec.title) || x.name, h('span', { class: 'chip ok' }, x.detached ? 'Terminal closed' : 'Active')),
+          h('div', { class: 'ht' }, harnessChip(x.agent), (rec && rec.title) || x.name, h('span', { class: 'chip ok' }, x.detached ? 'Terminal closed' : 'Active')),
           rec && rec.description ? h('p', { class: 'hdesc' }, rec.description) : null,
           h('div', { class: 'faint small path' }, x.cwd),
-          h('div', { class: 'row' }, h('span', { class: 'chip' }, AGENT_LABEL[x.agent] || x.agent), x.branch ? h('span', { class: 'chip mono' }, icon('branch'), x.branch) : null,
+          h('div', { class: 'row' }, x.branch ? h('span', { class: 'chip mono' }, icon('branch'), x.branch) : null,
             h('span', { class: 'chip' }, x.via === 'cully' ? 'In the Cully terminal' : 'In a plain terminal'),
             x.started && !x.started.startsWith('0001') ? h('span', { class: 'chip' }, 'open for ' + ago(x.started).replace(' ago', '')) : null)),
         h('div', { class: 'row hact' },
@@ -1874,34 +1900,39 @@
     if (S.histErr) { box.replaceChildren(h('div', { class: 'err' }, S.histErr)); return; }
     const hist = S.hist;
     if (!hist) { box.replaceChildren(h('p', { class: 'faint' }, 'Loading recent sessions…')); return; }
-    const label = hist.days === 0 ? 'of all time' : hist.days === 7 ? 'in the last 7 days' : 'in the last ' + hist.days + ' days';
-    const parts = [h('h3', { class: 'section-h' }, 'Recent'), h('p', { class: 'faint small' }, (AGENT_LABEL[hist.agent] || hist.agent) + ' sessions ' + label + ', named from what each one did.')];
+    // Tabs by how long ago a session was last active: today, the last 7, 15 and 30 days, and older.
+    const startOfToday = new Date(); startOfToday.setHours(0, 0, 0, 0);
+    const ageDays = (iso) => Math.floor((startOfToday.getTime() - new Date(iso).getTime()) / 864e5) + 1;
+    const BUCKETS = [['today', 'Today', (x) => new Date(x.updated) >= startOfToday], ['d7', 'Last 7 days', (x) => new Date(x.updated) < startOfToday && ageDays(x.updated) <= 7], ['d15', 'Last 15 days', (x) => ageDays(x.updated) > 7 && ageDays(x.updated) <= 15],
+      ['d30', 'Last 30 days', (x) => ageDays(x.updated) > 15 && ageDays(x.updated) <= 30], ['older', 'Older', (x) => ageDays(x.updated) > 30]];
+    const recent = hist.sessions.filter((x) => !x.open);
+    const inBucket = (k) => recent.filter(BUCKETS.find((b) => b[0] === k)[2]);
+    if (!S.histPicked || !S.histBucket) S.histBucket = (BUCKETS.find((b) => inBucket(b[0]).length) || BUCKETS[0])[0];
+    const bucket = S.histBucket; const items = inBucket(bucket); const shown = (S.histShown && S.histShown[bucket]) || 20;
+    const parts = [h('h3', { class: 'section-h' }, 'Recent'), h('p', { class: 'faint small' }, 'Sessions of every harness on this computer (Claude, Codex and Cursor), named from what each one did. Each one is marked with the harness it ran in.')];
     if (hist.note) parts.push(h('p', { class: 'faint' }, hist.note));
-    if (!hist.sessions.filter((x) => !x.open).length && !hist.note) parts.push(emptyCard('No recent sessions', 'Sessions you run appear here so you can continue them.', 'Start a task', '#/'));
+    parts.push(h('div', { class: 'seg tabs-seg', role: 'tablist', 'aria-label': 'How long ago' }, ...BUCKETS.map(([k, label]) => h('button', { type: 'button', role: 'tab', class: k === bucket ? 'on' : '', 'aria-selected': String(k === bucket), onclick: () => { S.histBucket = k; S.histPicked = true; drawHistory(); } }, label + ' ' + inBucket(k).length))));
+    if (!items.length) parts.push(emptyCard('Nothing in this period', recent.length ? 'Pick another period above.' : 'Sessions you run appear here so you can continue them.', 'Start a task', '#/'));
     const copyCmd = (cmd, what) => async () => {
       try { await writeClip(cmd); toast('Copied. Paste it in a terminal to ' + what + '.'); } catch (_) { showCommand(cmd); }
     };
-    const runnable = hist.agent === 'claude';
-    const recent = hist.sessions.filter((x) => !x.open);
-    if (recent.length) {
-      parts.push(h('ul', { class: 'hrows' }, ...recent.map((x) => h('li', { class: 'hrow' },
+    if (items.length) {
+      parts.push(h('ul', { class: 'hrows' }, ...items.slice(0, shown).map((x) => { const runnable = x.agent === 'claude'; return h('li', { class: 'hrow' },
         h('div', { class: 'hmain' },
-          h('div', { class: 'ht' }, x.title || x.name, x.open ? h('span', { class: 'chip warn', title: 'Active in a terminal moments ago' }, 'Open now') : null),
+          h('div', { class: 'ht' }, harnessChip(x.agent), x.title || x.name),
           x.description ? h('p', { class: 'hdesc' }, x.description) : null,
           h('div', { class: 'faint small path' }, x.cwd),
           h('div', { class: 'row' }, x.origin ? h('span', { class: 'chip', title: 'Where this session was started' }, x.origin) : null, x.activeSec ? h('span', { class: 'chip', title: 'Time spent working in this session' }, dur(x.activeSec) + ' worked') : null, x.branch ? h('span', { class: 'chip mono' }, icon('branch'), x.branch) : null, h('span', { class: 'chip' }, ago(x.updated)), x.exists ? null : h('span', { class: 'chip warn' }, 'Folder is gone'))),
         h('div', { class: 'row hact' },
           runnable
-            ? [h('button', { class: x.open ? 'btn small' : 'btn ghost small', disabled: !x.exists, title: 'Start a new session from this one here; the original stays as it is', onclick: () => continueSession(x, true) }, icon('branch'), 'Fork'),
-              h('button', { class: x.open ? 'btn ghost small' : 'btn small', disabled: !x.exists || x.open, title: x.open ? 'It is open in a terminal. Fork it instead.' : 'Continue this same session here', onclick: () => continueSession(x, false) }, icon('send'), 'Resume')]
-            : [h('button', { class: 'btn small', disabled: !x.exists, onclick: copyCmd(x.fork || x.resume, 'fork it') }, icon('branch'), 'Copy fork command'),
-              h('button', { class: 'btn ghost small', disabled: !x.exists || x.open, onclick: copyCmd(x.resume, 'continue it') }, icon('copy'), 'Copy resume command')],
-          runnable ? h('button', { class: 'linkbtn', title: 'Copy the terminal command instead', onclick: copyCmd(x.open ? x.fork : x.resume, 'continue it') }, 'Copy command') : null)))));
+            ? [h('button', { class: 'btn ghost small', disabled: !x.exists, title: 'Start a new session from this one here; the original stays as it is', onclick: () => continueSession(x, true) }, icon('branch'), 'Fork'),
+              h('button', { class: 'btn small', disabled: !x.exists, title: 'Continue this same session here', onclick: () => continueSession(x, false) }, icon('send'), 'Resume')]
+            : [h('button', { class: 'btn ghost small', disabled: !x.exists, onclick: copyCmd(x.fork || x.resume, 'fork it') }, icon('branch'), 'Copy fork command'),
+              h('button', { class: 'btn small', disabled: !x.exists, onclick: copyCmd(x.resume, 'continue it') }, icon('copy'), 'Copy resume command')],
+          runnable ? h('button', { class: 'linkbtn', title: 'Copy the terminal command instead', onclick: copyCmd(x.resume, 'continue it') }, 'Copy command') : null)); })));
+      if (items.length > shown) parts.push(h('div', { class: 'row' }, h('button', { class: 'btn ghost', onclick: () => { S.histShown = { ...(S.histShown || {}), [bucket]: shown + 20 }; drawHistory(); } }, 'Show ' + Math.min(20, items.length - shown) + ' more of ' + (items.length - shown))));
     }
-    if (hist.older || hist.days !== 7) {
-      parts.push(h('div', { class: 'row' }, hist.older ? h('button', { class: 'btn ghost', onclick: () => loadHistory(hist.days === 7 ? 30 : 0) }, 'Show older sessions') : null,
-        hist.days !== 7 ? h('button', { class: 'linkbtn', onclick: () => loadHistory(7) }, 'Back to the last 7 days') : null));
-    }
+    if (hist.older) parts.push(h('p', { class: 'faint small' }, 'Showing the most recent sessions of each harness. Older ones are kept by the agents themselves.'));
     box.replaceChildren(...parts);
   }
 

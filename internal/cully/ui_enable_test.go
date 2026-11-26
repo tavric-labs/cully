@@ -282,7 +282,7 @@ func TestSignInStatusOnlyListsAgentsInUseAndOnlyProbesThem(t *testing.T) {
 	}
 }
 
-func TestSessionsEndpointOnlyListsAgentsInUse(t *testing.T) {
+func TestSessionsEndpointListsEveryHarnessAndTagsEachOne(t *testing.T) {
 	repo := uiNewBranchRepo(t, "dev")
 	now := time.Now()
 	uiFakeProcs(t, []uiProc{
@@ -294,8 +294,12 @@ func TestSessionsEndpointOnlyListsAgentsInUse(t *testing.T) {
 	var buf bytes.Buffer
 	buf.ReadFrom(uiDo(t, "GET", srv.URL+"/api/sessions", nil, uiAuthed).Body)
 	names := uiAgentNames(buf.Bytes(), "agent")
-	if len(names) != 1 || names[0] != "claude" {
-		t.Fatalf("sessions = %v", names)
+	have := map[string]bool{}
+	for _, n := range names {
+		have[n] = true
+	}
+	if len(names) != 3 || !have["claude"] || !have["codex"] || !have["cursor"] {
+		t.Fatalf("sessions = %v: every harness on the machine should be listed", names)
 	}
 }
 
