@@ -126,6 +126,9 @@ func newUIServer(m *uiManager, token string, loopback bool) http.Handler {
 	mux.Handle("GET /api/sessions/evals", s.api(s.evalList))
 	mux.Handle("GET /api/evals/runs", s.api(s.evalRunsGet))
 	mux.Handle("GET /api/coach", s.api(s.coachGetH))
+	mux.Handle("GET /api/agent-suggestions", s.api(s.agentSuggestListH))
+	mux.Handle("POST /api/agent-suggestions/run", s.api(s.agentSuggestRunH))
+	mux.Handle("POST /api/agent-suggestions/{id}/{state}", s.api(s.agentSuggestSetH))
 	mux.Handle("GET /api/identities", s.api(s.identityListH))
 	mux.Handle("POST /api/identities", s.api(s.identityCreateH))
 	mux.Handle("PUT /api/identities/{id}", s.api(s.identityUpdateH))
@@ -1022,4 +1025,30 @@ func (s *uiServer) identityRunH(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	uiJSON(w, http.StatusCreated, run)
+}
+
+func (s *uiServer) agentSuggestListH(w http.ResponseWriter, r *http.Request) {
+	uiJSON(w, http.StatusOK, s.m.agentSuggestionsList())
+}
+
+func (s *uiServer) agentSuggestRunH(w http.ResponseWriter, r *http.Request) {
+	n, err := s.m.agentSuggestRun()
+	if err != nil {
+		uiError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	uiJSON(w, http.StatusOK, map[string]int{"added": n})
+}
+
+func (s *uiServer) agentSuggestSetH(w http.ResponseWriter, r *http.Request) {
+	state := r.PathValue("state")
+	if state != "accepted" && state != "dismissed" {
+		uiError(w, http.StatusBadRequest, "state must be accepted or dismissed")
+		return
+	}
+	if err := s.m.agentSuggestionSet(r.PathValue("id"), state); err != nil {
+		uiError(w, http.StatusNotFound, err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }

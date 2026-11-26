@@ -147,9 +147,17 @@ Turn on **Keep going until checked** when you start an agent and, after each tur
 
 Every scout result and every piece of advice is kept in `research-log.jsonl` in the Cully folder (newest 500). The Scout tab shows the full history. Turn on **Scout the web every hour** and the advisor reads the last week of named sessions, picks up to two targeted searches, and runs them. A search is only sent when it uses general technical terms: Cully refuses any that contain a path, link, email, ticket number, or the name of a folder or repository, and does not repeat a topic from the last week.
 
-## Agent permissions
+## Harness permissions
 
-Agents the page starts run headless, so a tool that is not allowed is refused. **Dashboard, More, Agent permissions** sets what they may do: groups of tools (read, edit, commands, Cully memory read, Cully memory save, web), extra tools by name, and a block list that always wins. Defaults match what agents had before; changes apply to agents started afterwards and are saved in `ui-settings.json`.
+The harness is the program that runs the model (Claude Code). Tasks the page starts run headless, so a tool that is not allowed is refused. **Dashboard, More, Harness permissions** sets what they may do: groups of tools (read, edit, commands, Cully memory read, Cully memory save, web), extra tools by name, and a block list that always wins. Defaults match what agents had before; changes apply to agents started afterwards and are saved in `ui-settings.json`.
+
+## Agents
+
+An agent is a named worker with a role, instructions on how it works, a set of tools, a folder and short notes it keeps between runs. Create one on the **Agents** page, or start from a template (pull request watcher, test guardian, dependency reviewer, docs keeper). Its name, role and instructions are added to the system prompt at the start of every run, ahead of the task, so that part stays the same and the prompt cache can reuse it. Each run is an ordinary task in its own worktree, shown on the Tasks tab; at the end it saves up to three short facts, kept to 2,200 characters with the newest winning, and the next run reads them first. An agent runs when you press Run now, or every hour or day while the page server is running. Definitions, notes and run history are in `identities.json` in the Cully folder.
+
+Cully also proposes agents. About once an hour while naming is on, it reads the named sessions and suggests agents for work you repeat or skip. A proposal shows what it would do, why, and its tools; nothing exists until you press **Review and create**, change what you like and save.
+
+Suggestions from the coach can be applied from the Advisor and Session library pages: to a task started from Cully (sent as a message), as a new task, or copied for a session open in a terminal, which the page cannot write to.
 
 ## Security model
 

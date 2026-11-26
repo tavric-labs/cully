@@ -40,7 +40,7 @@ Caveats: the paper reads source code and measures nothing at run time; benchmark
 | Step | What | Status |
 | --- | --- | --- |
 | 1 | Capture what each task really uses: input, cache reads, output, and the share served from the prompt cache. A cache read costs about a tenth of fresh input, so the cached share is the measurable saving. | Built: shown on each task |
-| 2 | Load only the MCP servers a task needs. Each connected server adds tool schemas to every turn; a machine with a dozen servers pays for all of them. Pass a filtered MCP config for UI-run tasks, chosen on the Agent permissions page. | Not built |
+| 2 | Load only the MCP servers a task needs. Each connected server adds tool schemas to every turn; a machine with a dozen servers pays for all of them. Pass a filtered MCP config for UI-run tasks, chosen on the Harness permissions page. | Not built |
 | 3 | Keep the prompt prefix stable so the cache hits, and put variable text after it. | Not built |
 | 4 | Journal and memory as pointers the agent follows on demand, not text pasted in. | Not built |
 | 5 | Run Cully's own background work (naming, judging, coaching, scouting) on a cheaper model. | Not built |

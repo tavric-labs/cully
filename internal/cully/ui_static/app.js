@@ -787,7 +787,8 @@
     const box = $('team');
     box.replaceChildren(h('p', { class: 'faint' }, 'Loading…'));
     let list = []; let tools = null;
-    try { [list, tools] = await Promise.all([api('/api/identities'), api('/api/admin/tools')]); } catch (e) { box.replaceChildren(h('div', { class: 'err' }, e.message)); return; }
+    let proposals = [];
+    try { [list, tools, proposals] = await Promise.all([api('/api/identities'), api('/api/admin/tools'), api('/api/agent-suggestions').catch(() => [])]); } catch (e) { box.replaceChildren(h('div', { class: 'err' }, e.message)); return; }
     const again = () => renderTeam();
     const live = list.some((a) => a.runs.some((r) => r.status === 'running'));
     const card = (a) => {
@@ -805,15 +806,28 @@
         a.memory ? h('details', { class: 'rl' }, h('summary', {}, h('span', { class: 'rq' }, 'Its notes'), h('span', { class: 'faint small' }, a.memory.length + ' of 2200 characters')), h('div', { class: 'rbody' }, markdown(a.memory))) : null,
         a.runs.length > 1 ? h('details', { class: 'rl' }, h('summary', {}, h('span', { class: 'rq' }, 'Earlier runs'), h('span', { class: 'faint small' }, String(a.runs.length - 1))), h('ul', { class: 'hrows' }, ...a.runs.slice(1, 8).map((r) => h('li', { class: 'hrow' }, h('div', { class: 'hmain' }, h('div', { class: 'row' }, h('span', { class: 'chip run-' + (r.status === 'done' ? 'pass' : 'fail') }, r.status), h('span', { class: 'faint small' }, ago(r.started))), r.summary ? h('p', { class: 'hdesc' }, uiShort(r.summary, 220)) : null)))) ) : null);
     };
+    const askNow = async (btn) => { btn.disabled = true; try { const r = await api('/api/agent-suggestions/run', { method: 'POST' }); toast(r.added ? r.added + ' new ' + (r.added === 1 ? 'proposal' : 'proposals') : 'Nothing new to propose right now'); again(); } catch (e) { toast(e.message, true); btn.disabled = false; } };
+    const askBtn = h('button', { class: 'btn ghost small sp' }, icon('spark'), proposals.length ? 'Look again' : 'Ask Cully for ideas');
+    askBtn.addEventListener('click', () => askNow(askBtn));
+    const proposalCard = (p) => h('li', { class: 'hrow' },
+      h('div', { class: 'hmain' }, h('div', { class: 'ht' }, p.name, p.schedule ? h('span', { class: 'chip' }, 'Runs ' + p.schedule) : h('span', { class: 'chip' }, 'On demand'), h('span', { class: 'chip' }, icon('folder'), p.folder.split('/').pop())),
+        h('p', { class: 'hdesc' }, p.role), h('p', { class: 'faint small' }, h('b', {}, 'Why: '), p.why),
+        h('div', { class: 'row' }, ...tools.presets.filter((g) => p.groups[g.id]).map((g) => h('span', { class: 'chip' }, g.label)))),
+      h('div', { class: 'row hact' },
+        h('button', { class: 'btn small', title: 'Review it, change anything, and create the agent', onclick: () => openAgentForm({ ...p, id: null, enabled: !!p.schedule, mode: 'edit', fromSuggestion: p.id }, tools, again) }, icon('check'), 'Review and create'),
+        h('button', { class: 'btn ghost small', onclick: async () => { try { await api('/api/agent-suggestions/' + p.id + '/dismissed', { method: 'POST' }); again(); } catch (e) { toast(e.message, true); } } }, 'Dismiss')));
     box.replaceChildren(
       toolbar('Agents', 'Named workers with a role of their own. Each keeps notes between runs and can run on a schedule.', h('button', { class: 'btn', onclick: () => openAgentForm(null, tools, again) }, icon('plus'), 'New agent')),
       h('details', { class: 'lib-card', ...(list.length ? {} : { open: true }) }, h('summary', {}, h('b', {}, 'What an agent is and how it works')),
         h('ol', { class: 'how' },
           h('li', {}, h('b', {}, 'Identity'), 'A name, a one-line role and instructions on how it works. Cully adds them to the start of every run, so they stay the same and the prompt cache can reuse them.'),
-          h('li', {}, h('b', {}, 'Tools'), 'Only the tool groups you pick. The always-blocked list from Agent permissions still applies.'),
+          h('li', {}, h('b', {}, 'Tools'), 'Only the tool groups you pick. The always-blocked list from Harness permissions still applies.'),
           h('li', {}, h('b', {}, 'A folder'), 'It runs as a task in its own worktree of that folder, so your checkout is untouched. Runs show on the Tasks tab.'),
           h('li', {}, h('b', {}, 'Notes'), 'At the end of a run it saves up to three short facts. The next run starts by reading them. The notes are capped at 2,200 characters and the newest win.'),
           h('li', {}, h('b', {}, 'Schedule'), 'Run it now, every hour, or every day while the Cully page server is running. Each run keeps a short summary.'))),
+      h('section', { class: 'lib-card' }, h('div', { class: 'row' }, h('b', {}, 'Suggested for you'), askBtn),
+        proposals.length ? h('ul', { class: 'hrows' }, ...proposals.map(proposalCard))
+          : h('p', { class: 'faint small' }, 'Cully reads your named sessions and proposes agents for work you repeat or skip, such as watching pull requests or running the tests. You review each one before it exists. It looks again about once an hour while naming is on.')),
       list.length ? h('div', { class: 'groups' }, ...list.map(card)) : emptyCard('No agents yet', 'Create one for work you repeat: watching pull requests, guarding the tests, checking dependencies.', null, null));
     if (live) setTimeout(() => { if (S.route.name === 'team') again(); }, 4000);
   }
@@ -839,6 +853,7 @@
       try {
         const body = { name: val.name, role: val.role, instructions: val.instructions, folder: val.folder, groups: val.groups, mode: val.mode, schedule: val.schedule, enabled: !!val.schedule, clearMemory: !!val.clearMemory };
         if (a && a.id) await api('/api/identities/' + a.id, { method: 'PUT', body: JSON.stringify(body) }); else await api('/api/identities', { method: 'POST', body: JSON.stringify(body) });
+        if (a && a.fromSuggestion) await api('/api/agent-suggestions/' + a.fromSuggestion + '/accepted', { method: 'POST' }).catch(() => {});
         closeMCP(); toast('Saved ' + val.name); again();
       } catch (e) { err.textContent = e.message; err.hidden = false; save.disabled = false; }
     } }, icon('check'), a && a.id ? 'Save' : 'Create agent');
@@ -986,14 +1001,14 @@
     if (lib.analysis.on) setTimeout(() => { if (live()) again(); }, 30000);
   }
 
-  // ---------- agent permissions ----------
+  // ---------- harness permissions ----------
   async function renderPermissions(out, head) {
     const v = await api('/api/admin/tools');
     const state = { presets: Object.fromEntries(v.presets.map((p) => [p.id, p.on])), allow: [...v.allow], deny: [...v.deny], mcp: [...v.mcp.only] };
     const save = async (deny) => {
       try {
         const r = await api('/api/admin/tools', { method: 'PUT', body: JSON.stringify({ presets: state.presets, allow: state.allow, deny, mcpOnly: state.mcp }) });
-        toast('Saved. New agents use these settings.');
+        toast('Saved. New tasks use these settings.');
         return r;
       } catch (e) { toast(e.message, true); return null; }
     };
@@ -1014,8 +1029,8 @@
     const drawDeny = () => denyBox.replaceChildren(listEditor('blocked', state.deny, 'For example Bash(rm:*)'));
     drawDeny();
     out.replaceChildren(head(),
-      h('p', { class: 'faint' }, 'Agents Cully starts run on their own, so nothing can answer a permission question. These settings decide what they may do. They apply to agents you start after saving.'),
-      h('section', { class: 'group' }, h('header', {}, h('span', { class: 'gt' }, 'What agents may do')), groups),
+      h('p', { class: 'faint' }, 'The harness is the program that runs the model (Claude Code). Tasks Cully starts run on their own, so nothing can answer a permission question: these settings decide what the harness lets them do. They apply to tasks you start after saving.'),
+      h('section', { class: 'group' }, h('header', {}, h('span', { class: 'gt' }, 'What the harness may do')), groups),
       h('section', { class: 'group' }, h('header', {}, h('span', { class: 'gt' }, 'Connected tools to load')),
         h('p', { class: 'faint small' }, 'Every connected server adds its tool descriptions to every turn the task takes, so loading fewer saves tokens. Pick the ones tasks need, or none to load them all. Servers found in your Claude settings are listed.'),
         v.mcp.available.length ? h('div', { class: 'toolgroups' }, ...v.mcp.available.map((n) => {
@@ -1221,7 +1236,7 @@
     [null, [['overview', 'Overview', 'What needs you']]],
     ['Work', [['advisor', 'Advisor', 'Advice for your tasks'], ['library', 'Session library', 'Every past session, named'], ['health', 'Session health', 'Did sessions finish the job?'], ['evals', 'Evals', 'Test cases and their runs'], ['scout', 'Scout', 'Live searches and findings'], ['activity', 'Activity', 'What was done, step by step']]],
     ['Health', [['setup', 'Setup', 'Is everything connected?'], ['savings', 'Savings', 'What Cully saved and cost']]],
-    ['More', [['jobs', 'Background jobs', 'Runs on a schedule'], ['permissions', 'Agent permissions', 'What agents may do']]],
+    ['More', [['jobs', 'Background jobs', 'Runs on a schedule'], ['permissions', 'Harness permissions', 'What the underlying harness may do']]],
   ];
   const DASH_TITLES = Object.fromEntries(DASH.flatMap(([, items]) => items.map(([k, t, d]) => [k, [t, d]])));
   const fmtTokens = (n) => {

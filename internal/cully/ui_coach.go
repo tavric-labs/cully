@@ -138,5 +138,7 @@ func (m *uiManager) coachIfDue() {
 	if !c.At.IsZero() && (time.Since(c.At) < uiCoachEvery || lib.Totals.Analyzed == c.Based) {
 		return
 	}
-	_, _ = m.coachRun()
+	if _, err := m.coachRun(); err == nil {
+		_, _ = m.agentSuggestRun()
+	}
 }
