@@ -47,7 +47,10 @@ func TestCullyProposesAgentsFromNamedSessionsAndTheUserApproves(t *testing.T) {
 	name := filepath.Base(repo)
 	m.cfg.Advisor = func(_ string, _ string, _ bool, prompt string) (string, error) {
 		if strings.Contains(prompt, "propose named agents") {
-			return "AGENT|Test guardian|Runs the tests each morning.|Read only. Never edit files.|read,commands|daily|" + name + "|Tests were skipped in three sessions", nil
+			if strings.Contains(prompt, "generic") {
+				return "AGENT|Tidy watcher|Keeps the workspace neat.|Read only.|read|daily|" + name + "|Neatness matters", nil
+			}
+			return "AGENT|Login fixer|Fixes the login problem the same careful way each time.|Read only. Never merge.|read,commands|daily|" + name + "|Fix login was asked in three sessions", nil
 		}
 		return "TITLE: T\nSUMMARY: S\nDIFFERENTLY: D\nCOMPLETED: yes\nON_TASK: yes\nDRIFT: None.\nTASK: Fix login\nCHECKS: y", nil
 	}
@@ -64,7 +67,7 @@ func TestCullyProposesAgentsFromNamedSessionsAndTheUserApproves(t *testing.T) {
 		t.Fatalf("added %d, err %v", n, err)
 	}
 	l := m.agentSuggestionsList()
-	if len(l) != 1 || l[0].Name != "Test guardian" || l[0].Folder != repo {
+	if len(l) != 1 || l[0].Name != "Login fixer" || len(l[0].Evidence) != 3 || l[0].Count != 3 || l[0].Folder != repo {
 		t.Fatalf("suggestions = %+v", l)
 	}
 	if len(m.identityList()) != 0 {
@@ -87,7 +90,7 @@ func TestAgentSuggestionEndpoints(t *testing.T) {
 		t.Fatalf("no token: %d", r.StatusCode)
 	}
 	uiSuggestMu.Lock()
-	uiWriteAgentSuggestions([]uiAgentSuggestion{{ID: "s1", Name: "A", Role: "r", Folder: repo, State: "new", Groups: map[string]bool{"read": true}}})
+	uiWriteAgentSuggestions([]uiAgentSuggestion{{Evidence: uiEv(), ID: "s1", Name: "A", Role: "r", Folder: repo, State: "new", Groups: map[string]bool{"read": true}}})
 	uiSuggestMu.Unlock()
 	_ = m
 	var l []uiAgentSuggestion
@@ -175,7 +178,7 @@ func TestRepeatedWorkNeedsStrongEvidenceAndOnlyTheStrongestIsKept(t *testing.T) 
 func TestSimilarAgentProposalsAreOneIdeaAndTheListNeverCrowds(t *testing.T) {
 	m, repo, _ := uiIndexManager(t)
 	mk := func(name, role, folder string, age int) uiAgentSuggestion {
-		return uiAgentSuggestion{ID: name, Name: name, Role: role, Folder: folder, State: "new", Created: time.Now().Add(-time.Duration(age) * time.Hour)}
+		return uiAgentSuggestion{Evidence: uiEv(), ID: name, Name: name, Role: role, Folder: folder, State: "new", Created: time.Now().Add(-time.Duration(age) * time.Hour)}
 	}
 	for _, s := range []uiAgentSuggestion{
 		mk("Test Run Guard", "Flags changed files that have no test run after them.", repo, 5),
@@ -240,7 +243,7 @@ func TestAgentProposalsCheckExistingAgentsFirst(t *testing.T) {
 	groups := map[string]bool{"read": true}
 	existing := []uiIdentity{{ID: "a1", Name: "PR watcher", Role: "Reports open pull requests and what blocks them.", Folder: "/tmp/proj", Groups: groups, Schedule: "daily"}}
 	mk := func(name, role string, g map[string]bool, sched string) uiAgentSuggestion {
-		return uiAgentSuggestion{ID: name, Name: name, Role: role, Folder: "/tmp/proj", Groups: g, Schedule: sched, State: "new"}
+		return uiAgentSuggestion{Evidence: uiEv(), ID: name, Name: name, Role: role, Folder: "/tmp/proj", Groups: g, Schedule: sched, State: "new"}
 	}
 	// Says the same thing as an agent that exists: nothing to propose.
 	if got := uiAgentSuggestFilter([]uiAgentSuggestion{mk("Pull request watcher", "Reports open pull requests and what blocks them.", groups, "daily")}, existing, nil); len(got) != 0 {
@@ -261,4 +264,38 @@ func TestAgentProposalsCheckExistingAgentsFirst(t *testing.T) {
 	if got := uiAgentSuggestFilter([]uiAgentSuggestion{mk("Release writer", "Drafts release notes from merged changes.", groups, "none")}, existing, prior); len(got) != 0 {
 		t.Fatalf("proposed a rejected idea again: %+v", got)
 	}
+}
+
+func TestAProposalMustBeAboutTheRepeatedWorkAndRestOnRecentSessions(t *testing.T) {
+	r := uiRepeat{Examples: []string{"Check open pull requests and report status", "Report the status of open pull requests"}}
+	if !r.relevant("PR status watcher: reports open pull requests each morning") {
+		t.Fatal("an idea about the repeated work was refused")
+	}
+	if r.relevant("Tidy watcher: keeps the workspace neat and fresh") {
+		t.Fatal("a generic idea unrelated to the sessions was accepted")
+	}
+	now := time.Now()
+	var old []uiIndexed
+	for i, task := range []string{"Check open pull requests and report status", "Report the status of open pull requests", "check the open pull requests status", "Look at the open pull requests status", "Report on open pull requests and their status", "open pull requests status check"} {
+		old = append(old, uiIndexed{Source: "ai", Task: task, Cwd: "/p/x", Name: "x", Updated: now.AddDate(0, 0, -(40 + i))})
+	}
+	if got := uiRepeatedWork(old); len(got) != 0 {
+		t.Fatalf("sessions from six weeks ago counted as a current habit: %+v", got)
+	}
+}
+
+func TestOnlyATestCommandAnswersSkippedTests(t *testing.T) {
+	for cmd, want := range map[string]bool{
+		"make -C /p test": true, "go -C /p test ./...": true, "npm --prefix /p run test": true, "pytest -q /p": true,
+		"git -C /p fetch --all": false, "make -C /p lint": false, "go -C /p vet ./...": false,
+	} {
+		if got := uiJobIsTest(strings.Fields(cmd)); got != want {
+			t.Errorf("uiJobIsTest(%q) = %v, want %v", cmd, got, want)
+		}
+	}
+}
+
+// uiEv is a stand-in for the sessions a proposal rests on; a proposal with none is not shown.
+func uiEv() []uiEvidence {
+	return []uiEvidence{{ID: "s1", Agent: "claude", Title: "an earlier session", At: time.Now()}}
 }

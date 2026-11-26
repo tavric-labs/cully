@@ -1287,6 +1287,14 @@
         h('span', { class: 'fbar' }, fill(v)), v < target ? h('p', { class: 'faint small' }, tip) : null))));
   }
 
+  // What a proposal is drawn from: how many sessions, over how many days, and which ones, so it can be
+  // checked. A suggestion with no evidence is never shown.
+  function evidenceBlock(x) {
+    const ev = x.evidence || [];
+    if (!ev.length) return null;
+    return h('details', { class: 'evid' }, h('summary', {}, h('span', { class: 'rq' }, 'Based on ' + (x.count || ev.length) + ' sessions' + (x.days ? ' over ' + x.days + ' days' : '')), h('span', { class: 'faint small' }, 'see which')),
+      h('ul', { class: 'evlist' }, ...ev.map((e) => h('li', {}, harnessChip(e.agent), h('span', {}, e.title || 'Session'), h('span', { class: 'faint small' }, new Date(e.at).toLocaleDateString([], { month: 'short', day: 'numeric' }))))));
+  }
   // ---------- agents (named, persistent workers) ----------
   const AGENT_TEMPLATES = [
     ['Pull request watcher', 'Checks the open pull requests of this repository and reports which need a person.', 'Look at the open pull requests with the available tools. Report, for each: its title, whether checks pass, and what is blocking it. Never merge, comment or push.', { read: true, commands: true }],
@@ -1328,7 +1336,7 @@
     askBtn.addEventListener('click', () => askNow(askBtn));
     const proposalCard = (p) => { const cur = p.replaces ? list.find((x) => x.id === p.replaces) : null; return h('li', { class: 'hrow' },
       h('div', { class: 'hmain' }, h('div', { class: 'ht' }, p.name, cur ? h('span', { class: 'chip run-partial' }, 'Updates an agent you have') : h('span', { class: 'chip' }, 'New'), p.schedule ? h('span', { class: 'chip' }, 'Runs ' + p.schedule) : h('span', { class: 'chip' }, 'On demand'), h('span', { class: 'chip' }, icon('folder'), p.folder.split('/').pop())),
-        h('p', { class: 'hdesc' }, p.role), h('p', { class: 'faint small' }, h('b', {}, 'Why: '), p.why),
+        h('p', { class: 'hdesc' }, p.role), h('p', { class: 'faint small' }, h('b', {}, 'Why: '), p.why), evidenceBlock(p),
         h('div', { class: 'row' }, ...tools.presets.filter((g) => p.groups[g.id]).map((g) => h('span', { class: 'chip' }, g.label)))),
       h('div', { class: 'row hact' },
         h('button', { class: 'btn small', title: cur ? 'Review the changes to ' + cur.name + ' and save them' : 'Review it, change anything, and create the agent', onclick: () => openAgentForm(cur ? { ...cur, role: p.role, instructions: p.instructions, groups: p.groups, schedule: p.schedule, enabled: !!p.schedule, fromSuggestion: p.id } : { ...p, id: null, enabled: !!p.schedule, mode: 'edit', scope: 'project', fromSuggestion: p.id }, tools, again) }, icon('check'), cur ? 'Review the update' : 'Review and approve'),
@@ -2018,7 +2026,7 @@
       if (x.kind === 'job' || x.kind === 'agent') acts.push(h('a', { class: 'btn small', href: x.href }, icon('check'), x.kind === 'job' ? 'Review in Background jobs' : 'Review in Agents'));
       else if (x.href && x.href !== '#/dashboard/advisor') acts.push(h('a', { class: 'btn ghost small', href: x.href }, 'Open ' + ({ coach: 'the page', rules: 'Workflow rules', digest: 'Scout history' }[x.kind] || '')));
       return h('li', { class: 'hrow' }, h('div', { class: 'hmain' }, h('div', { class: 'ht' }, h('span', { class: 'chip' }, SUG_LABEL[x.kind] || x.kind), ' ' + x.title),
-        x.why ? h('p', { class: 'hdesc' }, x.why) : null,
+        x.why ? h('p', { class: 'hdesc' }, x.why) : null, evidenceBlock(x),
         x.detail ? h('p', { class: 'faint small' }, x.detail) : null,
         x.command ? h('p', { class: 'small' }, h('span', { class: 'faint' }, 'It will run: '), h('code', {}, x.command)) : null),
         h('div', { class: 'row hact' }, ...acts));
@@ -2037,7 +2045,7 @@
     const card = (x) => {
       const time = h('input', { type: 'time', value: x.after || '02:00', 'aria-label': 'Time of day', class: 'timein' });
       return h('li', { class: 'hrow' }, h('div', { class: 'hmain' }, h('div', { class: 'ht' }, x.name, x.updates ? h('span', { class: 'chip run-partial' }, 'Updates a job you have') : h('span', { class: 'chip' }, 'New')),
-        h('p', { class: 'hdesc' }, x.why),
+        h('p', { class: 'hdesc' }, x.why), evidenceBlock(x),
         x.updates && x.current ? h('p', { class: 'small' }, h('span', { class: 'faint' }, 'Now: '), h('code', {}, x.current)) : null,
         h('p', { class: 'small' }, h('span', { class: 'faint' }, x.updates ? 'Would become: ' : 'It will run: '), h('code', {}, x.display)),
         h('div', { class: 'row' }, h('span', { class: 'faint small' }, 'Run after'), time, h('span', { class: 'faint small' }, 'while Cully is running'))),

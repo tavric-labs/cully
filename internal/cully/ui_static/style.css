@@ -929,3 +929,5 @@ details.sgroup > summary { cursor: pointer; } details.sgroup > summary::-webkit-
 .taskhist { margin-top: 22px; } .tgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 12px; }
 .tcard { border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; background: var(--raised); display: flex; flex-direction: column; gap: 8px; }
 .tcard .row { gap: 8px; align-items: center; flex-wrap: wrap; } .ttitle { font: 600 15px var(--serif); } .tcard .fprev { margin: 0; }
+
+.evid { margin: 4px 0; } .evid summary { cursor: pointer; display: flex; gap: 10px; align-items: baseline; } .evlist { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: 13px; } .evlist li { display: flex; gap: 8px; align-items: center; }

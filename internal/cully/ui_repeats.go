@@ -61,7 +61,20 @@ func uiSimilar(a, b map[string]bool) bool {
 	return float64(both)/float64(small) >= uiRepeatSimilar
 }
 
+// uiEvidence is one real session a proposal rests on, so a suggestion can say exactly what it was
+// drawn from and you can check it.
+type uiEvidence struct {
+	ID    string    `json:"id"`
+	Agent string    `json:"agent"`
+	Title string    `json:"title"`
+	At    time.Time `json:"at"`
+}
+
+// uiRepeatWindow: only recent sessions count. Work you did eight months ago is not a habit now.
+const uiRepeatWindow = 30 * 24 * time.Hour
+
 type uiRepeat struct {
+	Evidence []uiEvidence
 	Kind     string // "goal" or "untested"
 	Folder   string // folder name
 	Path     string
@@ -74,7 +87,7 @@ type uiRepeat struct {
 func uiRepeatedWork(sessions []uiIndexed) []uiRepeat {
 	byFolder := map[string][]uiIndexed{}
 	for _, s := range sessions {
-		if s.Source == "ai" && s.Task != "" && filepath.Clean(s.Cwd) != filepath.Clean(ConfigDir()) { // the harness's own folder is not your project
+		if s.Source == "ai" && s.Task != "" && time.Since(s.Updated) < uiRepeatWindow && filepath.Clean(s.Cwd) != filepath.Clean(ConfigDir()) { // the harness's own folder is not your project
 			byFolder[s.Cwd] = append(byFolder[s.Cwd], s)
 		}
 	}
@@ -104,22 +117,31 @@ func uiRepeatedWork(sessions []uiIndexed) []uiRepeat {
 					if len(r.Examples) < 3 {
 						r.Examples = append(r.Examples, uiClipWords(list[k].Task, 100))
 					}
+					if len(r.Evidence) < 12 {
+						r.Evidence = append(r.Evidence, uiEvidence{ID: list[k].ID, Agent: list[k].Agent, Title: uiClipWords(firstNonEmpty(list[k].Title, list[k].Task), 80), At: list[k].Updated})
+					}
 				}
 				out = append(out, r)
 			}
 		}
 		untested := 0
 		var ex []string
+		var evid []uiEvidence
+		udays := map[string]bool{}
 		for _, s := range list {
 			if s.Unverified {
 				untested++
+				udays[s.Updated.Format("2006-01-02")] = true
 				if len(ex) < 3 {
 					ex = append(ex, uiClipWords(s.Task, 100))
+				}
+				if len(evid) < 12 {
+					evid = append(evid, uiEvidence{ID: s.ID, Agent: s.Agent, Title: uiClipWords(firstNonEmpty(s.Title, s.Task), 80), At: s.Updated})
 				}
 			}
 		}
 		if untested >= uiUntestedMin {
-			out = append(out, uiRepeat{Kind: "untested", Folder: list[0].Name, Path: cwd, Count: untested, Examples: ex})
+			out = append(out, uiRepeat{Kind: "untested", Folder: list[0].Name, Path: cwd, Count: untested, Days: len(udays), Examples: ex, Evidence: evid})
 		}
 	}
 	// The strongest first: how many times, over how many days.
@@ -150,4 +172,11 @@ func (m *uiManager) agentSuggestIfDue() {
 		return
 	}
 	_, _ = m.agentSuggestRun()
+}
+
+// uiRelevant reports whether a proposal is about the work the sessions repeated: its name, role and
+// reason share words with the goals of the evidence. A generic idea that merely sounds useful, with no
+// link to what you did, is dropped.
+func (r uiRepeat) relevant(text string) bool {
+	return uiWordOverlap(uiGoalWords(strings.Join(r.Examples, " ")), uiGoalWords(text)) >= 0.15
 }

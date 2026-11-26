@@ -62,7 +62,7 @@ func TestApprovingAJobProposalWritesJobsJSONPrivatelyAndKeepsOtherJobs(t *testin
 	if err := os.WriteFile(filepath.Join(dir, "jobs.json"), []byte(existing), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	s := uiJobSuggestion{ID: "j1", Name: "nightly-tests", Command: []string{"make", "-C", repo, "test"}, After: "02:00", Folder: repo, Why: "w", State: "new"}
+	s := uiJobSuggestion{Evidence: uiEv(), ID: "j1", Name: "nightly-tests", Command: []string{"make", "-C", repo, "test"}, After: "02:00", Folder: repo, Why: "w", State: "new"}
 	uiDB().put("jobsuggest", s.ID, s)
 	if l := m.jobSuggestionsList(); len(l) != 1 {
 		t.Fatalf("list = %+v", l)
@@ -95,7 +95,7 @@ func TestApprovingAJobProposalWritesJobsJSONPrivatelyAndKeepsOtherJobs(t *testin
 
 func TestJobProposalsCanBeDismissedAndShowInTheSuggestionInbox(t *testing.T) {
 	m, repo, _ := uiIndexManager(t)
-	uiDB().put("jobsuggest", "j2", uiJobSuggestion{ID: "j2", Name: "fetch-all", Command: []string{"git", "-C", repo, "fetch", "--all"}, After: "01:00", Folder: repo, Why: "You fetch every morning", State: "new"})
+	uiDB().put("jobsuggest", "j2", uiJobSuggestion{Evidence: uiEv(), ID: "j2", Name: "fetch-all", Command: []string{"git", "-C", repo, "fetch", "--all"}, After: "01:00", Folder: repo, Why: "You fetch every morning", State: "new"})
 	in := m.suggestions()
 	if len(in) != 1 || in[0].Kind != "job" || in[0].Command != "git -C "+repo+" fetch --all" || in[0].After != "01:00" {
 		t.Fatalf("inbox = %+v", in)
@@ -113,7 +113,7 @@ func TestJobProposalsCanBeDismissedAndShowInTheSuggestionInbox(t *testing.T) {
 
 func TestProposalsAreListedForTheBackgroundJobsPageWithTheExactCommand(t *testing.T) {
 	m, repo, _ := uiIndexManager(t)
-	uiDB().put("jobsuggest", "j3", uiJobSuggestion{ID: "j3", Name: "vet-all", Command: []string{"go", "-C", repo, "vet", "./..."}, After: "01:30", Folder: repo, Why: "You run vet by hand", State: "new"})
+	uiDB().put("jobsuggest", "j3", uiJobSuggestion{Evidence: uiEv(), ID: "j3", Name: "vet-all", Command: []string{"go", "-C", repo, "vet", "./..."}, After: "01:30", Folder: repo, Why: "You run vet by hand", State: "new"})
 	s := &uiServer{m: m}
 	rec := httptest.NewRecorder()
 	s.jobSuggestionsGet(rec, httptest.NewRequest("GET", "/api/job-suggestions", nil))
@@ -163,7 +163,7 @@ func TestApprovingAnUpdateChangesThatJobAndKeepsItsOtherSettings(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "jobs.json"), []byte(orig), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	uiDB().put("jobsuggest", "u1", uiJobSuggestion{ID: "u1", Name: "tests", Command: []string{"make", "-C", repo, "ci"}, After: "03:00", Folder: repo, Why: "w", State: "new", Updates: "tests"})
+	uiDB().put("jobsuggest", "u1", uiJobSuggestion{Evidence: uiEv(), ID: "u1", Name: "tests", Command: []string{"make", "-C", repo, "ci"}, After: "03:00", Folder: repo, Why: "w", State: "new", Updates: "tests"})
 	if _, err := m.jobSuggestionAccept("u1", ""); err != nil {
 		t.Fatal(err)
 	}
@@ -172,7 +172,7 @@ func TestApprovingAnUpdateChangesThatJobAndKeepsItsOtherSettings(t *testing.T) {
 		t.Fatalf("jobs = %+v, %v", jobs, err)
 	}
 	// An update for a job that was removed is refused rather than added as a new one.
-	uiDB().put("jobsuggest", "u2", uiJobSuggestion{ID: "u2", Name: "gone", Command: []string{"make", "-C", repo, "ci"}, After: "03:00", Folder: repo, Why: "w", State: "new", Updates: "gone"})
+	uiDB().put("jobsuggest", "u2", uiJobSuggestion{Evidence: uiEv(), ID: "u2", Name: "gone", Command: []string{"make", "-C", repo, "ci"}, After: "03:00", Folder: repo, Why: "w", State: "new", Updates: "gone"})
 	if _, err := m.jobSuggestionAccept("u2", ""); err == nil {
 		t.Fatal("updated a job that does not exist")
 	}

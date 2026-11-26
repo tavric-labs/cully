@@ -15,24 +15,27 @@ import (
 // one place.
 
 type uiSuggestion struct {
-	ID      string    `json:"id"`
-	Kind    string    `json:"kind"` // agent, job, coach, rules, digest
-	Title   string    `json:"title"`
-	Why     string    `json:"why,omitempty"`
-	Detail  string    `json:"detail,omitempty"`
-	Command string    `json:"command,omitempty"` // jobs: the exact command that would run
-	After   string    `json:"after,omitempty"`   // jobs: the proposed time of day
-	At      time.Time `json:"at"`
-	Href    string    `json:"href,omitempty"`
+	ID       string       `json:"id"`
+	Kind     string       `json:"kind"` // agent, job, coach, rules, digest
+	Title    string       `json:"title"`
+	Why      string       `json:"why,omitempty"`
+	Detail   string       `json:"detail,omitempty"`
+	Command  string       `json:"command,omitempty"` // jobs: the exact command that would run
+	After    string       `json:"after,omitempty"`   // jobs: the proposed time of day
+	At       time.Time    `json:"at"`
+	Href     string       `json:"href,omitempty"`
+	Evidence []uiEvidence `json:"evidence,omitempty"` // the sessions it is drawn from
+	Count    int          `json:"count,omitempty"`
+	Days     int          `json:"days,omitempty"`
 }
 
 func (m *uiManager) suggestions() []uiSuggestion {
 	out := []uiSuggestion{}
 	for _, s := range m.agentSuggestionsList() {
-		out = append(out, uiSuggestion{ID: s.ID, Kind: "agent", Title: "Agent: " + s.Name, Why: s.Why, Detail: s.Role, At: s.Created, Href: "#/dashboard/agents"})
+		out = append(out, uiSuggestion{ID: s.ID, Kind: "agent", Title: "Agent: " + s.Name, Why: s.Why, Detail: s.Role, At: s.Created, Href: "#/dashboard/agents", Evidence: s.Evidence, Count: s.Count, Days: s.Days})
 	}
 	for _, s := range m.jobSuggestionsList() {
-		out = append(out, uiSuggestion{ID: s.ID, Kind: "job", Title: "Background job: " + s.Name, Why: s.Why, Command: uiShowArgv(s.Command), After: s.After, At: s.Created, Href: "#/dashboard/jobs"})
+		out = append(out, uiSuggestion{ID: s.ID, Kind: "job", Title: "Background job: " + s.Name, Why: s.Why, Command: uiShowArgv(s.Command), After: s.After, At: s.Created, Href: "#/dashboard/jobs", Evidence: s.Evidence, Count: s.Count, Days: s.Days})
 	}
 	if c := m.coachGet(); !c.At.IsZero() {
 		for i, it := range c.Items {
