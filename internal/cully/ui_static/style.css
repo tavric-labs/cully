@@ -677,3 +677,25 @@ details.rl .rbody { padding: 8px 4px 2px; }
 .kpis .kpi { padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--raised); }
 .kpis .kpi b { display: block; font: 600 26px var(--serif); color: var(--forest); }
 .kpis .kpi span { color: var(--soft); font-size: 13px; }
+
+/* library insights */
+.daychart { display: grid; grid-template-columns: repeat(14, 1fr); gap: 6px; align-items: end; height: 120px; margin: 12px 0 16px; }
+.daychart .dc { display: flex; flex-direction: column; justify-content: flex-end; align-items: center; height: 100%; gap: 4px; }
+.daychart .dc i { display: block; width: 100%; max-width: 28px; min-height: 2px; border-radius: 6px 6px 2px 2px; background: var(--forest-hi); }
+.daychart .dc.none i { background: var(--surface2); }
+.daychart small { color: var(--faint); font-size: 11px; }
+.insight-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 18px; margin: 6px 0 14px; }
+ul.attn-list { list-style: none; margin: 8px 0; padding: 0; display: grid; gap: 8px; }
+ul.attn-list li { display: flex; gap: 12px; align-items: center; }
+
+/* agents page, good session */
+.agentcard .an { font: 600 var(--t-m) var(--serif); }
+.agentcard .row { flex-wrap: wrap; gap: 8px; align-items: center; }
+.agentlast { margin: 8px 0; }
+.field { display: grid; gap: 4px; margin: 10px 0; }
+.field input[type=text], .field textarea, .field select, .mbody select { width: 100%; padding: 8px 12px; border: 1px solid var(--line2); border-radius: 10px; background: var(--raised); font: 14px var(--sans); }
+ul.optimal { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 12px; }
+ul.optimal .ol { flex: 1 1 240px; }
+.ok-t { color: var(--forest-hi); } .bad-t { color: var(--red); }
+ul.optimal .fbar { display: block; height: 8px; border-radius: 99px; background: var(--surface2); overflow: hidden; margin: 4px 0; }
+ul.optimal .fbar i { display: block; height: 100%; background: var(--forest-hi); }

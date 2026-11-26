@@ -126,6 +126,11 @@ func newUIServer(m *uiManager, token string, loopback bool) http.Handler {
 	mux.Handle("GET /api/sessions/evals", s.api(s.evalList))
 	mux.Handle("GET /api/evals/runs", s.api(s.evalRunsGet))
 	mux.Handle("GET /api/coach", s.api(s.coachGetH))
+	mux.Handle("GET /api/identities", s.api(s.identityListH))
+	mux.Handle("POST /api/identities", s.api(s.identityCreateH))
+	mux.Handle("PUT /api/identities/{id}", s.api(s.identityUpdateH))
+	mux.Handle("DELETE /api/identities/{id}", s.api(s.identityDeleteH))
+	mux.Handle("POST /api/identities/{id}/run", s.api(s.identityRunH))
 	mux.Handle("GET /api/research", s.api(s.researchGet))
 	mux.Handle("POST /api/coach/run", s.api(s.coachRunH))
 	mux.Handle("POST /api/evals/{id}/run", s.api(s.evalRunStart))
@@ -970,4 +975,51 @@ func (s *uiServer) autoScoutSet(w http.ResponseWriter, r *http.Request) {
 	}
 	s.m.setAutoScout(body.On)
 	uiJSON(w, http.StatusOK, s.m.sessionLibrary().Analysis)
+}
+
+func (s *uiServer) identityListH(w http.ResponseWriter, r *http.Request) {
+	uiJSON(w, http.StatusOK, s.m.identityList())
+}
+
+func (s *uiServer) identityCreateH(w http.ResponseWriter, r *http.Request) {
+	var in uiIdentityInput
+	if !uiDecode(w, r, &in) {
+		return
+	}
+	id, err := s.m.identityCreate(in)
+	if err != nil {
+		uiError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	uiJSON(w, http.StatusCreated, id)
+}
+
+func (s *uiServer) identityUpdateH(w http.ResponseWriter, r *http.Request) {
+	var in uiIdentityInput
+	if !uiDecode(w, r, &in) {
+		return
+	}
+	id, err := s.m.identityUpdate(r.PathValue("id"), in)
+	if err != nil {
+		uiError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	uiJSON(w, http.StatusOK, id)
+}
+
+func (s *uiServer) identityDeleteH(w http.ResponseWriter, r *http.Request) {
+	if err := s.m.identityDelete(r.PathValue("id")); err != nil {
+		uiError(w, http.StatusNotFound, err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *uiServer) identityRunH(w http.ResponseWriter, r *http.Request) {
+	run, err := s.m.identityRun(r.PathValue("id"))
+	if err != nil {
+		uiError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	uiJSON(w, http.StatusCreated, run)
 }

@@ -164,6 +164,7 @@
     if (p[0] === 'mcp') return { name: 'home', mcp: p[1] || 'claude' };
     if (p[0] === 'sessions') return { name: 'sessions' };
     if (p[0] === 'board') return { name: 'board' };
+    if (p[0] === 'agents') return { name: 'team' };
     if (p[0] === 'dashboard') return { name: 'dashboard', panel: p[1] || 'overview' };
     return { name: 'home' };
   }
@@ -171,9 +172,9 @@
   function route() {
     S.route = parseHash();
     if (S.route.name === 'dashboard' && REDIRECT[S.route.panel]) { location.replace('#/dashboard/' + REDIRECT[S.route.panel]); return; }
-    const section = S.route.name === 'board' ? 'board' : S.route.name === 'dashboard' ? 'dashboard' : S.route.name === 'sessions' ? 'sessions' : 'agents';
+    const section = S.route.name === 'team' ? 'team' : S.route.name === 'board' ? 'board' : S.route.name === 'dashboard' ? 'dashboard' : S.route.name === 'sessions' ? 'sessions' : 'agents';
     for (const a of $('nav').querySelectorAll('a')) a.classList.toggle('active', a.dataset.route === section);
-    for (const s of ['agents', 'board', 'dashboard', 'sessions']) $('view-' + s).hidden = s !== section;
+    for (const s of ['agents', 'board', 'dashboard', 'sessions', 'team']) $('view-' + s).hidden = s !== section;
     if (S.es) { S.es.close(); S.es = null; }
     S.feed = null;
     $('stage').className = 'stage';
@@ -181,6 +182,7 @@
     if (S.route.name === 'agent') mountAgent(S.route.id);
     else if (S.route.name === 'home') mountHome();
     else if (S.route.name === 'board') renderBoard();
+    else if (S.route.name === 'team') renderTeam();
     else if (S.route.name === 'sessions') { S.sessSig = ''; renderSessions(); }
     else mountDashboard(S.route.panel);
   }
@@ -753,6 +755,107 @@
     if (active) setTimeout(() => { if (live()) again(); }, 4000);
   }
 
+  // What a good session looks like, and how the user's own sessions compare. The practices come from
+  // reading coding-agent harnesses: a clear goal with checks, a brief instead of a dump, a plan only
+  // when the task is big, tests after changes, no repeated calls, and a summary at the end.
+  function optimalCard(lib) {
+    const all = lib.sessions;
+    if (all.length < 3) return null;
+    const pct = (n, d) => (d ? Math.round((n * 100) / d) : null);
+    const edited = all.filter((x) => x.edits > 0); const judged = all.filter((x) => x.source === 'ai' && x.completed);
+    const rows = [
+      ['Ran tests after changing files', pct(edited.filter((x) => !x.unverified).length, edited.length), 90, 'Run the repository\'s tests after each batch of edits and before calling the task done.'],
+      ['Never repeated a call 3 times in a row', pct(all.filter((x) => (x.maxRepeat || 0) < 3).length, all.length), 95, 'When something fails twice, read the error and change approach instead of rerunning it.'],
+      ['Stayed on the original task', pct(judged.filter((x) => x.onTask !== 'drifted').length, judged.length), 90, 'State the goal and how you will know it is done, and check against it at each milestone.'],
+      ['Finished the job', pct(judged.filter((x) => x.completed === 'yes').length, judged.length), 75, 'Break big work into a numbered plan and finish one step before starting the next.'],
+      ['Stayed a manageable size (100 tool calls or fewer)', pct(all.filter((x) => (x.tools || 0) <= 100).length, all.length), 85, 'Split long work into separate sessions and hand off with a short summary of what is done and what is next.'],
+    ].filter((r) => r[1] != null);
+    return h('section', { class: 'lib-card' }, h('b', {}, 'What a good session looks like'),
+      h('p', { class: 'faint small' }, 'Compared with your own ' + all.length + ' sessions. A good session starts with a clear goal and checks, brings only the context it needs, plans only when the task is big, runs tests after changes, and ends with a short summary.'),
+      h('ul', { class: 'optimal' }, ...rows.map(([label, v, target, tip]) => h('li', {}, h('div', { class: 'row' }, h('span', { class: 'ol' }, label), h('b', { class: v >= target ? 'ok-t' : 'bad-t' }, v + '%'), h('span', { class: 'faint small' }, 'aim for ' + target + '%')),
+        h('span', { class: 'fbar' }, fill(v)), v < target ? h('p', { class: 'faint small' }, tip) : null))));
+  }
+
+  // ---------- agents (named, persistent workers) ----------
+  const AGENT_TEMPLATES = [
+    ['Pull request watcher', 'Checks the open pull requests of this repository and reports which need a person.', 'Look at the open pull requests with the available tools. Report, for each: its title, whether checks pass, and what is blocking it. Never merge, comment or push.', { read: true, commands: true }],
+    ['Test guardian', 'Runs the test suite and reports new failures with the likely cause.', 'Run the repository\'s documented test command. If tests fail, find the likely cause by reading the code and recent changes, and report it. Do not change files.', { read: true, commands: true }],
+    ['Dependency reviewer', 'Looks for outdated or risky dependencies and suggests safe upgrades.', 'List the dependencies, check which are far behind or have known problems, and suggest the smallest safe upgrades. Do not change files.', { read: true, commands: true, web: true }],
+    ['Docs keeper', 'Finds documentation that no longer matches the code.', 'Compare the docs with the code they describe and list the places that are out of date, with the file and what is wrong. Do not change files.', { read: true }],
+  ];
+  async function renderTeam() {
+    const box = $('team');
+    box.replaceChildren(h('p', { class: 'faint' }, 'Loading…'));
+    let list = []; let tools = null;
+    try { [list, tools] = await Promise.all([api('/api/identities'), api('/api/admin/tools')]); } catch (e) { box.replaceChildren(h('div', { class: 'err' }, e.message)); return; }
+    const again = () => renderTeam();
+    const live = list.some((a) => a.runs.some((r) => r.status === 'running'));
+    const card = (a) => {
+      const last = a.runs[0]; const groups = tools.presets.filter((p) => a.groups[p.id]).map((p) => p.label);
+      return h('section', { class: 'lib-card agentcard' },
+        h('div', { class: 'row' }, h('b', { class: 'an' }, a.name), a.enabled ? h('span', { class: 'chip ok' }, 'Runs ' + a.schedule) : h('span', { class: 'chip' }, a.schedule ? 'Schedule paused' : 'On demand'), h('span', { class: 'chip' }, icon('folder'), a.folder.split('/').pop()), h('span', { class: 'chip' }, a.mode === 'plan' ? 'Read only' : 'Can edit'),
+          h('span', { class: 'sp row' },
+            h('button', { class: 'btn small', disabled: !!(last && last.status === 'running'), onclick: async () => { try { await api('/api/identities/' + a.id + '/run', { method: 'POST' }); toast(a.name + ' is running. See it on the Tasks tab.'); again(); } catch (e) { toast(e.message, true); } } }, icon('send'), last && last.status === 'running' ? 'Running' : 'Run now'),
+            h('button', { class: 'btn ghost small', onclick: () => openAgentForm(a, tools, again) }, 'Edit'),
+            h('button', { class: 'btn ghost small', onclick: () => confirmDialog({ title: 'Remove ' + a.name + '?', body: ['Its notes and run history are deleted. Tasks it already ran stay on the Tasks tab.'], confirmLabel: 'Remove', onConfirm: async () => { await api('/api/identities/' + a.id, { method: 'DELETE' }); again(); } }) }, icon('x'), 'Remove'))),
+        h('p', { class: 'hdesc' }, a.role),
+        h('div', { class: 'row' }, ...groups.map((g) => h('span', { class: 'chip' }, g))),
+        last ? h('div', { class: 'agentlast' }, h('div', { class: 'row' }, h('span', { class: 'chip run-' + (last.status === 'done' ? 'pass' : last.status === 'failed' ? 'fail' : 'running') }, last.status === 'done' ? 'Last run finished' : last.status === 'failed' ? 'Last run failed' : 'Running now'), h('span', { class: 'faint small' }, ago(last.started)), last.seconds ? h('span', { class: 'faint small' }, dur(last.seconds)) : null, last.taskId ? h('a', { class: 'linkbtn', href: '#/agent/' + last.taskId }, 'Open the task') : null),
+          last.summary ? h('div', { class: 'quote' }, markdown(last.summary)) : null) : h('p', { class: 'faint small' }, 'Has not run yet.'),
+        a.memory ? h('details', { class: 'rl' }, h('summary', {}, h('span', { class: 'rq' }, 'Its notes'), h('span', { class: 'faint small' }, a.memory.length + ' of 2200 characters')), h('div', { class: 'rbody' }, markdown(a.memory))) : null,
+        a.runs.length > 1 ? h('details', { class: 'rl' }, h('summary', {}, h('span', { class: 'rq' }, 'Earlier runs'), h('span', { class: 'faint small' }, String(a.runs.length - 1))), h('ul', { class: 'hrows' }, ...a.runs.slice(1, 8).map((r) => h('li', { class: 'hrow' }, h('div', { class: 'hmain' }, h('div', { class: 'row' }, h('span', { class: 'chip run-' + (r.status === 'done' ? 'pass' : 'fail') }, r.status), h('span', { class: 'faint small' }, ago(r.started))), r.summary ? h('p', { class: 'hdesc' }, uiShort(r.summary, 220)) : null)))) ) : null);
+    };
+    box.replaceChildren(
+      toolbar('Agents', 'Named workers with a role of their own. Each keeps notes between runs and can run on a schedule.', h('button', { class: 'btn', onclick: () => openAgentForm(null, tools, again) }, icon('plus'), 'New agent')),
+      h('details', { class: 'lib-card', ...(list.length ? {} : { open: true }) }, h('summary', {}, h('b', {}, 'What an agent is and how it works')),
+        h('ol', { class: 'how' },
+          h('li', {}, h('b', {}, 'Identity'), 'A name, a one-line role and instructions on how it works. Cully adds them to the start of every run, so they stay the same and the prompt cache can reuse them.'),
+          h('li', {}, h('b', {}, 'Tools'), 'Only the tool groups you pick. The always-blocked list from Agent permissions still applies.'),
+          h('li', {}, h('b', {}, 'A folder'), 'It runs as a task in its own worktree of that folder, so your checkout is untouched. Runs show on the Tasks tab.'),
+          h('li', {}, h('b', {}, 'Notes'), 'At the end of a run it saves up to three short facts. The next run starts by reading them. The notes are capped at 2,200 characters and the newest win.'),
+          h('li', {}, h('b', {}, 'Schedule'), 'Run it now, every hour, or every day while the Cully page server is running. Each run keeps a short summary.'))),
+      list.length ? h('div', { class: 'groups' }, ...list.map(card)) : emptyCard('No agents yet', 'Create one for work you repeat: watching pull requests, guarding the tests, checking dependencies.', null, null));
+    if (live) setTimeout(() => { if (S.route.name === 'team') again(); }, 4000);
+  }
+  const uiShort = (t, n) => (t.length > n ? t.slice(0, n) + '…' : t);
+  function openAgentForm(a, tools, again) {
+    const f = a || { name: '', role: '', instructions: '', folder: S.opts.repo || (S.info && S.info.repos[0]) || '', groups: Object.fromEntries(tools.presets.map((p) => [p.id, p.on])), mode: 'edit', schedule: '', enabled: false };
+    const val = { ...f, groups: { ...f.groups } };
+    const err = h('div', { class: 'err', hidden: true });
+    const text = (key, label, hint, rows) => { const el = rows ? h('textarea', { rows: String(rows), 'aria-label': label }) : h('input', { type: 'text', 'aria-label': label, autocomplete: 'off' }); el.value = val[key] || ''; el.addEventListener('input', () => { val[key] = el.value; }); return h('label', { class: 'field' }, h('span', { class: 'opt-label' }, label), el, hint ? h('span', { class: 'faint small' }, hint) : null); };
+    const folders = [...new Set([val.folder, ...((S.info && S.info.repos) || [])].filter(Boolean))];
+    const folderSel = h('select', { 'aria-label': 'Folder' }, ...folders.map((p) => h('option', Object.assign({ value: p }, p === val.folder ? { selected: true } : {}), p)));
+    folderSel.addEventListener('change', () => { val.folder = folderSel.value; });
+    const roleField = text('role', 'What it does', 'One sentence.'); const instrField = text('instructions', 'How it works', 'Its identity: how it should behave, what it must never do. Added to every run.', 6); const nameField = text('name', 'Name');
+    const tpl = a ? null : h('div', { class: 'row' }, h('span', { class: 'opt-label' }, 'Start from'), ...AGENT_TEMPLATES.map(([n, r, i, g]) => h('button', { type: 'button', class: 'chip', onclick: () => { val.name = n; val.role = r; val.instructions = i; for (const p of tools.presets) val.groups[p.id] = !!g[p.id]; val.mode = 'plan' === val.mode ? 'plan' : val.mode; closeMCP(); openAgentForm({ ...val, id: null }, tools, again); } }, n)));
+    const groups = h('div', { class: 'toolgroups' }, ...tools.presets.map((p) => { const cb = h('input', Object.assign({ type: 'checkbox', id: 'ag-' + p.id, onchange: (e) => { val.groups[p.id] = e.target.checked; } }, val.groups[p.id] ? { checked: true } : {})); return h('label', { class: 'toolgroup', for: 'ag-' + p.id }, cb, h('span', {}, h('b', {}, p.label), h('small', {}, p.description))); }));
+    const mode = h('select', { 'aria-label': 'Mode' }, h('option', Object.assign({ value: 'edit' }, val.mode === 'edit' ? { selected: true } : {}), 'Can edit files'), h('option', Object.assign({ value: 'plan' }, val.mode === 'plan' ? { selected: true } : {}), 'Read only (plan mode)'));
+    mode.addEventListener('change', () => { val.mode = mode.value; });
+    const sched = h('select', { 'aria-label': 'Schedule' }, ...[['', 'Only when I run it'], ['hourly', 'Every hour'], ['daily', 'Every day']].map(([v, l]) => h('option', Object.assign({ value: v }, val.schedule === v ? { selected: true } : {}), l)));
+    sched.addEventListener('change', () => { val.schedule = sched.value; val.enabled = !!sched.value; });
+    const clear = a && a.memory ? h('label', { class: 'check' }, h('input', { type: 'checkbox', onchange: (e) => { val.clearMemory = e.target.checked; } }), 'Forget its notes') : null;
+    const save = h('button', { class: 'btn', onclick: async () => {
+      err.hidden = true; save.disabled = true;
+      try {
+        const body = { name: val.name, role: val.role, instructions: val.instructions, folder: val.folder, groups: val.groups, mode: val.mode, schedule: val.schedule, enabled: !!val.schedule, clearMemory: !!val.clearMemory };
+        if (a && a.id) await api('/api/identities/' + a.id, { method: 'PUT', body: JSON.stringify(body) }); else await api('/api/identities', { method: 'POST', body: JSON.stringify(body) });
+        closeMCP(); toast('Saved ' + val.name); again();
+      } catch (e) { err.textContent = e.message; err.hidden = false; save.disabled = false; }
+    } }, icon('check'), a && a.id ? 'Save' : 'Create agent');
+    const modal = h('div', { class: 'modal wide', role: 'dialog', 'aria-modal': 'true', 'aria-label': a && a.id ? 'Edit agent' : 'New agent' },
+      h('header', {}, h('h2', {}, a && a.id ? 'Edit ' + f.name : 'New agent'), h('button', { class: 'btn ghost small sp', onclick: closeMCP }, 'Cancel')),
+      h('div', { class: 'mbody' }, tpl, nameField, roleField, instrField,
+        h('label', { class: 'field' }, h('span', { class: 'opt-label' }, 'Folder it works in'), folderSel),
+        h('div', {}, h('span', { class: 'opt-label' }, 'Tools it may use'), groups),
+        h('div', { class: 'row' }, h('label', { class: 'field' }, h('span', { class: 'opt-label' }, 'Mode'), mode), h('label', { class: 'field' }, h('span', { class: 'opt-label' }, 'Schedule'), sched)),
+        clear, err, h('div', { class: 'row' }, save)));
+    const bg = h('div', { class: 'modal-bg', onclick: (e) => { if (e.target === bg) closeMCP(); } }, modal);
+    $('modal-root').replaceChildren(bg);
+    S.modal = { agent: 'agentform' };
+    document.removeEventListener('keydown', escClose);
+    document.addEventListener('keydown', escClose);
+  }
+
   // ---------- session health ----------
   const DONE_LABEL = { yes: 'Completed', partly: 'Partly done', no: 'Not completed', unclear: 'Unclear' };
   async function renderHealth(out, head) {
@@ -773,6 +876,7 @@
     const copyEval = async (x) => { try { await writeClip(JSON.stringify(await api('/api/sessions/' + x.id + '/eval'), null, 2)); toast('Eval case copied'); } catch (e) { toast(e.message, true); } };
     const bar = (parts) => { const total = parts.reduce((n, p) => n + p[1], 0) || 1; const b = h('div', { class: 'stackbar', role: 'img', 'aria-label': parts.map((p) => p[0] + ' ' + p[1]).join(', ') }); for (const [label, n, cls] of parts) { if (!n) continue; const i = h('i', { class: cls, title: label + ': ' + n }); i.style.width = (n / total * 100) + '%'; b.append(i); } return b; };
     out.replaceChildren(head(refreshBtn(again)),
+      optimalCard(lib),
       judged.length ? null : h('section', { class: 'lib-card' }, h('b', {}, 'No sessions have been checked yet'), h('p', { class: 'faint small' }, 'When Cully names your sessions it also judges whether each one finished its job and stayed on task. Start that on the Session library page.'), h('a', { class: 'btn', href: '#/dashboard/library' }, icon('spark'), 'Open the session library')),
       h('div', { class: 'kpis' }, ...[['Completed', done + ' of ' + judged.length], ['Drifted from the task', String(drifted)], ['Had tool errors', String(withErrors)], ['Tools per session', String(avgTools)], ['Eval cases', String(evals.length)]].map(([k, v]) => h('div', { class: 'kpi' }, h('b', {}, v), h('span', {}, k)))),
       judged.length ? h('section', { class: 'lib-card' }, h('b', {}, 'How sessions ended'), bar([['Completed', done, 'good'], ['Partly done', partly, 'mid'], ['Not completed', notDone, 'bad'], ['Unclear', judged.length - done - partly - notDone, 'dim']]),
@@ -804,6 +908,44 @@
   // The page's content security policy forbids inline styles, so widths are set through the CSSOM.
   const fill = (pct) => { const i = h('i', {}); i.style.width = pct + '%'; return i; };
   const dur = (sec) => { const m = Math.round(sec / 60); if (m < 1) return 'under a minute'; if (m < 60) return m + ' min'; return Math.floor(m / 60) + ' h ' + (m % 60) + ' min'; };
+  // Everything here is worked out from the session list the page already has.
+  function libraryInsights(lib) {
+    const all = lib.sessions;
+    const judged = all.filter((x) => x.source === 'ai' && x.completed);
+    const day = (iso) => new Date(iso).toISOString().slice(0, 10);
+    // The last 14 days: sessions and hours worked per day.
+    const days = [];
+    for (let i = 13; i >= 0; i--) { const d = new Date(Date.now() - i * 864e5); days.push({ key: d.toISOString().slice(0, 10), label: d.toLocaleDateString(undefined, { weekday: 'short' }), n: 0, sec: 0 }); }
+    for (const x of all) { const d = days.find((e) => e.key === day(x.updated)); if (d) { d.n += 1; d.sec += x.activeSec; } }
+    const maxSec = Math.max(1, ...days.map((d) => d.sec));
+    const week = days.slice(7).reduce((n, d) => n + d.sec, 0); const prior = days.slice(0, 7).reduce((n, d) => n + d.sec, 0);
+    const chart = h('div', { class: 'daychart', role: 'img', 'aria-label': 'Time worked per day over the last 14 days' }, ...days.map((d) => {
+      const bar = h('i', { title: d.label + ': ' + d.n + (d.n === 1 ? ' session, ' : ' sessions, ') + dur(d.sec) }); bar.style.height = Math.max(d.sec ? 6 : 2, Math.round((d.sec / maxSec) * 100)) + '%';
+      return h('span', { class: 'dc' + (d.sec ? '' : ' none') }, bar, h('small', {}, d.label.slice(0, 2)));
+    }));
+    // Outcomes, health, tools, where sessions started.
+    const done = judged.filter((x) => x.completed === 'yes').length; const partly = judged.filter((x) => x.completed === 'partly').length; const notDone = judged.filter((x) => x.completed === 'no').length;
+    const avgHealth = judged.length ? Math.round(judged.reduce((n, x) => n + x.health, 0) / judged.length) : 0;
+    const tools = {}; for (const x of all) for (const [k, v] of Object.entries(x.toolNames || {})) tools[k] = (tools[k] || 0) + v;
+    const topTools = Object.entries(tools).sort((a, b) => b[1] - a[1]).slice(0, 6); const maxTool = Math.max(1, ...topTools.map((x) => x[1]));
+    const origins = {}; for (const x of all) { const k = x.origin || 'Unknown'; origins[k] = (origins[k] || 0) + 1; }
+    const attention = judged.filter((x) => x.health < 70).sort((a, b) => a.health - b.health).slice(0, 4);
+    const toolCalls = all.reduce((n, x) => n + (x.tools || 0), 0); const errors = all.reduce((n, x) => n + (x.errors || 0), 0);
+    const unverified = all.filter((x) => x.unverified).length; const loops = all.filter((x) => (x.maxRepeat || 0) >= 3).length;
+    const trend = prior ? Math.round(((week - prior) / prior) * 100) : null;
+    const kpis = [['This week', dur(week) + (trend == null ? '' : (trend >= 0 ? ', up ' : ', down ') + Math.abs(trend) + '%')], ['Tool calls', fmtTokens(toolCalls) + (errors ? ', ' + Math.round(errors * 100 / Math.max(1, toolCalls)) + '% failed' : '')]];
+    if (judged.length) kpis.push(['Finished the job', Math.round(done * 100 / judged.length) + '%'], ['Average health', String(avgHealth)]);
+    if (unverified) kpis.push(['Changed files, no tests', String(unverified)]);
+    if (loops) kpis.push(['Repeated a call 3+ times', String(loops)]);
+    const card = h('section', { class: 'lib-card' }, h('b', {}, 'Your last two weeks'), chart,
+      h('div', { class: 'insight-grid' },
+        h('div', {}, h('span', { class: 'opt-label' }, 'Most used tools'), h('ul', { class: 'fbars' }, ...topTools.map(([k, v]) => h('li', {}, h('span', { class: 'fname mono' }, k), h('span', { class: 'fbar' }, fill(Math.round(v / maxTool * 100))), h('span', { class: 'faint small' }, fmtTokens(v)))))),
+        h('div', {}, h('span', { class: 'opt-label' }, 'Where sessions start'), h('ul', { class: 'fbars' }, ...Object.entries(origins).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([k, v]) => h('li', {}, h('span', { class: 'fname' }, k), h('span', { class: 'fbar' }, fill(Math.round(v / all.length * 100))), h('span', { class: 'faint small' }, String(v)))))),
+        judged.length ? h('div', {}, h('span', { class: 'opt-label' }, 'How sessions ended'), h('div', { class: 'stackbar' }, ...[['Completed', done, 'good'], ['Partly', partly, 'mid'], ['Not completed', notDone, 'bad'], ['Unclear', judged.length - done - partly - notDone, 'dim']].filter((p) => p[1]).map(([l, n, c]) => { const i = h('i', { class: c, title: l + ': ' + n }); i.style.width = (n / judged.length * 100) + '%'; return i; })),
+          h('div', { class: 'row legend' }, h('span', { class: 'chip ok' }, 'Completed ' + done), h('span', { class: 'chip' }, 'Partly ' + partly), h('span', { class: 'chip warn' }, 'Not completed ' + notDone))) : null),
+      attention.length ? h('div', {}, h('span', { class: 'opt-label' }, 'Look at these first'), h('ul', { class: 'attn-list' }, ...attention.map((x) => h('li', {}, ring(x.health, 34), h('div', {}, h('b', {}, x.title || x.name), h('div', { class: 'faint small' }, (x.signals || []).join('. ') || 'Low health'))))), h('a', { class: 'linkbtn', href: '#/dashboard/health' }, 'See all in Session health')) : null);
+    return { kpis, card };
+  }
   async function renderLibrary(out, head) {
     const lib = await api('/api/sessions/library');
     const t = lib.totals;
@@ -834,9 +976,10 @@
           x.checks ? h('span', { class: 'chip' }, x.checks + (x.checks === 1 ? ' test run' : ' test runs')) : null,
           x.errors ? h('span', { class: 'chip warn' }, x.errors + (x.errors === 1 ? ' tool error' : ' tool errors')) : null),
         x.different && x.different !== 'Nothing notable.' ? h('p', { class: 'hdiff' }, h('b', {}, 'Could go better: '), x.different) : null)));
+    const insights = libraryInsights(lib);
     out.replaceChildren(head(refreshBtn(again)),
-      h('div', { class: 'kpis' }, ...[['Sessions', String(t.sessions)], ['Time worked', dur(t.activeSec)], ['Named', t.analyzed + ' of ' + total]].map(([k, v]) => h('div', { class: 'kpi' }, h('b', {}, v), h('span', {}, k)))),
-      analysis, await coachCard(again), folders,
+      h('div', { class: 'kpis' }, ...[['Sessions', String(t.sessions)], ['Time worked', dur(t.activeSec)], ['Named', t.analyzed + ' of ' + total], ...insights.kpis].map(([k, v]) => h('div', { class: 'kpi' }, h('b', {}, v), h('span', {}, k)))),
+      analysis, insights.card, await coachCard(again, true), folders,
       h('h3', { class: 'section-h' }, 'Sessions'),
       rows.length ? h('ul', { class: 'hrows' }, ...rows) : emptyCard('No sessions yet', 'Sessions you run appear here, with how long you worked and what you did.', 'Start a task', '#/'),
       lib.sessions.length > shown ? h('div', { class: 'row' }, h('button', { class: 'btn ghost', onclick: () => { S.libShown = shown + 30; again(); } }, 'Show more')) : null);
@@ -846,10 +989,10 @@
   // ---------- agent permissions ----------
   async function renderPermissions(out, head) {
     const v = await api('/api/admin/tools');
-    const state = { presets: Object.fromEntries(v.presets.map((p) => [p.id, p.on])), allow: [...v.allow], deny: [...v.deny] };
+    const state = { presets: Object.fromEntries(v.presets.map((p) => [p.id, p.on])), allow: [...v.allow], deny: [...v.deny], mcp: [...v.mcp.only] };
     const save = async (deny) => {
       try {
-        const r = await api('/api/admin/tools', { method: 'PUT', body: JSON.stringify({ presets: state.presets, allow: state.allow, deny }) });
+        const r = await api('/api/admin/tools', { method: 'PUT', body: JSON.stringify({ presets: state.presets, allow: state.allow, deny, mcpOnly: state.mcp }) });
         toast('Saved. New agents use these settings.');
         return r;
       } catch (e) { toast(e.message, true); return null; }
@@ -873,6 +1016,12 @@
     out.replaceChildren(head(),
       h('p', { class: 'faint' }, 'Agents Cully starts run on their own, so nothing can answer a permission question. These settings decide what they may do. They apply to agents you start after saving.'),
       h('section', { class: 'group' }, h('header', {}, h('span', { class: 'gt' }, 'What agents may do')), groups),
+      h('section', { class: 'group' }, h('header', {}, h('span', { class: 'gt' }, 'Connected tools to load')),
+        h('p', { class: 'faint small' }, 'Every connected server adds its tool descriptions to every turn the task takes, so loading fewer saves tokens. Pick the ones tasks need, or none to load them all. Servers found in your Claude settings are listed.'),
+        v.mcp.available.length ? h('div', { class: 'toolgroups' }, ...v.mcp.available.map((n) => {
+          const cb = h('input', Object.assign({ type: 'checkbox', id: 'mcp-' + n, onchange: (e) => { state.mcp = e.target.checked ? [...state.mcp, n] : state.mcp.filter((x) => x !== n); } }, state.mcp.includes(n) ? { checked: true } : {}));
+          return h('label', { class: 'toolgroup', for: 'mcp-' + n }, cb, h('span', {}, h('b', { class: 'mono' }, n)));
+        })) : h('p', { class: 'faint small' }, 'No connected servers were found in your Claude settings.')),
       h('section', { class: 'group' }, h('header', {}, h('span', { class: 'gt' }, 'Extra tools to allow')),
         h('p', { class: 'faint small' }, 'Add a tool by name, for example mcp__gitlab__get_issue for one tool of a connected server, or Bash(go test:*) for one kind of command.'), listEditor('allowed', state.allow, 'mcp__server__tool')),
       h('section', { class: 'group' }, h('header', {}, h('span', { class: 'gt' }, 'Always blocked'), h('button', { class: 'linkbtn sp', onclick: () => { state.deny = [...v.defaultDeny]; drawDeny(); } }, 'Reset to defaults')),

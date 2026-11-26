@@ -107,3 +107,57 @@ func TestAdminToolsEndpoint(t *testing.T) {
 		t.Fatalf("bad = %d", r.StatusCode)
 	}
 }
+
+func TestTasksCanLoadOnlyTheChosenMCPServers(t *testing.T) {
+	m, repo, out := uiTestManager(t, uiWriteScript(t, fakeClaude), "tok-aaa1")
+	cfg := `{"mcpServers":{"cully":{"type":"http","url":"https://x/cully/mcp","headers":{"Authorization":"Bearer SECRET-VALUE"}},"gitlab":{"type":"http","url":"https://g"},"tgit":{"type":"http","url":"https://t"}}}`
+	if err := os.WriteFile(filepath.Join(ConfigDir(), ".claude.json"), []byte(cfg), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := m.mcpFilterArgs(); got != nil {
+		t.Fatalf("filter applied with no choice made: %v", got)
+	}
+	if v := m.toolsView(); len(v.Mcp.Available) != 3 || len(v.Mcp.Only) != 0 {
+		t.Fatalf("mcp = %+v", v.Mcp)
+	}
+	if err := m.setToolPolicy(uiPolicyInput{McpOnly: []string{"cully", "nonexistent"}, Deny: nil}); err != nil {
+		t.Fatal(err)
+	}
+	a, err := m.start(uiStartRequest{Repo: repo, Prompt: "go"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	uiWaitState(t, a, "waiting")
+	args, _ := os.ReadFile(filepath.Join(out, "args.log"))
+	if !strings.Contains(string(args), "--strict-mcp-config --mcp-config "+filepath.Join(cullyDir(), "ui-mcp.json")) {
+		t.Fatalf("args = %s", args)
+	}
+	if strings.Contains(string(args), "SECRET-VALUE") {
+		t.Fatal("a credential reached the command line")
+	}
+	b, _ := os.ReadFile(filepath.Join(cullyDir(), "ui-mcp.json"))
+	if !strings.Contains(string(b), `"cully"`) || strings.Contains(string(b), "gitlab") || strings.Contains(string(b), "tgit") {
+		t.Fatalf("filtered config = %s", b)
+	}
+	if st, _ := os.Stat(filepath.Join(cullyDir(), "ui-mcp.json")); st.Mode().Perm() != 0o600 {
+		t.Fatalf("mode = %v", st.Mode())
+	}
+	if err := m.setToolPolicy(uiPolicyInput{McpOnly: []string{"nonexistent"}}); err != nil {
+		t.Fatal(err)
+	}
+	if got := m.mcpFilterArgs(); got != nil {
+		t.Fatalf("a task would start with no Cully tools: %v", got)
+	}
+	if err := m.setToolPolicy(uiPolicyInput{McpOnly: []string{"bad name!"}}); err == nil {
+		t.Fatal("bad server name accepted")
+	}
+}
+
+func TestPermissionsPageOffersTheConnectedToolChoiceAndLibraryInsights(t *testing.T) {
+	b, _ := uiStaticFS.ReadFile("ui_static/app.js")
+	for _, want := range []string{"Connected tools to load", "mcpOnly: state.mcp", "function libraryInsights", "Your last two weeks", "Most used tools", "Look at these first"} {
+		if !strings.Contains(string(b), want) {
+			t.Errorf("app.js lacks %q", want)
+		}
+	}
+}

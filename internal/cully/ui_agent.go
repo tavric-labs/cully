@@ -81,16 +81,18 @@ type uiStartRequest struct {
 	Mode    string `json:"mode"` // "" or "edit" (accept edits) or "plan" (read-only planning)
 
 	// Set by Cully for review agents; never read from the request body.
-	addDirs   []string
-	rules     string
-	Loop      bool   `json:"loop"`     // keep going until the agent has checked its work
-	DoneWhen  string `json:"doneWhen"` // checks that say the task is done, one per line
-	MaxRounds int    `json:"maxRounds"`
-	resumeID  string // continue this Claude session instead of starting a new one
-	resumeDir string // ...in this folder, run in place (no worktree)
-	fork      bool   // start a new session from resumeID; the original stays as it is
-	group     string // fan-out options share a group
-	option    string // "A", "B", ...
+	addDirs      []string
+	rules        string
+	Loop         bool            `json:"loop"`     // keep going until the agent has checked its work
+	DoneWhen     string          `json:"doneWhen"` // checks that say the task is done, one per line
+	MaxRounds    int             `json:"maxRounds"`
+	groups       map[string]bool // tool groups of a named agent; nil means the global switches
+	appendSystem string          // identity text added to the system prompt
+	resumeID     string          // continue this Claude session instead of starting a new one
+	resumeDir    string          // ...in this folder, run in place (no worktree)
+	fork         bool            // start a new session from resumeID; the original stays as it is
+	group        string          // fan-out options share a group
+	option       string          // "A", "B", ...
 }
 
 type uiStage struct {
@@ -133,6 +135,7 @@ type uiManager struct {
 	alerted map[string]struct{} // file|idA|idB pairs already warned about
 
 	evalRuns   []*uiEvalRun
+	identities []*uiIdentity
 	coachMu    sync.Mutex
 	idxMu      sync.Mutex
 	index      *uiIndexFile
@@ -583,10 +586,14 @@ func (a *uiAgent) run(m *uiManager) {
 	if a.req.Mode == "plan" {
 		permission = "plan"
 	}
-	allowed, denied := m.toolPolicy(a.req.Mode == "plan")
+	allowed, denied := m.toolPolicyFor(a.req.Mode == "plan", a.req.groups)
 	args := []string{"-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose",
 		"--permission-mode", permission, "--allowedTools", allowed,
 		"--disallowedTools", denied}
+	args = append(args, m.mcpFilterArgs()...)
+	if a.req.appendSystem != "" {
+		args = append(args, "--append-system-prompt", a.req.appendSystem)
+	}
 	if a.req.resumeID != "" {
 		args = append(args, "--resume", a.req.resumeID)
 		if a.req.fork {

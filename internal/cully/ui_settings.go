@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 )
 
@@ -38,6 +39,8 @@ type uiPolicy struct {
 	Presets map[string]bool `json:"presets,omitempty"` // only the ones changed from their default
 	Allow   []string        `json:"allow,omitempty"`
 	Deny    []string        `json:"deny"` // nil means the default block list
+	// McpOnly names the connected MCP servers tasks load. Empty means all of them.
+	McpOnly []string `json:"mcpOnly,omitempty"`
 }
 
 // uiPolicyInput is what the admin page sends. A nil Deny restores the default block list.
@@ -45,6 +48,7 @@ type uiPolicyInput struct {
 	Presets map[string]bool `json:"presets"`
 	Allow   []string        `json:"allow"`
 	Deny    []string        `json:"deny"`
+	McpOnly []string        `json:"mcpOnly"`
 }
 
 type uiToolPresetView struct {
@@ -61,7 +65,11 @@ type uiToolsView struct {
 	Allow       []string           `json:"allow"`
 	Deny        []string           `json:"deny"`
 	DefaultDeny []string           `json:"defaultDeny"`
-	Effective   struct {
+	Mcp         struct {
+		Available []string `json:"available"` // servers found in Claude's own config
+		Only      []string `json:"only"`      // the ones tasks load; empty means all
+	} `json:"mcp"`
+	Effective struct {
 		Allowed []string `json:"allowed"`
 		Denied  []string `json:"denied"`
 	} `json:"effective"`
@@ -97,13 +105,21 @@ func uiSplitTools(s string) []string {
 }
 
 // toolPolicy returns the comma lists passed to --allowedTools and --disallowedTools.
-func (m *uiManager) toolPolicy(plan bool) (allowed, denied string) {
+func (m *uiManager) toolPolicy(plan bool) (allowed, denied string) { return m.toolPolicyFor(plan, nil) }
+
+// toolPolicyFor is toolPolicy with the tool groups of one named agent in place
+// of the global switches. The block list and extra allowed tools still apply.
+func (m *uiManager) toolPolicyFor(plan bool, groups map[string]bool) (allowed, denied string) {
 	m.policyMu.Lock()
 	defer m.policyMu.Unlock()
 	m.loadPolicyLocked()
 	var tools []string
 	for _, pr := range uiToolPresets {
-		if m.policy.presetOn(pr) && !(plan && pr.NotInPlan) {
+		on := m.policy.presetOn(pr)
+		if groups != nil {
+			on = groups[pr.ID]
+		}
+		if on && !(plan && pr.NotInPlan) {
 			tools = append(tools, pr.Tools...)
 		}
 	}
@@ -175,6 +191,15 @@ func (m *uiManager) setToolPolicy(in uiPolicyInput) error {
 		}
 		next.Deny = deny
 	}
+	if len(in.McpOnly) > uiPolicyMaxEntries {
+		return errors.New("too many connected tools chosen")
+	}
+	for _, n := range in.McpOnly {
+		if !uiMCPName.MatchString(n) {
+			return fmt.Errorf("%q is not a connected tool name", n)
+		}
+	}
+	next.McpOnly = uiDedupe(in.McpOnly)
 	b, err := json.MarshalIndent(next, "", "  ")
 	if err != nil {
 		return err
@@ -201,8 +226,79 @@ func (m *uiManager) toolsView() uiToolsView {
 	for _, pr := range uiToolPresets {
 		v.Presets = append(v.Presets, uiToolPresetView{ID: pr.ID, Label: pr.Label, Description: pr.Description, Tools: pr.Tools, On: p.presetOn(pr), NotInPlan: pr.NotInPlan})
 	}
+	v.Mcp.Available = uiMCPNames()
+	v.Mcp.Only = append([]string{}, p.McpOnly...)
 	allowed, denied := m.toolPolicy(false)
 	v.Effective.Allowed, v.Effective.Denied = uiSplitTools(allowed), uiSplitTools(denied)
 	v.Deny = v.Effective.Denied
 	return v
+}
+
+var uiMCPName = regexp.MustCompile(`^[A-Za-z0-9_.-]{1,64}$`)
+
+// uiClaudeJSONPath is where Claude keeps the MCP servers you added for yourself.
+func uiClaudeJSONPath() string {
+	if d := os.Getenv("CLAUDE_CONFIG_DIR"); d != "" {
+		return filepath.Join(d, ".claude.json")
+	}
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".claude.json")
+}
+
+func uiMCPDefs() map[string]json.RawMessage {
+	b, err := os.ReadFile(uiClaudeJSONPath())
+	if err != nil {
+		return nil
+	}
+	var d struct {
+		Servers map[string]json.RawMessage `json:"mcpServers"`
+	}
+	if json.Unmarshal(b, &d) != nil {
+		return nil
+	}
+	return d.Servers
+}
+
+func uiMCPNames() []string {
+	names := []string{}
+	for n := range uiMCPDefs() {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	return names
+}
+
+// mcpFilterArgs limits a task to the connected servers chosen on the permissions
+// page. Every connected server adds its tool descriptions to every turn, so
+// loading fewer saves tokens. Nothing is added when no choice was made or none
+// of the chosen servers exist, so a task never starts with no way to reach Cully.
+// The chosen definitions are copied to a private file in the Cully folder,
+// because they can carry credentials and must not appear on a command line.
+func (m *uiManager) mcpFilterArgs() []string {
+	m.policyMu.Lock()
+	m.loadPolicyLocked()
+	only := append([]string{}, m.policy.McpOnly...)
+	m.policyMu.Unlock()
+	if len(only) == 0 {
+		return nil
+	}
+	defs := uiMCPDefs()
+	pick := map[string]json.RawMessage{}
+	for _, n := range only {
+		if d, ok := defs[n]; ok {
+			pick[n] = d
+		}
+	}
+	if len(pick) == 0 {
+		return nil
+	}
+	b, err := json.Marshal(map[string]any{"mcpServers": pick})
+	if err != nil {
+		return nil
+	}
+	path := filepath.Join(cullyDir(), "ui-mcp.json")
+	if os.WriteFile(path, b, 0o600) != nil {
+		return nil
+	}
+	return []string{"--strict-mcp-config", "--mcp-config", path}
 }

@@ -615,6 +615,7 @@ func (m *uiManager) runIndexer(ctx context.Context) {
 		}
 		m.coachIfDue()
 		m.scoutIfDue()
+		m.identitiesDue()
 	}
 	tick()
 	t := time.NewTicker(uiIndexTick)
