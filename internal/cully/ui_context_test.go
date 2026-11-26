@@ -63,6 +63,7 @@ func TestComposePromptSections(t *testing.T) {
 }
 
 func TestStartRunsStagesAndFeedsPrompt(t *testing.T) {
+	t.Setenv("CULLY_MEMORY", "mcp") // recall through the advisor, as with the Cully MCP
 	m, repo, out := uiTestManager(t, uiWriteScript(t, fakeClaude), "tok-aaa1")
 	adv := &uiFakeAdvisor{}
 	m.cfg.Advisor = adv.run
@@ -89,6 +90,7 @@ func TestStartRunsStagesAndFeedsPrompt(t *testing.T) {
 }
 
 func TestAdvisorFailureDoesNotBlockSpawn(t *testing.T) {
+	t.Setenv("CULLY_MEMORY", "mcp") // recall through the advisor, as with the Cully MCP
 	m, repo, out := uiTestManager(t, uiWriteScript(t, fakeClaude), "tok-aaa1")
 	m.cfg.Advisor = (&uiFakeAdvisor{fail: true}).run
 	a, _ := m.start(uiStartRequest{Repo: repo, Prompt: "do x", Recall: true, Scout: true})

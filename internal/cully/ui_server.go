@@ -152,6 +152,11 @@ func newUIServer(m *uiManager, token string, loopback bool) http.Handler {
 	mux.Handle("POST /api/identities/{id}/evals/{cid}/approve", s.api(s.agentEvalsApprove))
 	mux.Handle("DELETE /api/identities/{id}/evals/{cid}", s.api(s.agentEvalsRemove))
 	mux.Handle("GET /api/research", s.api(s.researchGet))
+	mux.Handle("GET /api/feed", s.api(s.feedGet))
+	mux.Handle("GET /api/suggestions", s.api(s.suggestionsGet))
+	mux.Handle("POST /api/job-suggestions/run", s.api(s.jobSuggestRunH))
+	mux.Handle("POST /api/job-suggestions/{id}/accept", s.api(s.jobSuggestAcceptH))
+	mux.Handle("POST /api/job-suggestions/{id}/dismiss", s.api(s.jobSuggestDismissH))
 	mux.Handle("POST /api/coach/run", s.api(s.coachRunH))
 	mux.Handle("POST /api/evals/{id}/run", s.api(s.evalRunStart))
 	mux.Handle("POST /api/sessions/{id}/summarize", s.api(s.summarize))
@@ -979,8 +984,8 @@ func (s *uiServer) coachRunH(w http.ResponseWriter, r *http.Request) {
 
 func (s *uiServer) researchGet(w http.ResponseWriter, r *http.Request) {
 	kind := r.URL.Query().Get("kind")
-	if kind != "" && kind != "scout" && kind != "recall" && kind != "advice" {
-		uiError(w, http.StatusBadRequest, "kind must be scout, recall or advice")
+	if kind != "" && kind != "scout" && kind != "recall" && kind != "advice" && kind != "digest" {
+		uiError(w, http.StatusBadRequest, "kind must be scout, recall, advice or digest")
 		return
 	}
 	uiJSON(w, http.StatusOK, s.m.researchList(kind, 200))

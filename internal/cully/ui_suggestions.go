@@ -1,0 +1,89 @@
+package cully
+
+import (
+	"net/http"
+	"sort"
+	"strings"
+	"time"
+)
+
+// One inbox for everything Cully suggests. The Advisor decides what to suggest;
+// the other pages (Agents, Background jobs, Workflow rules, Session library) show
+// only what you have already approved or what you asked to see. This list
+// gathers the pending suggestions from each producer so you answer them in
+// one place.
+
+type uiSuggestion struct {
+	ID      string    `json:"id"`
+	Kind    string    `json:"kind"` // agent, job, coach, rules, digest
+	Title   string    `json:"title"`
+	Why     string    `json:"why,omitempty"`
+	Detail  string    `json:"detail,omitempty"`
+	Command string    `json:"command,omitempty"` // jobs: the exact command that would run
+	After   string    `json:"after,omitempty"`   // jobs: the proposed time of day
+	At      time.Time `json:"at"`
+	Href    string    `json:"href,omitempty"`
+}
+
+func (m *uiManager) suggestions() []uiSuggestion {
+	out := []uiSuggestion{}
+	for _, s := range m.agentSuggestionsList() {
+		out = append(out, uiSuggestion{ID: s.ID, Kind: "agent", Title: "Agent: " + s.Name, Why: s.Why, Detail: s.Role, At: s.Created, Href: "#/dashboard/agents"})
+	}
+	for _, s := range m.jobSuggestionsList() {
+		out = append(out, uiSuggestion{ID: s.ID, Kind: "job", Title: "Background job: " + s.Name, Why: s.Why, Command: strings.Join(s.Command, " "), After: s.After, At: s.Created, Href: "#/dashboard/jobs"})
+	}
+	if c := m.coachGet(); !c.At.IsZero() {
+		for i, it := range c.Items {
+			out = append(out, uiSuggestion{ID: "coach-" + uiItoa(i), Kind: "coach", Title: uiClipWords(it.Title, 100), Why: it.Why, Detail: it.How, At: c.At, Href: "#/dashboard/advisor"})
+		}
+	}
+	if v := m.rulesView(); v.Proposal != nil && v.Proposal.State == "new" {
+		why := "Based on " + uiItoa(v.Proposal.Based) + " analysed sessions."
+		if len(v.Proposal.Changes) > 0 {
+			why = uiClipWords(v.Proposal.Changes[0], 160)
+		}
+		out = append(out, uiSuggestion{ID: v.Proposal.ID, Kind: "rules", Title: "Update your workflow rules", Why: why, At: v.Proposal.Created, Href: "#/dashboard/rules"})
+	}
+	for _, r := range m.researchList("digest", 1) {
+		out = append(out, uiSuggestion{ID: r.ID, Kind: "digest", Title: "Suggestions from the scouts", Detail: strings.ReplaceAll(r.Text, "**", ""), At: r.Time, Href: "#/dashboard/library"})
+	}
+	sort.SliceStable(out, func(i, j int) bool { return out[i].At.After(out[j].At) })
+	return out
+}
+
+func (s *uiServer) suggestionsGet(w http.ResponseWriter, r *http.Request) {
+	uiJSON(w, http.StatusOK, s.m.suggestions())
+}
+
+func (s *uiServer) jobSuggestRunH(w http.ResponseWriter, r *http.Request) {
+	n, err := s.m.jobSuggestRun()
+	if err != nil {
+		uiError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	uiJSON(w, http.StatusOK, map[string]int{"added": n})
+}
+
+func (s *uiServer) jobSuggestAcceptH(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		After string `json:"after"`
+	}
+	if r.ContentLength > 0 && !uiDecode(w, r, &body) {
+		return
+	}
+	name, err := s.m.jobSuggestionAccept(r.PathValue("id"), body.After)
+	if err != nil {
+		uiError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	uiJSON(w, http.StatusOK, map[string]string{"job": name})
+}
+
+func (s *uiServer) jobSuggestDismissH(w http.ResponseWriter, r *http.Request) {
+	if err := s.m.jobSuggestionDismiss(r.PathValue("id")); err != nil {
+		uiError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}

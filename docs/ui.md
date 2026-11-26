@@ -137,15 +137,21 @@ Fan-out (one prompt to several agents, compared side by side) is not built yet.
 
 **Session health** scores each session from 0 to 100. Signals follow what coding-agent harnesses watch for ("Harness Engineering", arXiv 2609.00006): the same call repeated three or more times in a row, the same call failing three or more times, ending after changes with no test run, and the judged outcome. **Make an eval** turns a completed session into a test case (goal, checks, what it did) saved under `evals/`. **Evals** runs a case on a fresh agent in its own worktree and a judge scores it pass, partial or fail.
 
-The **coach** reads all named sessions and suggests a job, skill, MCP server, habit or eval; it runs about once an hour while naming is on, or when you ask. Everything above is kept in the local database. Saving it to the Cully MCP is not built yet; the records carry a `synced` field for that.
+The **coach** reads all analysed sessions and suggests a job, skill, MCP server, habit or eval; it runs about once an hour while naming is on, or when you ask. Everything above is kept in the local database. Saving it to the Cully MCP is not built yet; the records carry a `synced` field for that.
 
 ## Keep going until checked
 
 Turn on **Keep going until checked** when you start an agent and, after each turn, Cully makes sure the agent ran tests after changing files, steers it when it repeats the same call or the same failing call, and judges its work against the "done when" lines you wrote. It stops after three rounds (up to six), after 200 tool calls, or after eight identical calls in a row. Every message Cully sends is shown in the feed.
 
-## Scout history and the hourly scout
+## Suggestions, background jobs and the Advisor
 
-Every scout result and every piece of advice is kept in `research-log.jsonl` in the Cully folder (newest 500). The Scout tab shows the full history. Turn on **Scout the web every hour** and the advisor reads the last week of named sessions, picks up to two targeted searches, and runs them. A search is only sent when it uses general technical terms: Cully refuses any that contain a path, link, email, ticket number, or the name of a folder or repository, and does not repeat a topic from the last week.
+The Advisor is the one place Cully suggests things. The Advisor page opens with a **Suggestions** inbox that gathers every pending suggestion: agents, background jobs, tips from the coach, a workflow-rules update and the latest scout digest. The other pages (Agents, Background jobs, Workflow rules) show what you have approved.
+
+An **agent** and a **background job** are different. An agent runs a model: it reads, reasons and reports, keeps notes between runs, and costs tokens. A background job is one fixed command that the Cully daemon starts at a time of day, with no model, no judgement and no tokens; it does the same chore every time and leaves a log. Cully proposes a job only for a chore you repeat that one command can do (tests, a linter, `git fetch --all`, a build), picks a quiet time, shows the exact command and lets you change the time. Approve adds it to `~/.cully/jobs.json` (see [scheduled jobs](scheduled-jobs.md)); Reject forgets it. Proposals come from the analysed sessions (their goals and problems, not your prompts, which the library never stores), about once a day once five new sessions are analysed, or when you press **Look for background jobs**. A proposed command is checked again when you approve it, and shells, `sudo`, `curl`, `rm`, inline code and programs that are not installed are refused.
+
+## Scout history and the scout
+
+Every scout result and every piece of advice is kept in the local database (newest 500) and shown at once. Turn on **Scout the web while you work**: while a session changed in the last 90 minutes, the advisor gives at most one search an hour, from the last week of analysed sessions. When you are away, nothing new is searched; every 12 hours the scouts found so far are merged into at most three suggestions, which appear at the top of the history and in the Suggestions inbox. A search is only sent when it uses general technical terms: Cully refuses any that contain a path, link, email, ticket number, or the name of a folder or repository, and drops one that is about the same as a search from the last week (by shared words, so a rewording counts as a repeat).
 
 ## Harness permissions
 
@@ -155,7 +161,7 @@ The harness is the program that runs the model (Claude Code). Tasks the page sta
 
 An agent is a named worker with a role, instructions on how it works, a set of tools, a folder and short notes it keeps between runs. Create one on the **Agents** page, or start from a template (pull request watcher, test guardian, dependency reviewer, docs keeper). Its name, role and instructions are added to the system prompt at the start of every run, ahead of the task, so that part stays the same and the prompt cache can reuse it. Each run is an ordinary task in its own worktree, shown on the Tasks tab; at the end it saves up to three short facts, kept to 2,200 characters with the newest winning, and the next run reads them first. An agent runs when you press Run now, or every hour or day while the page server is running. Definitions, notes and run history are in `identities.json` in the Cully folder.
 
-Cully also proposes agents. About once an hour while naming is on, it reads the named sessions and suggests agents for work you repeat or skip. A proposal shows what it would do, why, and its tools; nothing exists until you press **Review and create**, change what you like and save.
+Cully also proposes agents. About once an hour while analysis is on, it reads the analysed sessions and suggests agents for work you repeat or skip. A proposal shows what it would do, why, and its tools; nothing exists until you press **Review and create**, change what you like and save.
 
 Suggestions from the coach can be applied from the Advisor and Session library pages: to a task started from Cully (sent as a message), as a new task, or copied for a session open in a terminal, which the page cannot write to.
 
@@ -180,6 +186,14 @@ Claude Code compacts its own history before the context window fills, so a full 
 ## Saving agents to Cully memory
 
 In local mode an agent is a record in the database (its workspace folder stays on disk). When the Cully MCP is connected, Cully also saves each approved agent to Cully memory (Postgres) through the new `cully_agent_save` tool, so it follows you to another machine; `cully_agents` lists your agents and `cully_agent_delete` removes one. The page has no MCP login of its own: a short headless Claude call, allowed to use only that one tool, makes the save, at most every ten minutes and only for agents that changed. The local database stays the source of truth, a failed save is retried, and the saved definition never includes a path on this machine. Migration 011 adds the table; it is private to the owner like every other record. Restoring agents from memory onto a new machine is not built yet.
+
+## Evals
+
+An eval is a small test: a task, a few checks in plain words and a judge that says pass, partly or fail, run again after something changes to show whether it got better or worse. The Evals page explains this and has two parts. **Your agents**: Cully drafts up to eight cases per agent from its role and rules (some where it should do its job, one where it should refuse, one awkward edge case); you approve the ones to keep, run them, and each answer is judged. A run only plans and answers; it never changes files and uses no notes. The page flags an agent whose instructions or tools changed since its last run. **From your sessions**: cases made from finished sessions, as before.
+
+## Activity
+
+Activity opens on a feed, newest first and grouped by day: tasks that finished, failed or need an answer, runs of your agents, eval verdicts, and what the scout and advisor found, each linking to where the detail is. Filter by Tasks, Agents, Evals, Scout or Advice. The **This folder** tab keeps the file and command timeline of the current folder.
 
 ## Servers, tools and prompts
 

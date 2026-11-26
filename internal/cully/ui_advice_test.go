@@ -203,6 +203,7 @@ func TestStreamScoutReportsProgressAndTheFullFindings(t *testing.T) {
 }
 
 func TestScoutStageKeepsFindingsAndLiveProgress(t *testing.T) {
+	t.Setenv("CULLY_MEMORY", "mcp") // recall through the advisor, as with the Cully MCP
 	m, repo, _ := uiTestManager(t, uiWriteScript(t, fakeClaude), "tok-aaa1")
 	m.cfg.Advisor = (&uiFakeAdvisor{}).run
 	m.cfg.ScoutStream = func(ctx context.Context, cwd, prompt string, progress func(string)) (string, error) {

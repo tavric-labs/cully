@@ -28,6 +28,7 @@ import (
 type uiStore struct {
 	db   *sql.DB
 	path string
+	fts  bool // keyword search is available
 }
 
 var (
@@ -65,6 +66,10 @@ func uiDB() *uiStore {
 	if _, err := db.Exec(uiStoreSchema); err != nil {
 		_ = db.Close()
 		return &uiStore{path: path}
+	}
+	// Keyword search for local recall. A build without FTS5 simply has no recall.
+	if _, err := db.Exec(`CREATE VIRTUAL TABLE IF NOT EXISTS recall USING fts5(id UNINDEXED, text, tokenize='porter unicode61')`); err == nil {
+		s.fts = true
 	}
 	uiStores[path] = s
 	s.importLegacy()

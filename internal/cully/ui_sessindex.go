@@ -93,12 +93,15 @@ type uiIndexed struct {
 }
 
 type uiIndexFile struct {
-	Analyze   bool      `json:"analyze"`
-	AutoScout bool      `json:"autoScout"`
-	LastScout time.Time `json:"lastScout,omitempty"`
+	Analyze    bool      `json:"analyze"`
+	AutoScout  bool      `json:"autoScout"`
+	LastScout  time.Time `json:"lastScout,omitempty"`
+	LastDigest time.Time `json:"lastDigest,omitempty"`
 	// When Cully last looked for repeated work, and how many named sessions it had then.
 	LastAgentCheck  time.Time             `json:"lastAgentCheck,omitempty"`
 	AgentCheckBased int                   `json:"agentCheckBased,omitempty"`
+	LastJobCheck    time.Time             `json:"lastJobCheck,omitempty"`
+	JobCheckBased   int                   `json:"jobCheckBased,omitempty"`
 	LastRulesCheck  time.Time             `json:"lastRulesCheck,omitempty"`
 	RulesBased      int                   `json:"rulesBased,omitempty"`
 	Sessions        map[string]*uiIndexed `json:"sessions"`
@@ -651,6 +654,7 @@ func (m *uiManager) runIndexer(ctx context.Context) {
 		m.scoutIfDue()
 		m.identitiesDue()
 		m.agentSuggestIfDue()
+		m.jobSuggestIfDue()
 		m.rulesIfDue()
 		m.syncAgentsIfDue()
 	}

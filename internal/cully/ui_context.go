@@ -124,7 +124,19 @@ func (a *uiAgent) prepare(m *uiManager) string {
 			a.setStage(name, "ok", "")
 		}()
 	}
-	advise("recall", a.req.Recall, false, fmt.Sprintf("You are preparing a coding task in this project. Use the Cully memory tools (cully_context, cully_recent, cully_search) to find prior work relevant to the task below. Reply with at most 12 short lines: past decisions, pitfalls, unfinished work. If nothing is relevant, say so.\n\nTask: %s", task), &recall)
+	if a.req.Recall && m.useLocalRecall() {
+		// Local mode: search the named sessions by keyword, with no model call.
+		a.setStage("recall", "running", "")
+		recall = m.localRecall(task)
+		if recall == "" {
+			a.setStage("recall", "skipped", "nothing in the local session history matched")
+		} else {
+			a.setStageOutput("recall", recall)
+			a.setStage("recall", "ok", "")
+		}
+	} else {
+		advise("recall", a.req.Recall, false, fmt.Sprintf("You are preparing a coding task in this project. Use the Cully memory tools (cully_context, cully_recent, cully_search) to find prior work relevant to the task below. Reply with at most 12 short lines: past decisions, pitfalls, unfinished work. If nothing is relevant, say so.\n\nTask: %s", task), &recall)
+	}
 	advise("scout", a.req.Scout, true, fmt.Sprintf("Scout the web for current best practice and known pitfalls relevant to the coding task below. Use at most 5 searches. Reply with at most 10 short lines, each with a source URL.\n\nTask: %s", task), &scout)
 	wg.Wait()
 	return composeUIPromptRules(task, pack, recall, scout, m.peersText(a), a.req.rules)

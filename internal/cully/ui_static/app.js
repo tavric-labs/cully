@@ -776,7 +776,7 @@
     for (const a of r.advisor) work.push(line('spark', 'Advisor reviewing', a.title, null, '#/dashboard/advisor', 'See advice'));
     if (r.naming.on && r.naming.pending > 0) {
       const total = r.naming.done + r.naming.pending; const bar = h('span', { class: 'fbar' }, fill(Math.round(r.naming.done * 100 / total)));
-      work.push(line('pencil', 'Naming your past sessions', r.naming.done + ' of ' + total + ' done, a few every hour', bar, '#/dashboard/library', 'Session library'));
+      work.push(line('pencil', 'Analysing your past sessions', r.naming.done + ' of ' + total + ' done, a few every hour', bar, '#/dashboard/library', 'Session library'));
     }
     const live = r.sessions.filter((x) => !x.detached); const idle = r.sessions.filter((x) => x.detached);
     const sessRow = (x) => h('tr', {}, h('td', {}, harnessChip(x.agent)), h('td', {}, h('b', {}, x.name)), h('td', { class: 'mono-s faint' }, x.branch || ''), h('td', { class: 'faint' }, x.via === 'cully' ? 'Cully terminal' : 'Terminal'),
@@ -858,7 +858,7 @@
       c.items.length ? h('ul', { class: 'coach-list' }, ...c.items.map((it) => h('li', { class: 'coach-item k-' + it.kind },
         h('span', { class: 'kind' }, COACH_KIND[it.kind] || it.kind), h('div', {}, h('b', {}, it.title), h('p', { class: 'faint small' }, it.why), h('p', { class: 'how' }, it.how),
           actions ? h('div', { class: 'row' }, h('button', { class: 'btn small', onclick: () => pushSuggestion(it) }, icon('send'), 'Apply'), h('button', { class: 'btn ghost small', onclick: () => writeClip('Suggestion from Cully: ' + it.title + '. ' + it.how).then(() => toast('Copied. Paste it into a session in a terminal.')).catch(() => showCommand('Suggestion from Cully: ' + it.title + '. ' + it.how)) }, icon('copy'), 'Copy message')) : null))))
-        : h('p', { class: 'faint small' }, 'Once a few sessions are named, the coach looks for patterns across them and suggests a job, skill, MCP server, habit or eval to set up. It also looks again about once an hour while naming is on.'));
+        : h('p', { class: 'faint small' }, 'Once a few sessions are analysed, the coach looks for patterns across them and suggests a job, skill, MCP server, habit or eval to set up. It also looks again about once an hour while naming is on.'));
   }
 
   // The hourly scout switch, and the full history of what scouts found, kept on disk.
@@ -867,14 +867,16 @@
     try { lib = await api('/api/sessions/library'); } catch (_) { return null; }
     const on = lib.analysis.scout;
     const flip = async () => { try { await api('/api/scout/auto', { method: 'POST', body: JSON.stringify({ on: !on }) }); toast(on ? 'The hourly scout is off' : 'The hourly scout is on'); again(); } catch (e) { toast(e.message, true); } };
-    return h('section', { class: 'lib-card' }, h('div', { class: 'row' }, h('b', {}, 'Scout the web every hour'), on && lib.analysis.lastScout && !lib.analysis.lastScout.startsWith('0001') ? h('span', { class: 'faint small' }, 'last ran ' + ago(lib.analysis.lastScout)) : null,
+    return h('section', { class: 'lib-card' }, h('div', { class: 'row' }, h('b', {}, 'Scout the web while you work'), on && lib.analysis.lastScout && !lib.analysis.lastScout.startsWith('0001') ? h('span', { class: 'faint small' }, 'last ran ' + ago(lib.analysis.lastScout)) : null,
       h('button', { class: 'btn small sp' + (on ? ' ghost' : ''), onclick: flip }, icon(on ? 'x' : 'globe'), on ? 'Turn off' : 'Turn on')),
-      h('p', { class: 'faint small' }, 'Once an hour the advisor reads what you have been working on and picks a specific search that would help, such as a library, an error or a practice you keep running into. The scout runs it and the findings are kept below. Searches use general technical terms only: never a folder, project, path, link or ticket. It needs at least three named sessions, so start naming sessions on the Session library page first.'));
+      h('p', { class: 'faint small' }, 'While you are working (a session changed in the last 90 minutes), at most once an hour the advisor gives one search; when you are away, every 12 hours the scouts found so far are merged into at most three suggestions, with repeats of the last week dropped. The advisor reads what you have been working on and picks a specific search that would help, such as a library, an error or a practice you keep running into. The scout runs it and the findings are kept below. Searches use general technical terms only: never a folder, project, path, link or ticket. It needs at least three named sessions, so start naming sessions on the Session library page first.'));
   }
   async function scoutHistory() {
     let list = [];
-    try { list = await api('/api/research?kind=scout'); } catch (_) { return null; }
-    return h('section', { class: 'lib-card' }, h('b', {}, 'Scout history'), h('p', { class: 'faint small' }, list.length ? list.length + ' scouts kept on this computer.' : 'Nothing yet. Scouts you start, the ones the advisor starts and the ones run for an agent are all kept here.'),
+    let digests = [];
+    try { list = await api('/api/research?kind=scout'); digests = await api('/api/research?kind=digest'); } catch (_) { return null; }
+    return h('section', { class: 'lib-card' }, h('b', {}, 'Scout history'),
+      ...digests.slice(0, 3).map((r) => h('details', { class: 'rl', open: true }, h('summary', {}, h('span', { class: 'rq' }, 'Suggestions'), h('span', { class: 'faint small' }, ago(r.time)), h('span', { class: 'chip' }, r.source)), h('div', { class: 'rbody' }, markdown(r.text)))), h('p', { class: 'faint small' }, list.length ? list.length + ' scouts kept on this computer.' : 'Nothing yet. Scouts you start, the ones the advisor starts and the ones run for an agent are all kept here.'),
       ...list.map((r) => h('details', { class: 'rl' }, h('summary', {}, h('span', { class: 'rq' }, r.query || 'Scout'), h('span', { class: 'faint small' }, ago(r.time)), h('span', { class: 'chip' }, r.source)), h('div', { class: 'rbody' }, markdown(r.text)))));
   }
 
@@ -904,6 +906,50 @@
   }
 
   // ---------- evals ----------
+  // What evals are, in plain words. The ideas come from how coding-agent research tests agents:
+  // a fixed set of small tasks with checks a reader can judge, rerun whenever the agent changes,
+  // including a case where it should refuse, so a better-looking agent is not just a bolder one.
+  function evalsExplainer() {
+    return h('section', { class: 'lib-card' }, h('b', {}, 'What evals are'),
+      h('p', { class: 'faint small' }, 'An eval is a small test for an agent. It has a task, a few checks written in plain words, and a judge that reads the answer and says pass, partly or fail. You run the same set again after you change an agent\'s instructions or tools, to see whether it got better or worse, instead of guessing.'),
+      h('ul', { class: 'files' },
+        h('li', {}, h('b', {}, 'Do'), ': it does what its role says.'),
+        h('li', {}, h('b', {}, 'Refuse'), ': it declines something outside its role. An agent that never says no is not safe to schedule.'),
+        h('li', {}, h('b', {}, 'Edge'), ': an awkward request, such as missing information.')),
+      h('p', { class: 'faint small' }, 'Cully drafts the cases for each of your agents from its role and rules. You approve the ones worth keeping; only approved cases run. Eval runs only plan and answer, they never change files, and they use the agent\'s own tools limits. Cases made from your finished sessions are further down.'));
+  }
+  const CASE_KIND = { do: 'Do', refuse: 'Refuse', edge: 'Edge' };
+  async function agentEvalCards(again) {
+    let list = [];
+    try { list = (await api('/api/identities')).filter((a) => a.approved !== false); } catch (_) { return { nodes: [], busy: false }; }
+    if (!list.length) return { nodes: [emptyCard('No agents yet', 'Evals for an agent appear here once you have one. Create an agent first.', 'Open Agents', '#/dashboard/agents')], busy: false };
+    let busy = false;
+    const nodes = [];
+    for (const a of list) {
+      let v = null;
+      try { v = await api('/api/identities/' + a.id + '/evals'); } catch (_) { continue; }
+      const run = v.runs && v.runs[0];
+      if (run && !run.done) busy = true;
+      const resFor = (cid) => run && run.results.find((r) => r.caseId === cid);
+      const approved = v.cases.filter((c) => c.approved);
+      const act = (label, ic, path, opts, ok) => h('button', { class: 'btn small' + (opts && opts.ghost ? ' ghost' : ''), disabled: !!(opts && opts.off), onclick: async (e) => { e.target.disabled = true; try { const r = await api(path, { method: opts && opts.method || 'POST' }); if (ok) toast(typeof ok === 'function' ? ok(r) : ok); again(); } catch (x) { toast(x.message, true); e.target.disabled = false; } } }, icon(ic), label);
+      const pass = run ? run.results.filter((r) => r.status === 'pass').length : 0;
+      nodes.push(h('section', { class: 'lib-card' },
+        h('div', { class: 'row' }, h('b', {}, a.name),
+          run ? h('span', { class: 'chip ' + (run.done ? (pass === run.total ? 'run-pass' : 'run-partial') : 'run-running') }, run.done ? pass + ' of ' + run.total + ' passed' : 'Running ' + run.results.length + ' of ' + run.total) : h('span', { class: 'chip' }, 'Never run'),
+          v.changed ? h('span', { class: 'chip run-partial', title: 'Its instructions or tools changed after the last run' }, 'Changed since last run') : null,
+          h('span', { class: 'sp' }), act('Draft cases', 'plus', '/api/identities/' + a.id + '/evals/suggest', { ghost: true, off: v.cases.length >= 8 }, (r) => (r && r.added ? r.added + ' drafted. Approve the ones you want.' : 'Nothing new to add.')),
+          act('Run ' + approved.length, 'send', '/api/identities/' + a.id + '/evals/run', { off: !approved.length || (run && !run.done) }, 'Started. Each case is a short answer-only run.')),
+        v.cases.length ? h('ul', { class: 'hrows' }, ...v.cases.map((c) => { const r = resFor(c.id); return h('li', { class: 'hrow' },
+          h('div', { class: 'hmain' }, h('div', { class: 'ht' }, h('span', { class: 'chip' }, CASE_KIND[c.kind] || c.kind), ' ' + c.name, r ? h('span', { class: 'chip run-' + r.status }, RUN_LABEL[r.status] || r.status) : null, c.approved ? null : h('span', { class: 'chip' }, 'Draft')),
+            h('p', { class: 'hdesc' }, c.task),
+            c.checks.length ? h('ul', { class: 'files' }, ...c.checks.map((x) => h('li', {}, x))) : null,
+            r && r.reason ? h('p', { class: 'faint small' }, r.reason) : null),
+          h('div', { class: 'row hact' }, c.approved ? null : act('Approve', 'check', '/api/identities/' + a.id + '/evals/' + c.id + '/approve', {}), r && r.taskId ? h('a', { class: 'btn ghost small', href: '#/task/' + r.taskId }, 'Open') : null, act('Remove', 'x', '/api/identities/' + a.id + '/evals/' + c.id, { ghost: true, method: 'DELETE' }))); }))
+          : h('p', { class: 'faint small' }, 'No cases yet. Draft some from this agent\'s role and rules.')));
+    }
+    return { nodes, busy };
+  }
   const RUN_LABEL = { running: 'Running', judging: 'Judging', pass: 'Passed', partial: 'Partly', fail: 'Failed', error: 'No result' };
   async function renderEvals(out, head) {
     const [cases, runs] = await Promise.all([api('/api/sessions/evals').catch(() => []), api('/api/evals/runs').catch(() => [])]);
@@ -913,7 +959,13 @@
     const start = async (c, btn) => { btn.disabled = true; try { await api('/api/evals/' + c.id + '/run', { method: 'POST' }); toast('Started. A fresh agent is working on this goal.'); again(); } catch (e) { toast(e.message, true); btn.disabled = false; } };
     const lastFor = (id) => runs.find((r) => r.evalId === id);
     const passed = runs.filter((r) => r.status === 'pass').length; const failed = runs.filter((r) => r.status === 'fail').length;
+    const agentCards = await agentEvalCards(again);
+    const agentBusy = agentCards.busy;
     out.replaceChildren(head(refreshBtn(again)),
+      evalsExplainer(),
+      h('h3', { class: 'section-h' }, 'Your agents'),
+      ...agentCards.nodes,
+      h('h3', { class: 'section-h' }, 'From your sessions'),
       h('div', { class: 'kpis' }, ...[['Eval cases', String(cases.length)], ['Runs', String(runs.length)], ['Passed', String(passed)], ['Failed', String(failed)], ['Running now', String(runs.filter((r) => r.status === 'running' || r.status === 'judging').length)]].map(([k, v]) => h('div', { class: 'kpi' }, h('b', {}, v), h('span', {}, k)))),
       h('h3', { class: 'section-h' }, 'Runs'),
       runs.length ? h('ul', { class: 'hrows' }, ...runs.slice(0, 30).map((r) => h('li', { class: 'hrow' },
@@ -929,7 +981,7 @@
           c.criteria.length ? h('ul', { class: 'files' }, ...c.criteria.map((x) => h('li', {}, x))) : null,
           h('div', { class: 'row' }, h('span', { class: 'chip' }, icon('folder'), c.folder), h('span', { class: 'chip' }, 'made ' + ago(c.created)))), h('div', { class: 'row hact' }, btn)); }))
         : emptyCard('No eval cases yet', 'Open Session health, pick a session that finished its job and choose Make an eval.', 'Open Session health', '#/dashboard/health'));
-    if (active) setTimeout(() => { if (live()) again(); }, 4000);
+    if (active || agentBusy) setTimeout(() => { if (live()) again(); }, 4000);
   }
 
   // What a good session looks like, and how the user's own sessions compare. The practices come from
@@ -1010,7 +1062,7 @@
           h('li', {}, h('b', {}, 'Schedule'), 'Run it now, every hour, or every day while the Cully page server is running. Each run keeps a short summary.'))),
       h('section', { class: 'lib-card' }, h('div', { class: 'row' }, h('b', {}, 'Suggested for you'), askBtn),
         proposals.length ? h('ul', { class: 'hrows' }, ...proposals.map(proposalCard))
-          : h('p', { class: 'faint small' }, 'Cully reads your named sessions and proposes agents for work you repeat or skip, such as watching pull requests or running the tests. You review each one before it exists. It looks again about once an hour while naming is on.')),
+          : h('p', { class: 'faint small' }, 'Cully reads your analysed sessions and proposes agents for work you repeat or skip, such as watching pull requests or running the tests. You review each one before it exists. It looks again about once an hour while naming is on.')),
       list.length ? h('div', { class: 'groups' }, ...list.map(card)) : emptyCard('No agents yet', 'Create one for work you repeat: watching pull requests, guarding the tests, checking dependencies.', null, null));
     if (live) setTimeout(() => { if (S.route.name === 'team') again(); }, 4000);
   }
@@ -1083,7 +1135,7 @@
       h('p', { class: 'faint' }, 'One skill, dev-workflow-rules, that tells every harness how you work: the projects you are on, the harnesses you use, habits that help and things to avoid. Cully drafts it from your sessions and keeps it up to date, but never saves anything until you approve it. It looks about once a day, and a notification asks you to review.'),
       h('section', { class: 'lib-card' }, h('div', { class: 'row' }, h('b', {}, 'Where it lives'), askBtn),
         h('ul', { class: 'rules' }, ...v.targets.map((t) => h('li', {}, harnessChip(t.agent), h('code', {}, t.path), h('span', { class: 'chip ' + (t.exists ? 'ok' : '') }, t.exists ? 'Saved' : 'Not created yet')))),
-        v.named < v.needed ? h('p', { class: 'faint small' }, 'Cully needs ' + v.needed + ' named sessions to write it; ' + v.named + ' so far. Start naming sessions on the Session library page.') : null),
+        v.named < v.needed ? h('p', { class: 'faint small' }, 'Cully needs ' + v.needed + ' analysed sessions to write it; ' + v.named + ' so far. Start naming sessions on the Session library page.') : null),
       proposal,
       v.exists ? h('section', { class: 'lib-card' }, h('b', {}, 'Your current rules'), h('div', { class: 'quote' }, markdown(v.current))) : null);
   }
@@ -1133,7 +1185,7 @@
               : h('button', { class: 'btn small', disabled: x.completed !== 'yes' || !x.task, title: x.completed === 'yes' ? 'Save this session as a test case for future agents' : 'Only completed sessions can become an eval', onclick: () => makeEval(x) }, icon('check'), 'Make an eval')));
       })) : null,
       judged.length > rows.length ? h('div', { class: 'row' }, h('button', { class: 'btn ghost', onclick: () => { S.healthShown = (S.healthShown || 25) + 25; again(); } }, 'Show more')) : null,
-      h('section', { class: 'lib-card' }, h('b', {}, 'About evals'), h('p', { class: 'faint small' }, 'An eval case turns a session that finished its job into a test: the goal in one sentence, how to tell it was met, and what the session actually did. It holds no prompts or replies. Cases are saved as files in your Cully folder under evals, one per session.')));
+      h('section', { class: 'lib-card' }, h('b', {}, 'About evals'), h('p', { class: 'faint small' }, 'An eval case turns a session that finished its job into a test: the goal in one sentence, how to tell it was met, and what the session actually did. It holds no prompts or replies. Cases are kept in the local database.')));
   }
 
   // ---------- session library ----------
@@ -1187,12 +1239,12 @@
     const pct = total ? Math.round((t.analyzed / total) * 100) : 0;
     const toggle = async (on) => { try { await api('/api/sessions/analysis', { method: 'POST', body: JSON.stringify({ on }) }); again(); } catch (e) { toast(e.message, true); } };
     const analysis = lib.analysis.on
-      ? h('section', { class: 'lib-card' }, h('div', { class: 'row' }, h('b', {}, 'Naming your sessions'), h('span', { class: 'faint' }, t.analyzed + ' of ' + total + ' done'), h('button', { class: 'btn ghost small sp', onclick: () => toggle(false) }, 'Pause')),
+      ? h('section', { class: 'lib-card' }, h('div', { class: 'row' }, h('b', {}, 'Analysing your sessions'), h('span', { class: 'faint' }, t.analyzed + ' of ' + total + ' done'), h('button', { class: 'btn ghost small sp', onclick: () => toggle(false) }, 'Pause')),
         h('div', { class: 'bar' }, fill(pct)),
-        h('p', { class: 'faint small' }, 'Claude reads each finished session in the background and writes a title, a short description and what could go better. It does up to ' + lib.analysis.perHour + ' an hour, newest first, so the first pass takes a while. It uses your Claude plan.'))
-      : h('section', { class: 'lib-card' }, h('b', {}, t.pending ? 'Name your ' + t.pending + ' past sessions' : 'All sessions are named'),
-        h('p', { class: 'faint small' }, 'Claude can read each finished session in the background and write a title, a short description and what could go better. Nothing is sent anywhere except to your own Claude, and folders you hide are skipped. It takes a while and uses your Claude plan.'),
-        t.pending ? h('button', { class: 'btn', onclick: () => toggle(true) }, icon('spark'), 'Start naming sessions') : null);
+        h('p', { class: 'faint small' }, 'Claude reads each finished session in the background and works out its goal, whether it was finished and stayed on task, where it looped or went unchecked, and what could go better, and gives it a title. It does up to ' + lib.analysis.perHour + ' an hour, newest first, so the first pass takes a while. It uses your Claude plan.'))
+      : h('section', { class: 'lib-card' }, h('b', {}, t.pending ? 'Analyse your ' + t.pending + ' past sessions' : 'All sessions are analysed'),
+        h('p', { class: 'faint small' }, 'Claude can read each finished session in the background and work out its goal, whether it was finished and stayed on task, where it looped or went unchecked, and what could go better. Nothing is sent anywhere except to your own Claude, and folders you hide are skipped. It takes a while and uses your Claude plan.'),
+        t.pending ? h('button', { class: 'btn', onclick: () => toggle(true) }, icon('spark'), 'Start analysing sessions') : null);
     const maxT = Math.max(1, ...lib.folders.map((f) => f.activeSec));
     const folders = h('section', { class: 'lib-card' }, h('b', {}, 'Where the time went'),
       h('ul', { class: 'fbars' }, ...lib.folders.slice(0, 12).map((f) => h('li', { title: f.cwd }, h('span', { class: 'fname' }, f.name), h('span', { class: 'fbar' }, fill(Math.max(2, Math.round((f.activeSec / maxT) * 100)))),
@@ -1210,7 +1262,7 @@
         x.different && x.different !== 'Nothing notable.' ? h('p', { class: 'hdiff' }, h('b', {}, 'Could go better: '), x.different) : null)));
     const insights = libraryInsights(lib);
     out.replaceChildren(head(refreshBtn(again)),
-      h('div', { class: 'kpis' }, ...[['Sessions', String(t.sessions)], ['Time worked', dur(t.activeSec)], ['Named', t.analyzed + ' of ' + total], ...insights.kpis].map(([k, v]) => h('div', { class: 'kpi' }, h('b', {}, v), h('span', {}, k)))),
+      h('div', { class: 'kpis' }, ...[['Sessions', String(t.sessions)], ['Time worked', dur(t.activeSec)], ['Analysed', t.analyzed + ' of ' + total], ...insights.kpis].map(([k, v]) => h('div', { class: 'kpi' }, h('b', {}, v), h('span', {}, k)))),
       analysis, insights.card, await coachCard(again, true), folders,
       h('h3', { class: 'section-h' }, 'Sessions'),
       rows.length ? h('ul', { class: 'hrows' }, ...rows) : emptyCard('No sessions yet', 'Sessions you run appear here, with how long you worked and what you did.', 'Start a task', '#/'),
@@ -1446,6 +1498,36 @@
       h('button', { class: 'btn ghost small', onclick: async () => { try { await api('/api/agents/' + g.agentId + '/advice/' + x.id + '/dismiss', { method: 'POST' }); drawPanel('advisor', true); } catch (e) { toast(e.message, true); } } }, 'Dismiss')));
     return h('div', { class: 'advcard ' + x.level + ' ' + state }, ...kids);
   }
+  // The Advisor's inbox: everything Cully suggests, in one place. The Advisor decides what to
+  // suggest; Agents, Background jobs and Workflow rules only show what you approved. A background
+  // job is one fixed command at a set time (no model, no tokens); an agent reads and judges.
+  const SUG_LABEL = { agent: 'Agent', job: 'Background job', coach: 'Tip', rules: 'Workflow rules', digest: 'Scouts' };
+  async function suggestionInbox(again) {
+    let list = [];
+    try { list = await api('/api/suggestions'); } catch (_) { return null; }
+    const ask = async (btn) => { btn.disabled = true; try { const r = await api('/api/job-suggestions/run', { method: 'POST' }); toast(r.added ? r.added + ' background job ' + (r.added === 1 ? 'proposal' : 'proposals') : 'Nothing repeats enough to need a background job yet.'); again(); } catch (e) { toast(e.message, true); btn.disabled = false; } };
+    const card = (x) => {
+      const time = x.kind === 'job' ? h('input', { type: 'time', value: x.after || '02:00', 'aria-label': 'Time of day', class: 'timein' }) : null;
+      const acts = [];
+      if (x.kind === 'job') {
+        acts.push(h('button', { class: 'btn small', onclick: async (e) => { e.target.disabled = true; try { await api('/api/job-suggestions/' + x.id + '/accept', { method: 'POST', body: JSON.stringify({ after: time.value }) }); toast('Added. It runs after ' + time.value + ' while Cully is running.'); again(); } catch (err) { toast(err.message, true); e.target.disabled = false; } } }, icon('check'), 'Approve'));
+        acts.push(h('button', { class: 'btn ghost small', onclick: async () => { try { await api('/api/job-suggestions/' + x.id + '/dismiss', { method: 'POST' }); again(); } catch (err) { toast(err.message, true); } } }, 'Reject'));
+      } else if (x.kind === 'agent') {
+        acts.push(h('a', { class: 'btn small', href: x.href }, icon('check'), 'Review and approve'));
+        acts.push(h('button', { class: 'btn ghost small', onclick: async () => { try { await api('/api/agent-suggestions/' + x.id + '/dismissed', { method: 'POST' }); again(); } catch (err) { toast(err.message, true); } } }, 'Reject'));
+      } else if (x.href) acts.push(h('a', { class: 'btn ghost small', href: x.href }, 'Open'));
+      return h('li', { class: 'hrow' }, h('div', { class: 'hmain' }, h('div', { class: 'ht' }, h('span', { class: 'chip' }, SUG_LABEL[x.kind] || x.kind), ' ' + x.title),
+        x.why ? h('p', { class: 'hdesc' }, x.why) : null,
+        x.detail ? h('p', { class: 'faint small' }, x.detail) : null,
+        x.command ? h('p', { class: 'small' }, h('span', { class: 'faint' }, 'It will run: '), h('code', {}, x.command)) : null,
+        time ? h('div', { class: 'row' }, h('span', { class: 'faint small' }, 'Run after'), time) : null),
+        h('div', { class: 'row hact' }, ...acts));
+    };
+    return h('section', { class: 'lib-card' }, h('div', { class: 'row' }, h('b', {}, 'Suggestions'), h('span', { class: 'faint small' }, list.length ? list.length + ' waiting for you' : 'Nothing waiting'),
+      h('button', { class: 'btn ghost small sp', title: 'Ask the advisor whether a chore you repeat should be a background job', onclick: (e) => ask(e.target) }, icon('spark'), 'Look for background jobs')),
+      h('p', { class: 'faint small' }, 'The Advisor makes every suggestion, from your analysed sessions and what you ask Claude to do again and again. A background job is one fixed command that runs by itself at a time you choose, with no model and no tokens, for chores like running the tests overnight. An agent is for work that needs reading and judgement. Nothing starts until you approve it.'),
+      list.length ? h('ul', { class: 'hrows' }, ...list.map(card)) : null);
+  }
   function renderAdvisor(list) {
     if (!list.length) return emptyCard('No tasks yet', 'The advisor reviews what a running agent is doing and suggests what to fix or check. Start a task to get advice.', 'Start a task', '#/');
     return h('div', { class: 'groups' }, ...list.map((g) => {
@@ -1519,7 +1601,7 @@
     rescue: ['Nothing to check yet', 'There is no session history for this project, so there is nothing to diagnose. If an agent gets stuck, the check appears here.'],
     suggestions: ['No tips right now', 'Cully has no suggestions from your terminal sessions.'],
     impact: ['Nothing to measure yet', 'Savings appear once Cully has recorded some sessions.'],
-    jobs: ['No background jobs', 'Background jobs run on a schedule you set. None are set up.'],
+    jobs: ['No background jobs', 'A background job is one fixed command that runs at a time you choose, with no model and no tokens. None are set up. The Advisor proposes them from the chores you repeat; approve one on the Advisor page.'],
     timeline: ['No session to show', 'The timeline needs a recorded session.'],
     replay: ['No session to show', 'Replay needs a recorded session.'],
   };
@@ -1562,7 +1644,7 @@
   // ----- structure -----
   const DASH = [
     [null, [['overview', 'Overview', 'What needs you']]],
-    ['Work', [['advisor', 'Advisor', 'Advice for your tasks'], ['library', 'Session library', 'Every past session, named'], ['rules', 'Workflow rules', 'How you work, for every harness'], ['health', 'Session health', 'Did sessions finish the job?'], ['evals', 'Evals', 'Test cases and their runs'], ['scout', 'Scout', 'Live searches and findings'], ['activity', 'Activity', 'What was done, step by step']]],
+    ['Work', [['advisor', 'Advisor', 'Advice for your tasks'], ['library', 'Session library', 'Every past session, analysed'], ['rules', 'Workflow rules', 'How you work, for every harness'], ['health', 'Session health', 'Did sessions finish the job?'], ['evals', 'Evals', 'Test cases and their runs'], ['scout', 'Scout', 'Live searches and findings'], ['activity', 'Activity', 'What was done, step by step']]],
     ['Health', [['setup', 'Setup', 'Is everything connected?'], ['savings', 'Savings', 'What Cully saved and cost']]],
     ['More', [['jobs', 'Background jobs', 'Runs on a schedule']]],
   ];
@@ -1637,7 +1719,7 @@
       kpi(dur(sec(week)), 'Time worked, 7 days', trend == null ? null : (trend >= 0 ? 'Up ' : 'Down ') + Math.abs(trend) + '% on the week before'),
       kpi(String(week.length), 'Sessions, 7 days', Object.entries(byHarness).map(([k, v]) => (AGENT_LABEL[k] || k) + ' ' + v).join(', ') || null),
       usage && usage.tasks ? kpi(fmtTokens(usage.tokens), 'Task tokens, 7 days', usage.cachedShare + '% from cache, about ' + fmtTokens(usage.saved) + ' saved') : kpi('None yet', 'Task tokens, 7 days', 'Shows once a task finishes'),
-      avgHealth == null ? kpi('Not judged', 'Session health', 'Start naming sessions') : kpi(String(avgHealth), 'Session health', judged.filter((x) => x.completed === 'yes').length + ' of ' + judged.length + ' finished the job'));
+      avgHealth == null ? kpi('Not judged', 'Session health', 'Start analysing sessions') : kpi(String(avgHealth), 'Session health', judged.filter((x) => x.completed === 'yes').length + ' of ' + judged.length + ' finished the job'));
     // Right now.
     const live = S.agents.filter((x) => ['preparing', 'working', 'waiting'].includes(x.state));
     const taskRow = (x) => h('li', {}, h('span', { class: 'dot ' + x.state }), h('a', { class: 'rt', href: '#/task/' + x.id }, x.title),
@@ -1652,7 +1734,7 @@
     const attention = judged.filter((x) => x.health < 70).sort((x, y) => x.health - y.health).slice(0, 3);
     const lookCard = h('section', { class: 'lib-card' }, h('div', { class: 'row' }, h('b', {}, 'Worth a look'), h('a', { class: 'linkbtn sp', href: '#/dashboard/health' }, 'Session health')),
       attention.length ? h('ul', { class: 'attn-list' }, ...attention.map((x) => h('li', {}, ring(x.health, 34), h('div', {}, h('b', {}, x.title || x.name), harnessChip(x.agent), h('div', { class: 'faint small' }, (x.signals || []).join('. ') || 'Low health')))))
-        : h('p', { class: 'faint small' }, judged.length ? 'Every session this week looks healthy.' : 'Once your sessions are named, the ones that went wrong show here.'),
+        : h('p', { class: 'faint small' }, judged.length ? 'Every session this week looks healthy.' : 'Once your sessions are analysed, the ones that went wrong show here.'),
       coach && coach.items.length ? h('div', { class: 'coachline' }, h('span', { class: 'kind' }, COACH_KIND[coach.items[0].kind] || coach.items[0].kind), h('div', {}, h('b', {}, coach.items[0].title), h('div', { class: 'faint small' }, coach.items[0].how)), h('button', { class: 'btn small', onclick: () => pushSuggestion(coach.items[0]) }, 'Apply')) : null);
     // Harness mix and agents.
     const mixTotal = Object.values(byHarness).reduce((n, v) => n + v, 0);
@@ -1777,7 +1859,39 @@
     return h('div', { class: 'timeline' }, ...blocks.map((b) => h('section', { class: 'tl-block' }, h('div', { class: 'tl-when' }, new Date(b.at).toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' })),
       h('ul', {}, ...b.items.map((e) => h('li', { class: (e.failed ? 'bad ' : '') + e.kind }, icon(e.failed ? 'x' : KIND_ICON[e.kind] || 'spark'), h('span', { class: 'tw' }, KIND_WORD[e.kind] || ''), h('span', { class: 'tl' }, e.label || ''), h('span', { class: 'tt faint small' }, new Date(e.t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }))))))));
   }
+  // The feed: what happened across Cully, newest first, grouped by day. Each row says what it was,
+  // how it went (a coloured dot), when, and opens the place with the detail.
+  const FEED_KINDS = [['', 'Everything'], ['task', 'Tasks'], ['agent', 'Agents'], ['eval', 'Evals'], ['scout', 'Scout'], ['advice', 'Advice']];
+  const FEED_ICON = { task: 'term', agent: 'spark', eval: 'check', scout: 'globe', advice: 'alert' };
+  async function renderFeed(out, head) {
+    const kind = S.feedKind || '';
+    let list = [];
+    try { list = await api('/api/feed' + (kind ? '?kind=' + kind : '')); } catch (e) { out.replaceChildren(head(), h('div', { class: 'callout' }, e.message)); return; }
+    const again = () => renderFeed(out, head);
+    const chips = h('div', { class: 'row filters' }, ...FEED_KINDS.map(([k, l]) => h('button', { type: 'button', class: 'toggle' + (kind === k ? ' on' : ''), onclick: () => { S.feedKind = k; again(); } }, l)));
+    const days = [];
+    for (const it of list) {
+      const d = new Date(it.at).toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric' });
+      if (!days.length || days[days.length - 1].d !== d) days.push({ d, items: [] });
+      days[days.length - 1].items.push(it);
+    }
+    const needs = list.filter((i) => i.status === 'wait' && i.kind === 'task').length;
+    out.replaceChildren(head(refreshBtn(again)),
+      activityTabs('feed'),
+      needs ? h('div', { class: 'callout' }, needs + (needs === 1 ? ' task needs' : ' tasks need') + ' your answer.') : null,
+      chips,
+      days.length ? h('div', { class: 'timeline' }, ...days.map((g) => h('section', { class: 'tl-block' }, h('div', { class: 'tl-when' }, g.d),
+        h('ul', {}, ...g.items.map((it) => h('li', { class: it.status === 'bad' ? 'bad' : '' },
+          icon(FEED_ICON[it.kind] || 'spark'),
+          h('a', { class: 'tw', href: it.href || '#/dashboard/activity' }, it.title),
+          it.detail ? h('span', { class: 'faint small' }, ' ' + it.detail) : null,
+          h('span', { class: 'chip run-' + (it.status === 'good' ? 'pass' : it.status === 'bad' ? 'fail' : it.status === 'wait' ? 'partial' : 'running') }, it.status === 'good' ? 'ok' : it.status === 'bad' ? 'problem' : it.status === 'wait' ? 'needs you' : 'info'),
+          h('span', { class: 'faint small' }, ' ' + new Date(it.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }))))))))
+        : emptyCard('Nothing has happened yet', 'Tasks, agent runs, evals, scouts and advice show up here as they happen.', 'Start a task', '#/'));
+  }
+  const activityTabs = (on) => h('div', { class: 'row filters' }, h('button', { type: 'button', class: 'toggle' + (on === 'feed' ? ' on' : ''), onclick: () => { S.activityTab = 'feed'; drawPanel('activity', true); } }, 'Feed'), h('button', { type: 'button', class: 'toggle' + (on === 'folder' ? ' on' : ''), onclick: () => { S.activityTab = 'folder'; drawPanel('activity', true); } }, 'This folder'));
   async function renderActivity(out, head, filter) {
+    if ((S.activityTab || 'feed') === 'feed') { await renderFeed(out, head); return; }
     const repo = encodeURIComponent(S.opts.repo || '');
     const [sum, data] = await Promise.all([api('/api/handoff?repo=' + repo), api('/api/activity?repo=' + repo)]);
     const chips = h('div', { class: 'row filters' }, ...[['all', 'Everything'], ['files', 'Files'], ['commands', 'Commands and checks'], ['problems', 'Problems']].map(([k, l]) => h('button', { type: 'button', class: 'toggle' + (k === filter ? ' on' : ''), onclick: () => { S.activityFilter = k; drawPanel('activity', true); } }, l)));
@@ -1785,6 +1899,7 @@
       h('details', { class: 'more' }, h('summary', {}, 'Show files'), h('ul', { class: 'flist' }, ...sum.files.map((f) => h('li', {}, f)), sum.fileCount > sum.files.length ? h('li', { class: 'faint' }, 'and ' + (sum.fileCount - sum.files.length) + ' more') : null))]
       : [h('p', { class: 'faint' }, 'No uncommitted changes in this folder.')];
     out.replaceChildren(head(copyBtn('Copy for another agent', () => api('/api/panel/handoff?repo=' + repo)), refreshBtn(() => drawPanel('activity', true))),
+      activityTabs('folder'),
       h('section', { class: 'group' }, h('header', {}, h('span', { class: 'gt' }, 'Where it left off')), ...state,
         data.recorded ? h('p', { class: 'faint' }, checksSentence(data.facts.checks, data.facts.editsSinceCheck)) : null),
       data.recorded
@@ -1814,7 +1929,7 @@
           let body;
           if (tab === 'terminal') { const text = await api('/api/panel/suggestions?repo=' + encodeURIComponent(S.opts.repo || '')); body = renderText('suggestions', text); } else body = renderAdvisor(data);
           if (!live()) return;
-          out.replaceChildren(head(tabs, refreshBtn(again)), tab === 'agents' ? await coachCard(again, true) : null, body);
+          out.replaceChildren(head(tabs, refreshBtn(again)), tab === 'agents' ? await suggestionInbox(again) : null, tab === 'agents' ? await coachCard(again, true) : null, body);
         } else out.replaceChildren(head(refreshBtn(again)), await scoutAuto(again), renderScout(data, runs), await scoutHistory());
         return;
       }

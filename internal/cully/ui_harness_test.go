@@ -127,7 +127,7 @@ func TestHarnessRoundsAreCapped(t *testing.T) {
 
 func TestPageOffersTheHarnessAndTheScoutHistory(t *testing.T) {
 	b, _ := uiStaticFS.ReadFile("ui_static/app.js")
-	for _, want := range []string{"Keep going until checked", "doneWhen", "Checking: round", "Scout the web every hour", "Scout history", "/api/scout/auto", "/api/research?kind=scout"} {
+	for _, want := range []string{"Keep going until checked", "doneWhen", "Checking: round", "Scout the web while you work", "Scout history", "/api/scout/auto", "/api/research?kind=scout"} {
 		if !strings.Contains(string(b), want) {
 			t.Errorf("app.js lacks %q", want)
 		}

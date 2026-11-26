@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestOnlyGeneralTopicsMayGoToTheWeb(t *testing.T) {
@@ -55,6 +56,13 @@ func TestHourlyScoutPicksATopicFromTheSessionsAndRunsItOncePerHour(t *testing.T)
 		t.Fatalf("the scout ran while off: %d %d", n, asked)
 	}
 	m.setAutoScout(true)
+	// Sessions here are two hours old: outside the active period nothing new is searched.
+	if n := m.scoutIfDue(); n != 0 || asked != 0 {
+		t.Fatalf("the scout ran during cooldown: %d %d", n, asked)
+	}
+	old := uiAutoScoutActive
+	uiAutoScoutActive = 3 * time.Hour
+	t.Cleanup(func() { uiAutoScoutActive = old })
 	if n := m.scoutIfDue(); n != 1 {
 		t.Fatalf("started %d scouts, want 1 (the second topic names the project)", n)
 	}
@@ -93,5 +101,43 @@ func TestAutoScoutEndpoint(t *testing.T) {
 	}
 	if !m.sessionLibrary().Analysis.Scout {
 		t.Fatal("hourly scout not on")
+	}
+}
+
+func TestSimilarSearchesCountAsRepeatsButDifferentOnesDoNot(t *testing.T) {
+	past := []string{"go test flakiness from shared state"}
+	for _, q := range []string{"Go test flakiness shared state", "fixing flaky go tests: shared state", "go tests flakiness from shared global state"} {
+		if !uiTopicSeen(q, past) {
+			t.Errorf("%q should be a repeat", q)
+		}
+	}
+	for _, q := range []string{"sqlite wal busy timeout settings", "react suspense data fetching"} {
+		if uiTopicSeen(q, past) {
+			t.Errorf("%q should be new", q)
+		}
+	}
+}
+
+func TestDigestMergesScoutsIntoFewSuggestionsOncePerTwelveHours(t *testing.T) {
+	m, repo, _ := uiIndexManager(t)
+	for _, q := range []string{"sqlite wal busy timeout", "go context cancel workers", "http retry backoff jitter"} {
+		m.recordResearch(uiResearchRec{Kind: "scout", Source: "Advisor, every hour: x", Repo: repo, Query: q, Text: "found " + q})
+	}
+	asked := 0
+	m.cfg.Advisor = func(_ string, _ string, _ bool, prompt string) (string, error) {
+		asked++
+		return "SUGGESTION|Tune SQLite|Set busy timeout.\nSUGGESTION|Cancel workers|Use context.\nSUGGESTION|Add jitter|Spread retries.\nSUGGESTION|Fourth|dropped\nnoise", nil
+	}
+	if n := m.digestIfDue(uiLibrary{}); n != 3 {
+		t.Fatalf("suggestions = %d, want 3", n)
+	}
+	d := m.researchList("digest", 5)
+	if len(d) != 1 || strings.Count(d[0].Text, "- **") != 3 {
+		t.Fatalf("digest = %+v", d)
+	}
+	m.recordResearch(uiResearchRec{Kind: "scout", Source: "Advisor, every hour: x", Repo: repo, Query: "another one", Text: "y"})
+	m.recordResearch(uiResearchRec{Kind: "scout", Source: "Advisor, every hour: x", Repo: repo, Query: "and another", Text: "z"})
+	if m.digestIfDue(uiLibrary{}) != 0 || asked != 1 {
+		t.Fatalf("a second digest was made within twelve hours (asked %d)", asked)
 	}
 }
