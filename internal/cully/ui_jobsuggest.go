@@ -91,8 +91,9 @@ var uiJobRules = map[string]uiJobRule{
 	"pytest": {flags: uiSet("-q", "-x", "--maxfail=1"), arg: regexp.MustCompile(`^/[A-Za-z0-9_./-]{0,200}$`)},
 }
 
-func uiJobFolderOK(p string) bool {
-	if !filepath.IsAbs(p) || strings.HasPrefix(p, "-") {
+// uiJobFolderOK reports whether p is exactly the proposal's folder and still a folder.
+func uiJobFolderOK(p, folder string) bool {
+	if !filepath.IsAbs(p) || strings.HasPrefix(p, "-") || folder == "" || filepath.Clean(p) != filepath.Clean(folder) {
 		return false
 	}
 	st, err := os.Stat(p)
@@ -100,7 +101,8 @@ func uiJobFolderOK(p string) bool {
 }
 
 // uiJobCommandOK reports whether a proposed command may be offered to the user.
-func uiJobCommandOK(cmd []string) error {
+// folder is the one folder the proposal is about; the command may name no other.
+func uiJobCommandOK(cmd []string, folder string) error {
 	if len(cmd) == 0 || len(cmd) > 12 {
 		return errors.New("a command needs 1 to 12 words")
 	}
@@ -118,7 +120,7 @@ func uiJobCommandOK(cmd []string) error {
 	}
 	rest := cmd[1:]
 	if rule.dirFlag != "" {
-		if len(rest) < 2 || rest[0] != rule.dirFlag || !uiJobFolderOK(rest[1]) {
+		if len(rest) < 2 || rest[0] != rule.dirFlag || !uiJobFolderOK(rest[1], folder) {
 			return errors.New("the command must start with " + rule.dirFlag + " and an existing folder")
 		}
 		rest = rest[2:]
@@ -132,7 +134,7 @@ func uiJobCommandOK(cmd []string) error {
 	for _, a := range rest {
 		switch {
 		case rule.flags[a]:
-		case rule.arg != nil && rule.arg.MatchString(a) && (cmd[0] != "pytest" || uiJobFolderOK(a)):
+		case rule.arg != nil && rule.arg.MatchString(a) && (cmd[0] != "pytest" || uiJobFolderOK(a, folder)):
 		default:
 			return errors.New(a + " is not allowed in a proposed job")
 		}
@@ -166,7 +168,7 @@ func uiParseJobSuggestions(out string, folders map[string]string, taken map[stri
 			cmd[i] = strings.ReplaceAll(cmd[i], "{folder}", path)
 		}
 		after := strings.TrimSpace(p[4])
-		if _, err := time.Parse("15:04", after); err != nil || uiJobCommandOK(cmd) != nil {
+		if _, err := time.Parse("15:04", after); err != nil || uiJobCommandOK(cmd, path) != nil {
 			continue
 		}
 		why := uiClipWords(p[5], 200)
@@ -306,7 +308,7 @@ func (m *uiManager) jobSuggestionAccept(id, after string) (string, error) {
 		if _, err := time.Parse("15:04", after); err != nil {
 			return "", errors.New("the time must be 24-hour, such as 02:30")
 		}
-		if err := uiJobCommandOK(s.Command); err != nil {
+		if err := uiJobCommandOK(s.Command, s.Folder); err != nil {
 			return "", err
 		}
 		if err := uiAppendJob(scheduledJob{Name: s.Name, Command: s.Command, After: after}); err != nil {

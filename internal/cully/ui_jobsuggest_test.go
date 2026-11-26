@@ -22,6 +22,7 @@ func TestJobProposalsAreCheckedStrictly(t *testing.T) {
 		`JOB|makevar|app|["make","-C","{folder}","test","SHELL=/bin/sh"]|02:00|x`,
 		`JOB|goexec|app|["go","-C","{folder}","test","-exec","sh","./..."]|02:00|x`,
 		`JOB|find|app|["find","{folder}","-exec","id",";"]|02:00|x`,
+		`JOB|otherdir|app|["make","-C","/","test"]|02:00|x`,
 		`JOB|abs|app|["/usr/bin/make","-C","{folder}","test"]|02:00|x`,
 		`JOB|npmbad|app|["npm","--prefix","{folder}","run","evil"]|02:00|x`,
 		`JOB|notjson|app|make test|02:00|x`,
@@ -30,6 +31,9 @@ func TestJobProposalsAreCheckedStrictly(t *testing.T) {
 	got := uiParseJobSuggestions(out, folders, map[string]bool{})
 	if len(got) != 1 || got[0].Name != "nightly-tests" || got[0].Command[2] != "/tmp" || got[0].After != "02:00" {
 		t.Fatalf("proposals = %+v", got)
+	}
+	if uiJobCommandOK([]string{"make", "-C", "/usr", "test"}, "/tmp") == nil || uiJobCommandOK([]string{"pytest", "-q", "/usr"}, "/tmp") == nil {
+		t.Fatal("a command named a folder other than the proposal's")
 	}
 	if got := uiParseJobSuggestions(out, folders, map[string]bool{"nightly-tests": true}); len(got) != 0 {
 		t.Fatal("proposed a job whose name is taken")
