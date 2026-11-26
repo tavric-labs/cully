@@ -54,6 +54,26 @@ type uiParsed struct {
 	Uses     map[string]uiToolUse
 	Results  []uiToolResult
 	Usage    *uiTokens // tokens the turn reported, when it did
+	Model    string    // the model the agent said it is using, from its start line
+	Context  int       // tokens in the context after this call, when it reported them
+	Window   int       // the model's context window, as reported with a result
+	Cost     float64   // what the session has cost so far at list price, as reported
+	Limits   *uiLimits // the account's usage limits, when the agent reported them
+}
+
+// uiWindow is one usage limit window: how much of it is used and when it resets.
+type uiWindow struct {
+	Used     int    `json:"used"`     // percent
+	ResetsAt int64  `json:"resetsAt"` // unix seconds
+	Status   string `json:"status"`
+}
+
+// uiLimits are the five-hour and seven-day limits of the account the task runs on.
+type uiLimits struct {
+	FiveHour uiWindow `json:"fiveHour"`
+	SevenDay uiWindow `json:"sevenDay"`
+	Status   string   `json:"status"`
+	Seen     int64    `json:"seen"` // when the page last heard it, unix seconds
 }
 
 // uiTokens is what one turn used, as the agent reported it. Cache reads cost a
@@ -127,6 +147,9 @@ func parseStreamLine(line []byte) uiParsed {
 	case "system":
 		sub, _ := raw["subtype"].(string)
 		out.Events = append(out.Events, uiEvent{Kind: "system", Text: "agent " + sub})
+		if sub == "init" {
+			out.Model, _ = raw["model"].(string)
+		}
 		if servers, ok := raw["mcp_servers"].([]any); ok && sub == "init" {
 			for _, item := range servers {
 				entry, _ := item.(map[string]any)
@@ -142,8 +165,30 @@ func parseStreamLine(line []byte) uiParsed {
 				}
 			}
 		}
+	case "rate_limit_event":
+		if info, ok := raw["rate_limit_info"].(map[string]any); ok {
+			lim := &uiLimits{}
+			lim.Status, _ = info["status"].(string)
+			if w, ok := info["unifiedWindows"].(map[string]any); ok {
+				lim.FiveHour = uiWindowOf(w["five_hour"])
+				lim.SevenDay = uiWindowOf(w["seven_day"])
+			}
+			out.Limits = lim
+		}
 	case "result":
 		out.TurnDone = true
+		if mu, ok := raw["modelUsage"].(map[string]any); ok {
+			for _, v := range mu {
+				if m, ok := v.(map[string]any); ok {
+					if w := uiNum(m["contextWindow"]); w > out.Window {
+						out.Window = w
+					}
+				}
+			}
+		}
+		if c, ok := raw["total_cost_usd"].(float64); ok {
+			out.Cost = c
+		}
 		failed, _ := raw["is_error"].(bool)
 		text, _ := raw["result"].(string)
 		out.Final = text
@@ -153,6 +198,9 @@ func parseStreamLine(line []byte) uiParsed {
 		out.Events = append(out.Events, uiEvent{Kind: "result", Text: clipUIText(text), Failed: failed})
 	case "assistant", "user":
 		msg, _ := raw["message"].(map[string]any)
+		if u, ok := msg["usage"].(map[string]any); ok && kind == "assistant" {
+			out.Context = uiNum(u["input_tokens"]) + uiNum(u["cache_read_input_tokens"]) + uiNum(u["cache_creation_input_tokens"])
+		}
 		blocks, _ := msg["content"].([]any)
 		if s, ok := msg["content"].(string); ok && kind == "assistant" {
 			out.Events = append(out.Events, uiEvent{Kind: "text", Text: clipUIText(s)})
@@ -228,4 +276,17 @@ func uiToolResultText(v any) string {
 		return strings.Join(parts, "\n")
 	}
 	return ""
+}
+
+func uiWindowOf(v any) uiWindow {
+	m, _ := v.(map[string]any)
+	w := uiWindow{}
+	if u, ok := m["utilization"].(float64); ok {
+		w.Used = int(u*100 + 0.5)
+	}
+	if r, ok := m["resetsAt"].(float64); ok {
+		w.ResetsAt = int64(r)
+	}
+	w.Status, _ = m["status"].(string)
+	return w
 }

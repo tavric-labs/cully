@@ -245,6 +245,8 @@ func uiHistoryFiles(agent string) []uiHistFile {
 				}
 			}
 		}
+	case "cursor":
+		out = append(out, uiCursorFiles()...)
 	case "codex":
 		_ = filepath.WalkDir(uiCodexSessionsDir(), func(p string, d os.DirEntry, err error) error {
 			if err == nil && !d.IsDir() && strings.HasPrefix(d.Name(), "rollout-") && strings.HasSuffix(d.Name(), ".jsonl") {
@@ -275,10 +277,6 @@ func (m *uiManager) history(agent string, days int) uiHistory {
 		return out
 	}
 	h := uiHistory{Agent: agent, Days: days, Sessions: []uiPastSession{}}
-	if agent == "cursor" {
-		h.Note = "Cursor keeps its chats in a format Cully cannot read yet. Sessions running now are listed under Open now."
-		return h
-	}
 	var cutoff time.Time
 	if days > 0 {
 		cutoff = time.Now().Add(-time.Duration(days) * 24 * time.Hour)
@@ -301,9 +299,12 @@ func (m *uiManager) history(agent string, days int) uiHistory {
 		}
 		var s uiPastSession
 		var ok bool
-		if agent == "claude" {
+		switch agent {
+		case "claude":
 			s, ok = uiClaudeSession(f)
-		} else {
+		case "cursor":
+			s, ok = uiCursorSession(f)
+		default:
 			s, ok = uiCodexSession(f)
 		}
 		if !ok || uiHidden(s.Cwd, m.cfg.HideSessionsIn) || uiHidden(s.Cwd, []string{own}) {

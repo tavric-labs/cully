@@ -44,6 +44,8 @@ type uiSession struct {
 	Detached bool      `json:"detached,omitempty"` // running, but its terminal window is gone
 	InUse    bool      `json:"inUse"`              // an agent you launch Cully with
 	Started  time.Time `json:"started"`
+	// What the harness recorded about this session's context and usage, when it did.
+	Snapshot *uiSnapshot `json:"snapshot,omitempty"`
 }
 
 var uiAgentBinaries = map[string]string{"claude": "claude", "codex": "codex", "cursor-agent": "cursor"}

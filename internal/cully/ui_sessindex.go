@@ -336,7 +336,7 @@ func uiSessionFactsOf(path string) (uiSessionFacts, bool) {
 func (m *uiManager) indexSessions(max int) {
 	own := filepath.Join(ConfigDir(), "ui-worktrees")
 	done := 0
-	for _, agent := range []string{"claude", "codex"} {
+	for _, agent := range []string{"claude", "codex", "cursor"} {
 		for _, f := range uiHistoryFiles(agent) {
 			if done >= max {
 				return
@@ -352,9 +352,12 @@ func (m *uiManager) indexSessions(max int) {
 			}
 			var s uiPastSession
 			var ok bool
-			if agent == "claude" {
+			switch agent {
+			case "claude":
 				s, ok = uiClaudeSession(f)
-			} else {
+			case "cursor":
+				s, ok = uiCursorSession(f)
+			default:
 				s, ok = uiCodexSession(f)
 			}
 			if !ok || uiHidden(s.Cwd, m.cfg.HideSessionsIn) || uiHidden(s.Cwd, []string{own}) {

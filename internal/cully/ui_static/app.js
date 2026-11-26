@@ -160,29 +160,34 @@
   // ---------- routing ----------
   function parseHash() {
     const p = location.hash.replace(/^#\/?/, '').split('/');
-    if (p[0] === 'agent' && p[1]) return { name: 'agent', id: p[1] };
+    if ((p[0] === 'task' || p[0] === 'agent') && p[1]) return { name: 'agent', id: p[1] }; // #/agent/ is the old address
     if (p[0] === 'mcp') return { name: 'home', mcp: p[1] || 'claude' };
     if (p[0] === 'sessions') return { name: 'sessions' };
     if (p[0] === 'board') return { name: 'board' };
     if (p[0] === 'agents') return { name: 'team' };
+    if (p[0] === 'harness') return { name: 'harness', tab: p[1] || '' };
     if (p[0] === 'dashboard') return { name: 'dashboard', panel: p[1] || 'overview' };
     return { name: 'home' };
   }
   const REDIRECT = { status: 'setup', timeline: 'activity', replay: 'activity', handoff: 'activity', suggestions: 'advisor', impact: 'savings', rescue: 'overview' };
   function route() {
+    if (location.hash === '#/dashboard/permissions') { location.replace('#/harness/permissions'); return; }
+    if (/^#\/agent\//.test(location.hash)) { location.replace(location.hash.replace('#/agent/', '#/task/')); return; }
     S.route = parseHash();
     if (S.route.name === 'dashboard' && REDIRECT[S.route.panel]) { location.replace('#/dashboard/' + REDIRECT[S.route.panel]); return; }
-    const section = S.route.name === 'team' ? 'team' : S.route.name === 'board' ? 'board' : S.route.name === 'dashboard' ? 'dashboard' : S.route.name === 'sessions' ? 'sessions' : 'agents';
+    const section = S.route.name === 'harness' ? 'harness' : S.route.name === 'team' ? 'team' : S.route.name === 'board' ? 'board' : S.route.name === 'dashboard' ? 'dashboard' : S.route.name === 'sessions' ? 'sessions' : 'agents';
     for (const a of $('nav').querySelectorAll('a')) a.classList.toggle('active', a.dataset.route === section);
-    for (const s of ['agents', 'board', 'dashboard', 'sessions', 'team']) $('view-' + s).hidden = s !== section;
+    for (const s of ['agents', 'board', 'dashboard', 'sessions', 'team', 'harness']) $('view-' + s).hidden = s !== section;
     if (S.es) { S.es.close(); S.es = null; }
     S.feed = null;
     $('stage').className = 'stage';
     renderRail();
+    if (S.route.name !== 'agent') drawTaskPanel(null);
     if (S.route.name === 'agent') mountAgent(S.route.id);
     else if (S.route.name === 'home') mountHome();
     else if (S.route.name === 'board') renderBoard();
     else if (S.route.name === 'team') renderTeam();
+    else if (S.route.name === 'harness') renderHarness();
     else if (S.route.name === 'sessions') { S.sessSig = ''; renderSessions(); }
     else mountDashboard(S.route.panel);
   }
@@ -198,7 +203,7 @@
       if (!list.length) continue;
       kids.push(h('div', { class: 'grp' + (key === 'waiting' ? ' attn' : '') }, label, h('span', { class: 'n' }, list.length)));
       for (const a of list) {
-        kids.push(h('a', { class: 'item' + (a.state === 'waiting' ? ' attn' : '') + (S.route.name === 'agent' && S.route.id === a.id ? ' sel' : ''), href: '#/agent/' + a.id },
+        kids.push(h('a', { class: 'item' + (a.state === 'waiting' ? ' attn' : '') + (S.route.name === 'agent' && S.route.id === a.id ? ' sel' : ''), href: '#/task/' + a.id },
           h('div', { class: 'r1' }, dot(a.state), h('span', { class: 't' }, a.title)),
           h('div', { class: 'r2' }, a.last || (a.state === 'preparing' ? 'Preparing…' : '')),
           h('div', { class: 'r3' }, a.token ? h('span', { class: 'chip' }, 'token ' + a.token) : null,
@@ -277,7 +282,7 @@
         const view = await api('/api/agents', { method: 'POST', body: JSON.stringify(body) });
         S.draft = '';
         await refresh();
-        location.hash = '#/agent/' + view.id;
+        location.hash = '#/task/' + view.id;
       } catch (x) { err.textContent = x.message; err.hidden = false; } finally { start.disabled = false; }
     });
     const ri = (S.info.repoInfo || []).find((r) => r.path === (S.opts.repo || S.info.repos[0])) || (S.info.repoInfo || [])[0];
@@ -294,7 +299,7 @@
     ta.focus();
   }
   function agentCard(a) {
-    return h('a', { class: 'card' + (a.state === 'waiting' ? ' attn' : ''), href: '#/agent/' + a.id },
+    return h('a', { class: 'card' + (a.state === 'waiting' ? ' attn' : ''), href: '#/task/' + a.id },
       h('div', { class: 'r1' }, dot(a.state), h('span', { class: 't' }, a.title)),
       h('div', { class: 'last' }, a.last || (a.state === 'preparing' ? 'Preparing…' : '')),
       h('div', { class: 'row' }, h('span', { class: 'pill ' + a.state }, stateLabel(a.state)),
@@ -322,6 +327,7 @@
     S.tab = S.tab === 'chat' || S.tab === 'changes' || S.tab === 'handoff' ? S.tab : 'chat';
     const ahead = h('div', { class: 'ahead', id: 'ahead' });
     const sub = h('div', { class: 'sub2', id: 'sub2' });
+    const ctxnote = h('div', { id: 'ctxnote' });
     const stepper = h('div', { class: 'stepper', id: 'stepper' });
     const tabs = h('div', { class: 'tabs narrow', id: 'tabs' });
     const body = h('div', { class: 'feed', id: 'feed' });
@@ -336,7 +342,7 @@
       h('div', { class: 'composer-hint' }, 'Enter sends, Shift+Enter adds a line'));
     const side = h('div', { class: 'col sidecol' }, h('div', { class: 'tabs side', id: 'tabs-side' }), h('div', { class: 'sidehead', id: 'sidehead' }), h('div', { class: 'sidebody', id: 'sidebody' }));
     const grid = h('div', { class: 'agrid', id: 'agrid', 'data-show': S.tab }, h('div', { class: 'col chatcol' }, body, quick, composer), side);
-    $('stage').replaceChildren(ahead, sub, stepper, tabs, grid);
+    $('stage').replaceChildren(ahead, sub, ctxnote, stepper, tabs, grid);
     body.after(jump);
     body.addEventListener('scroll', () => { jump.hidden = body.scrollTop + body.clientHeight >= body.scrollHeight - 60; });
     S.feed = { body, jump, group: null, tools: 0, typing: null, quick, composer, ta, loaded: false };
@@ -350,6 +356,98 @@
     const a = S.agents.find((x) => x.id === S.route.id);
     $('agrid').dataset.show = t;
     if (a) { drawAgentChrome(a); loadSide(a, true); }
+  }
+  // ---- the task panel: everything about the running task in one place, down the left side ----
+  const gauge = (pct, size, label) => {
+    const NS = 'http://www.w3.org/2000/svg'; const r = 15.9;
+    const svg = document.createElementNS(NS, 'svg');
+    for (const [k, v] of Object.entries({ viewBox: '0 0 36 36', width: size || 64, height: size || 64, class: 'gauge ' + (pct >= 80 ? 'hot' : pct >= 60 ? 'mid' : 'ok'), role: 'img', 'aria-label': (label || 'Used') + ' ' + pct + ' percent' })) svg.setAttribute(k, v);
+    const mk = (cls, dash) => { const c = document.createElementNS(NS, 'circle'); for (const [k, v] of Object.entries({ cx: 18, cy: 18, r, fill: 'none', 'stroke-width': 3.4, class: cls })) c.setAttribute(k, v); if (dash != null) { c.setAttribute('stroke-dasharray', dash + ' 100'); c.setAttribute('stroke-linecap', 'round'); c.setAttribute('transform', 'rotate(-90 18 18)'); } return c; };
+    const t = document.createElementNS(NS, 'text'); for (const [k, v] of Object.entries({ x: 18, y: 21, 'text-anchor': 'middle', class: 'gnum' })) t.setAttribute(k, v); t.textContent = pct + '%';
+    svg.append(mk('gtrack'), mk('garc', Math.min(100, pct)), t);
+    return svg;
+  };
+  const untilReset = (unix) => { const m = Math.max(0, Math.round((unix * 1000 - Date.now()) / 60000)); return m >= 1440 ? 'resets in ' + Math.floor(m / 1440) + ' d ' + Math.floor((m % 1440) / 60) + ' h' : m >= 60 ? 'resets in ' + Math.floor(m / 60) + ' h ' + (m % 60) + ' min' : 'resets in ' + m + ' min'; };
+  const limitBar = (label, w) => h('div', { class: 'lim' }, h('div', { class: 'row' }, h('span', {}, label), h('b', { class: w.used >= 80 ? 'bad-t' : '' }, w.used + '% used')), h('span', { class: 'fbar ' + (w.used >= 80 ? 'hot' : w.used >= 60 ? 'mid' : '') }, fill(w.used)), w.resetsAt ? h('small', { class: 'faint' }, untilReset(w.resetsAt)) : null);
+  async function panelData() {
+    if (S.panelData && Date.now() - S.panelAt < 20000) return S.panelData;
+    const [day, week, limits] = await Promise.all([api('/api/usage?days=1').catch(() => null), api('/api/usage?days=7').catch(() => null), api('/api/limits').catch(() => null)]);
+    S.panelData = { day, week, limits }; S.panelAt = Date.now();
+    return S.panelData;
+  }
+  async function drawTaskPanel(a) {
+    const box = $('taskpanel');
+    if (!box) return;
+    if (!a) { box.replaceChildren(); return; }
+    const d = await panelData();
+    if (!a || S.route.name !== 'agent' || S.route.id !== a.id) return;
+    const c = a.context; const u = a.usage; const run = a.run;
+    const sec = (title, ...kids) => h('section', { class: 'tp-sec' }, h('div', { class: 'tp-h' }, title), ...kids);
+    const kv = (k, v) => h('div', { class: 'kv' }, h('span', { class: 'faint' }, k), h('b', {}, v));
+    const elapsedS = Math.round((Date.now() - new Date(a.created).getTime()) / 1000);
+    const lim = a.limits;
+    const parts = [
+      sec('Now', h('div', { class: 'row' }, h('span', { class: 'pill ' + a.state }, dot(a.state), stateLabel(a.state)), h('span', { class: 'faint small' }, 'for ' + dur(elapsedS))), h('p', { class: 'tp-last' }, a.last || (a.state === 'preparing' ? 'Gathering context…' : 'No activity yet')),
+        a.harness ? h('div', { class: 'chip ' + (a.harness.status === 'done' ? 'ok' : a.harness.status === 'stopped' ? 'warn' : '') }, icon('check'), 'Checking: round ' + a.harness.round + ' of ' + a.harness.max + ', ' + a.harness.status) : null),
+      sec('Context window', c ? h('div', { class: 'tp-gauge' }, gauge(c.percent, 68, 'Context'), h('div', {}, kv('Used', fmtTokens(c.used)), kv('Left', fmtTokens(c.left)), kv('Window', fmtTokens(c.window)))) : h('p', { class: 'faint small' }, 'Shows after its first reply.'),
+        c && c.model ? h('div', { class: 'faint small' }, c.model) : null,
+        c && c.near ? h('button', { class: 'btn small', onclick: () => startFromHandoff(a) }, icon('plus'), 'Hand off to a new task') : null),
+      sec('Usage limits', lim ? [limitBar('Last 5 hours', lim.fiveHour), limitBar('Last 7 days', lim.sevenDay), h('small', { class: 'faint' }, 'Account: ' + (a.token ? 'token ' + a.token : 'ambient login') + (lim.status && lim.status !== 'allowed' ? '. ' + lim.status.replace(/_/g, ' ') : ''))] : h('p', { class: 'faint small' }, 'The harness reports these after its first reply.')),
+      sec('Tokens', u ? [kv('This task', fmtTokens(u.tokens)), kv('From cache', u.cachedShare + '%'), kv('Saved by cache', '~' + fmtTokens(u.saved))] : h('p', { class: 'faint small' }, 'Counted after each turn.'),
+        d.day ? kv('Tasks today', fmtTokens(d.day.tokens)) : null, d.week ? kv('Tasks this week', fmtTokens(d.week.tokens)) : null, a.cost ? kv('List price so far', '$' + a.cost.toFixed(a.cost < 1 ? 3 : 2)) : null),
+      sec('Harness', h('div', { class: 'row' }, harnessChip('claude'), run ? h('button', { class: 'linkbtn', onclick: () => openRunInfo(a) }, 'How it is set up') : null),
+        run ? h('div', { class: 'faint small' }, (run.permission === 'plan' ? 'Read only' : 'Can edit') + ', ' + (run.mcpMode === 'chosen' ? run.mcpChosen.length + ' servers' : 'all servers') + ', ' + (run.isolation === 'worktree' ? 'own worktree' : 'in place')) : null),
+      sec('Work so far', kv('Files changed', String((a.files || []).length)), kv('Tool calls', String(a.events || 0) + ' events'), a.run && a.run.loop ? kv('Tool budget', String(a.run.toolBudget)) : null),
+    ];
+    // Other harnesses: Codex limits when its plan reports them, and what Cursor cannot record.
+    const other = [];
+    if (d.limits && d.limits.codex && d.limits.codex.limits) other.push(h('div', {}, h('span', { class: 'chip harness h-codex' }, 'Codex'), limitBar('Primary window', d.limits.codex.limits.fiveHour), limitBar('Secondary window', d.limits.codex.limits.sevenDay)));
+    other.push(h('p', { class: 'faint small' }, 'Cursor does not record usage limits or tokens.'));
+    parts.push(sec('Other harnesses', ...other));
+    box.replaceChildren(...parts.flat());
+  }
+
+  // When the context window is nearly full the task will start to forget or stop: offer a fresh task with a handoff.
+  function drawContextNote(a) {
+    const box = $('ctxnote');
+    if (!box) return;
+    const c = a.context;
+    if (!c || !c.near || ['done', 'failed', 'stopped'].includes(a.state) && c.percent < 95) { box.replaceChildren(); return; }
+    box.replaceChildren(h('div', { class: 'ctxnote' }, icon('alert'), h('div', {}, h('b', {}, 'This task has used ' + c.percent + '% of its context'), h('div', { class: 'faint small' }, 'About ' + fmtTokens(c.left) + ' tokens are left. A new task can pick up from a handoff of what this one did, with a clean window.')),
+      h('button', { class: 'btn small', onclick: () => startFromHandoff(a) }, icon('plus'), 'Start a new task with a handoff')));
+  }
+  async function startFromHandoff(a) {
+    try {
+      const text = await api('/api/agents/' + a.id + '/handoff');
+      const v = await api('/api/agents', { method: 'POST', body: JSON.stringify({ prompt: text + '\n\nContinue from here: look at the current state of the work, finish what is left, and run the checks.', repo: a.repo, mode: 'edit', context: true, title: 'Continue: ' + a.title }) });
+      await refresh(); location.hash = '#/task/' + v.id;
+    } catch (e) { toast(e.message, true); }
+  }
+  // A plain account of what is running a task: the harness, its permissions and tools, the connected servers it loads, where it works, and what Cully adds.
+  function openRunInfo(a) {
+    const r = a.run;
+    const item = (k, v) => h('div', { class: 'ri' }, h('span', { class: 'opt-label' }, k), v);
+    const chips = (list, cls) => h('div', { class: 'row' }, ...(list.length ? list.map((x) => h('span', { class: 'chip ' + (cls || '') }, x)) : [h('span', { class: 'faint small' }, 'None')]));
+    const servers = (a.mcp || []).length ? h('div', { class: 'row' }, ...a.mcp.map((m) => h('span', { class: 'chip ' + (needsAuthStatus(m.status) || m.status === 'failed' ? 'warn' : '') }, m.name + ': ' + m.status))) : null;
+    const modal = h('div', { class: 'modal wide', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'How this task runs' },
+      h('header', {}, h('h2', {}, 'How this task runs'), h('button', { class: 'btn ghost small sp', onclick: closeMCP }, 'Close')),
+      h('div', { class: 'mbody riwrap' },
+        item('Harness', h('p', {}, h('b', {}, r.harness), ' (' + r.interface + '). Cully starts it and talks to it; it runs the model and carries out the tools.')),
+        item('Model', h('p', {}, a.context && a.context.model ? a.context.model : r.model)),
+        item('Permission mode', h('p', {}, r.permission === 'plan' ? 'Plan only: it can read and plan but not change files.' : 'It may edit files without asking; it cannot ask a person for anything else, so what is not allowed below is refused.')),
+        item('Tools it may use', chips(r.groups)),
+        item('Always blocked', chips(r.blocked, 'warn')),
+        item('Connected servers', h('div', {}, h('p', {}, r.mcpMode === 'chosen' ? 'Limited to the servers you chose: ' + r.mcpChosen.join(', ') + '. Fewer servers means fewer tokens every turn.' : 'All of the servers connected to your harness. Limit them on the Harness permissions page to save tokens.'), servers)),
+        item('Where it works', h('p', {}, r.isolation === 'worktree' ? 'In its own git worktree on branch ' + a.branch + ', so your checkout is untouched.' : 'Directly in the folder, not in a separate branch.' + (r.resume ? ' ' + r.resume + '.' : ''))),
+        r.identity ? item('Agent', h('p', {}, 'Running as the agent ' + r.identity + ': its role, instructions and notes were added to the system prompt.')) : null,
+        item('What Cully put in front of its first turn', chips(r.brief)),
+        item('What Cully does around it', r.loop ? h('ul', { class: 'how' }, ...r.loopChecks.map((c) => h('li', {}, c))) : h('p', {}, 'Nothing. It is a plain run: Cully relays your messages and shows what it does.')),
+        h('p', { class: 'faint small' }, 'Only tasks are tied to a harness: the one this page was opened through. Sessions, the library, the advisor and the scout cover Claude, Codex and Cursor alike.')));
+    const bg = h('div', { class: 'modal-bg', onclick: (e) => { if (e.target === bg) closeMCP(); } }, modal);
+    $('modal-root').replaceChildren(bg);
+    S.modal = { agent: 'runinfo' };
+    document.removeEventListener('keydown', escClose);
+    document.addEventListener('keydown', escClose);
   }
   function drawAgentChrome(a) {
     if (!$('ahead')) return;
@@ -366,10 +464,14 @@
         finished ? null : h('button', { class: 'btn ghost small', title: "Send this agent's reply or changes to another agent", onclick: () => openRelay(a) }, icon('send'), 'Send to task'),
         h('button', { class: 'btn ghost small', onclick: () => continueFrom(a) }, icon('plus'), 'Continue in a new task'),
         finished ? null : stop));
+    drawContextNote(a);
+    drawTaskPanel(a);
     $('sub2').replaceChildren(
       h('button', { class: 'chip mono', title: 'Copy branch name', onclick: () => copy(a.branch, 'branch') }, icon('branch'), a.branch),
       a.token ? h('span', { class: 'chip' }, 'token ' + a.token) : h('span', { class: 'chip' }, 'ambient login'),
       h('span', { class: 'chip' }, 'started ' + ago(a.created)), h('span', { class: 'chip' }, 'active ' + ago(a.updated || a.created)),
+      a.run ? h('button', { class: 'chip', title: 'How the harness underneath this task is set up', onclick: () => openRunInfo(a) }, icon('term'), a.run.harness + ', ' + (a.run.permission === 'plan' ? 'read only' : 'can edit') + ', ' + (a.run.mcpMode === 'chosen' ? a.run.mcpChosen.length + ' servers' : 'all servers')) : null,
+      a.context ? h('span', { class: 'chip ctx ' + (a.context.near ? 'warn' : ''), title: 'Context window: ' + fmtTokens(a.context.used) + ' of about ' + fmtTokens(a.context.window) + ' tokens used, about ' + fmtTokens(a.context.left) + ' left' + (a.context.model ? '. Model: ' + a.context.model : '') }, 'Context ' + a.context.percent + '%, ' + fmtTokens(a.context.left) + ' left') : null,
       a.usage ? h('span', { class: 'chip', title: 'Tokens this task has handled. Input served from the prompt cache costs about a tenth of fresh input, so a high share means tokens saved. About ' + fmtTokens(a.usage.saved) + ' tokens of cost saved so far.' }, icon('spark'), fmtTokens(a.usage.tokens) + ' tokens, ' + a.usage.cachedShare + '% from cache') : null,
       a.harness ? h('span', { class: 'chip ' + (a.harness.status === 'done' ? 'ok' : a.harness.status === 'stopped' ? 'warn' : ''), title: 'Cully is checking this task\'s work' }, icon('check'), 'Checking: round ' + a.harness.round + ' of ' + a.harness.max + ', ' + ({ working: 'working', verifying: 'asking it to verify', steering: 'steering it', judging: 'judging the work', done: 'checks done', stopped: 'stopped' }[a.harness.status] || a.harness.status)) : null,
       a.files && a.files.length ? h('span', { class: 'chip' }, a.files.length + (a.files.length === 1 ? ' file changed' : ' files changed')) : null,
@@ -410,6 +512,30 @@
     } catch (e) { toast(e.message, true); }
   }
 
+  // When a reply names a session Cully knows (by its id), offer to carry on from it in a new task,
+  // using a short handoff of what that session did. This works for sessions of any harness.
+  async function sessionIndex() {
+    if (S.libMap && Date.now() - S.libMapAt < 60000) return S.libMap;
+    try { const lib = await api('/api/sessions/library'); S.libMap = new Map(lib.sessions.map((x) => [x.id, x])); S.libMapAt = Date.now(); } catch (_) { S.libMap = S.libMap || new Map(); }
+    return S.libMap;
+  }
+  async function attachSessionActions(node, text) {
+    const ids = [...new Set((text.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi) || []).map((x) => x.toLowerCase()))].slice(0, 3);
+    if (!ids.length) return;
+    const map = await sessionIndex();
+    for (const id of ids) {
+      const x = map.get(id);
+      if (!x) continue;
+      const btn = h('button', { class: 'btn small' }, icon('plus'), 'Start a new task from its handoff');
+      btn.addEventListener('click', async () => {
+        btn.disabled = true;
+        try { const v = await api('/api/sessions/' + id + '/continue', { method: 'POST' }); await refresh(); location.hash = '#/task/' + v.id; } catch (e) { toast(e.message, true); btn.disabled = false; }
+      });
+      node.append(h('div', { class: 'sessact' }, harnessChip(x.agent), h('div', {}, h('b', {}, x.title || x.name), h('div', { class: 'faint small' }, x.cwd + ', ' + ago(x.updated))),
+        h('span', { class: 'faint small' }, 'Out of room or closed? Carry on in a fresh task.'), btn));
+    }
+  }
+
   // ---------- chat feed ----------
   function openFeed(id) {
     const es = new EventSource('/api/agents/' + id + '/events?since=0');
@@ -432,7 +558,7 @@
     if (ev.kind === 'tool' || ev.kind === 'tool_result') addToolRow(ev);
     else {
       f.group = null;
-      if (ev.kind === 'text') b.append(h('div', { class: 'msg bot', title: new Date(ev.t).toLocaleTimeString() }, markdown(ev.text)));
+      if (ev.kind === 'text') { const node = h('div', { class: 'msg bot', title: new Date(ev.t).toLocaleTimeString() }, markdown(ev.text)); b.append(node); attachSessionActions(node, ev.text); }
       else if (ev.kind === 'user') b.append(h('div', { class: 'msg you', title: new Date(ev.t).toLocaleTimeString() }, ev.text));
       else if (ev.kind === 'error') b.append(h('div', { class: 'msg error' }, ev.text));
       else if (ev.kind === 'result') b.append(h('div', { class: 'rule' }, ev.failed ? 'turn ended with an error' : 'turn done'));
@@ -550,11 +676,11 @@
     const card = (() => {
     const act = (label, ic, fn, cls) => h('button', { class: 'btn small ' + (cls || 'ghost'), onclick: (e) => { e.preventDefault(); e.stopPropagation(); fn(); } }, ic ? icon(ic) : null, label);
     const actions = [];
-    if (a.state === 'waiting') actions.push(act('Reply', 'send', () => { location.hash = '#/agent/' + a.id; }, ''));
-    if (files.length) actions.push(act('Review changes', 'eye', () => { S.tab = 'changes'; location.hash = '#/agent/' + a.id; }));
+    if (a.state === 'waiting') actions.push(act('Reply', 'send', () => { location.hash = '#/task/' + a.id; }, ''));
+    if (files.length) actions.push(act('Review changes', 'eye', () => { S.tab = 'changes'; location.hash = '#/task/' + a.id; }));
     if (!live) actions.push(act('Copy handoff', 'copy', async () => { try { await writeClip(await api('/api/agents/' + a.id + '/handoff')); toast('Handoff copied. Paste it into the session you are continuing.'); } catch (x) { toast(x.message, true); } }));
     if (live) actions.push(act('Stop', 'stop', () => api('/api/agents/' + a.id + '/stop', { method: 'POST' }).then(refresh).catch((x) => toast(x.message, true))));
-    return h('a', { class: 'card bcard' + (a.state === 'waiting' ? ' attn' : ''), href: '#/agent/' + a.id },
+    return h('a', { class: 'card bcard' + (a.state === 'waiting' ? ' attn' : ''), href: '#/task/' + a.id },
       h('div', { class: 'r1' }, dot(a.state), h('span', { class: 't' }, a.title), h('span', { class: 'sp faint small' }, live ? elapsed(a.created) : ago(a.updated || a.created))),
       h('div', { class: 'last' }, a.last || (a.state === 'preparing' ? 'Gathering context…' : 'No activity yet')),
       h('div', { class: 'row' },
@@ -608,7 +734,7 @@
       h('div', { class: 'row' }, h('span', { class: 'chip' }, (a.files || []).length + ' files changed')),
       h('ul', { class: 'files' }, ...(a.files || []).slice(0, 12).map((f) => h('li', {}, f))),
       h('div', { class: 'row' },
-        h('a', { class: 'btn ghost small', href: '#/agent/' + a.id, onclick: () => { S.tab = 'changes'; closeMCP(); } }, icon('eye'), 'Open'),
+        h('a', { class: 'btn ghost small', href: '#/task/' + a.id, onclick: () => { S.tab = 'changes'; closeMCP(); } }, icon('eye'), 'Open'),
         h('button', { class: 'btn small', title: 'Stop the other options and keep this one', onclick: async () => {
           try { for (const o of opts) if (o.id !== a.id && live(o)) await api('/api/agents/' + o.id + '/stop', { method: 'POST' }); toast('Kept option ' + a.option + '. The others are stopped.'); closeMCP(); await refresh(); renderBoard(); } catch (x) { toast(x.message, true); }
         } }, icon('check'), 'Keep this one')))); 
@@ -629,8 +755,8 @@
     if (!r) { box.replaceChildren(); return; }
     const sec = (title, rows) => (rows.length ? h('div', { class: 'rn-sec' }, h('span', { class: 'opt-label' }, title), h('ul', { class: 'rn-list' }, ...rows)) : null);
     const row = (...kids) => h('li', {}, ...kids);
-    const agents = r.agents.map((a) => row(h('span', { class: 'dot working' }), h('b', {}, a.name), h('span', { class: 'chip' }, a.scope === 'global' ? 'All projects' : 'Project'), h('span', { class: 'faint small' }, 'working for ' + ago(a.started).replace(' ago', '')), a.taskId ? h('a', { class: 'linkbtn', href: '#/agent/' + a.taskId }, 'Open the task') : null));
-    const evals = r.evals.map((e) => row(h('span', { class: 'dot working' }), h('b', {}, 'Eval'), h('span', {}, e.task), h('span', { class: 'chip run-running' }, e.status === 'judging' ? 'Judging' : 'Running'), e.agentId ? h('a', { class: 'linkbtn', href: '#/agent/' + e.agentId }, 'Open') : null));
+    const agents = r.agents.map((a) => row(h('span', { class: 'dot working' }), h('b', {}, a.name), h('span', { class: 'chip' }, a.scope === 'global' ? 'All projects' : 'Project'), h('span', { class: 'faint small' }, 'working for ' + ago(a.started).replace(' ago', '')), a.taskId ? h('a', { class: 'linkbtn', href: '#/task/' + a.taskId }, 'Open the task') : null));
+    const evals = r.evals.map((e) => row(h('span', { class: 'dot working' }), h('b', {}, 'Eval'), h('span', {}, e.task), h('span', { class: 'chip run-running' }, e.status === 'judging' ? 'Judging' : 'Running'), e.agentId ? h('a', { class: 'linkbtn', href: '#/task/' + e.agentId }, 'Open') : null));
     const scouts = r.scouts.map((c) => row(h('span', { class: 'dot working' }), h('b', {}, 'Scout'), h('span', {}, c.query), h('span', { class: 'faint small' }, c.steps + (c.steps === 1 ? ' step' : ' steps')), h('a', { class: 'linkbtn', href: '#/dashboard/scout' }, 'Watch it')));
     const advisor = r.advisor.map((a) => row(h('span', { class: 'dot working' }), h('b', {}, 'Advisor'), h('span', {}, 'reviewing ' + a.title), h('a', { class: 'linkbtn', href: '#/dashboard/advisor' }, 'See advice')));
     const naming = r.naming.on && r.naming.pending > 0 ? [row(h('span', { class: 'dot working' }), h('b', {}, 'Naming sessions'), h('span', { class: 'faint small' }, r.naming.done + ' of ' + (r.naming.done + r.naming.pending) + ' done'), h('a', { class: 'linkbtn', href: '#/dashboard/library' }, 'Session library'))] : [];
@@ -737,10 +863,10 @@
       h('header', {}, h('h2', {}, 'Apply this suggestion'), h('button', { class: 'btn ghost small sp', onclick: closeMCP }, 'Close')),
       h('div', { class: 'mbody' }, h('p', {}, h('b', {}, it.title)), ta,
         live.length ? h('div', {}, h('span', { class: 'opt-label' }, 'Send it to a task that is running'),
-          h('div', { class: 'row' }, ...live.map((a) => h('button', { class: 'btn small', onclick: () => run(async () => { await api('/api/agents/' + a.id + '/message', { method: 'POST', body: JSON.stringify({ text: ta.value }) }); closeMCP(); toast('Sent to ' + a.title); location.hash = '#/agent/' + a.id; }) }, icon('send'), a.title))))
+          h('div', { class: 'row' }, ...live.map((a) => h('button', { class: 'btn small', onclick: () => run(async () => { await api('/api/agents/' + a.id + '/message', { method: 'POST', body: JSON.stringify({ text: ta.value }) }); closeMCP(); toast('Sent to ' + a.title); location.hash = '#/task/' + a.id; }) }, icon('send'), a.title))))
           : h('p', { class: 'faint small' }, 'No task started from Cully is running right now.'),
         h('div', { class: 'row' },
-          h('button', { class: 'btn', onclick: () => run(async () => { const v = await api('/api/agents', { method: 'POST', body: JSON.stringify({ prompt: ta.value, repo: S.opts.repo || '', mode: 'edit', context: true }) }); closeMCP(); await refresh(); location.hash = '#/agent/' + v.id; }) }, icon('plus'), 'Start a task for this'),
+          h('button', { class: 'btn', onclick: () => run(async () => { const v = await api('/api/agents', { method: 'POST', body: JSON.stringify({ prompt: ta.value, repo: S.opts.repo || '', mode: 'edit', context: true }) }); closeMCP(); await refresh(); location.hash = '#/task/' + v.id; }) }, icon('plus'), 'Start a task for this'),
           h('button', { class: 'btn ghost', onclick: () => writeClip(ta.value).then(() => toast('Copied')).catch(() => showCommand(ta.value)) }, icon('copy'), 'Copy for a session in a terminal')),
         h('p', { class: 'faint small' }, 'Sessions open in a terminal, an editor or a desktop app cannot be written to from this page, so copy the text and paste it there.'), err));
     const bg = h('div', { class: 'modal-bg', onclick: (e) => { if (e.target === bg) closeMCP(); } }, modal);
@@ -767,7 +893,7 @@
         h('div', { class: 'hmain' }, h('div', { class: 'ht' }, r.task, h('span', { class: 'chip run-' + r.status }, RUN_LABEL[r.status] || r.status)),
           r.reason ? h('p', { class: 'hdesc' }, r.reason) : null,
           h('div', { class: 'row' }, h('span', { class: 'chip' }, ago(r.started)), r.seconds ? h('span', { class: 'chip' }, dur(r.seconds)) : null, r.files ? h('span', { class: 'chip' }, r.files + ' files changed') : null)),
-        r.agentId ? h('div', { class: 'row hact' }, h('a', { class: 'btn ghost small', href: '#/agent/' + r.agentId }, 'Open the task')) : null)))
+        r.agentId ? h('div', { class: 'row hact' }, h('a', { class: 'btn ghost small', href: '#/task/' + r.agentId }, 'Open the task')) : null)))
         : emptyCard('No eval runs yet', 'Run a case below: a fresh agent gets the goal, then a judge checks its work against the checks.', null, null),
       h('h3', { class: 'section-h' }, 'Eval cases'),
       cases.length ? h('ul', { class: 'hrows' }, ...cases.map((c) => { const last = lastFor(c.id); const btn = h('button', { class: 'btn small' }, icon('send'), last ? 'Run again' : 'Run');
@@ -831,7 +957,7 @@
         h('p', { class: 'hdesc' }, a.role),
         h('div', { class: 'row' }, ...groups.map((g) => h('span', { class: 'chip' }, g))),
         !a.approved ? h('p', { class: 'faint small' }, 'A draft does not run and is not scheduled. Approve it to make it one of your agents.') : null,
-        last ? h('div', { class: 'agentlast' }, h('div', { class: 'row' }, h('span', { class: 'chip run-' + (last.status === 'done' ? 'pass' : last.status === 'failed' ? 'fail' : 'running') }, last.status === 'done' ? 'Last run finished' : last.status === 'failed' ? 'Last run failed' : 'Running now'), h('span', { class: 'faint small' }, ago(last.started)), last.seconds ? h('span', { class: 'faint small' }, dur(last.seconds)) : null, last.taskId ? h('a', { class: 'linkbtn', href: '#/agent/' + last.taskId }, 'Open the task') : null),
+        last ? h('div', { class: 'agentlast' }, h('div', { class: 'row' }, h('span', { class: 'chip run-' + (last.status === 'done' ? 'pass' : last.status === 'failed' ? 'fail' : 'running') }, last.status === 'done' ? 'Last run finished' : last.status === 'failed' ? 'Last run failed' : 'Running now'), h('span', { class: 'faint small' }, ago(last.started)), last.seconds ? h('span', { class: 'faint small' }, dur(last.seconds)) : null, last.taskId ? h('a', { class: 'linkbtn', href: '#/task/' + last.taskId }, 'Open the task') : null),
           last.summary ? h('div', { class: 'quote' }, markdown(last.summary)) : null) : h('p', { class: 'faint small' }, 'Has not run yet.'),
         a.memory ? h('details', { class: 'rl' }, h('summary', {}, h('span', { class: 'rq' }, 'Its notes'), h('span', { class: 'faint small' }, a.memory.length + ' of 2200 characters')), h('div', { class: 'rbody' }, markdown(a.memory))) : null,
         a.runs.length > 1 ? h('details', { class: 'rl' }, h('summary', {}, h('span', { class: 'rq' }, 'Earlier runs'), h('span', { class: 'faint small' }, String(a.runs.length - 1))), h('ul', { class: 'hrows' }, ...a.runs.slice(1, 8).map((r) => h('li', { class: 'hrow' }, h('div', { class: 'hmain' }, h('div', { class: 'row' }, h('span', { class: 'chip run-' + (r.status === 'done' ? 'pass' : 'fail') }, r.status), h('span', { class: 'faint small' }, ago(r.started))), r.summary ? h('p', { class: 'hdesc' }, uiShort(r.summary, 220)) : null)))) ) : null);
@@ -1040,6 +1166,47 @@
     if (lib.analysis.on) setTimeout(() => { if (live()) again(); }, 30000);
   }
 
+  // ---------- the harness page: everything about the program that runs the model ----------
+  const HARNESS_TABS = [['overview', 'Overview'], ['permissions', 'Permissions'], ['servers', 'Connected servers'], ['skills', 'Skills'], ['hooks', 'Hooks'], ['more', 'Plugins and commands']];
+  async function renderHarness() {
+    const box = $('harness');
+    const tasksAgent = (mcpUsed()[0] || { agent: 'claude' }).agent;
+    const agent = S.harnessAgent || tasksAgent;
+    const tab = S.route.tab && HARNESS_TABS.some((t) => t[0] === S.route.tab) ? S.route.tab : 'overview';
+    const go = (a, t) => { S.harnessAgent = a; location.hash = '#/harness/' + t; if (S.route.name === 'harness' && S.route.tab === t) renderHarness(); };
+    const picker = h('div', { class: 'seg', role: 'group', 'aria-label': 'Harness' }, ...['claude', 'codex', 'cursor'].map((a) => h('button', { type: 'button', class: a === agent ? 'on' : '', onclick: () => go(a, tab === 'permissions' && a !== tasksAgent ? 'overview' : tab) }, AGENT_LABEL[a] + (a === tasksAgent ? ' (tasks run here)' : ''))));
+    box.replaceChildren(toolbar('Harness', 'The program that runs the model. Tasks run in the one this page was opened through; sessions, the library, the advisor and the scout cover all three.', picker), h('p', { class: 'faint' }, 'Loading…'));
+    let info; try { info = await api('/api/harness?agent=' + agent); } catch (e) { box.replaceChildren(h('div', { class: 'err' }, e.message)); return; }
+    if (S.route.name !== 'harness') return;
+    const tabs = h('div', { class: 'seg tabs-seg', role: 'tablist', 'aria-label': 'Harness sections' }, ...HARNESS_TABS.filter((t) => t[0] !== 'permissions' || info.tasksUseIt).map(([k, l]) => h('button', { type: 'button', role: 'tab', class: k === tab ? 'on' : '', 'aria-selected': String(k === tab), onclick: () => go(agent, k) }, l + (k === 'servers' ? ' ' + info.mcp.length : k === 'skills' ? ' ' + info.skills.length : k === 'hooks' ? ' ' + info.hooks.length : ''))));
+    const body = h('div', {});
+    const card = (title, ...kids) => h('section', { class: 'lib-card' }, title ? h('b', {}, title) : null, ...kids);
+    const kv = (k, v) => h('div', { class: 'kv' }, h('span', { class: 'faint' }, k), h('b', {}, v));
+    const none = (t) => h('p', { class: 'faint small' }, t);
+    if (tab === 'overview') {
+      body.append(card(info.name, h('div', { class: 'row' }, harnessChip(agent), info.installed ? h('span', { class: 'chip ok' }, 'Installed') : h('span', { class: 'chip warn' }, 'Not found'), info.tasksUseIt ? h('span', { class: 'chip ok' }, 'Tasks run here') : h('span', { class: 'chip' }, 'Tasks do not run here yet')),
+        h('div', { class: 'tp-sec' }, kv('Version', info.version || 'Not found'), kv('Model', info.model || 'Its default'), kv('Its own permission mode', info.mode || 'Not set'), kv('Permission rules it holds', info.allow + ' allow, ' + info.deny + ' deny'), kv('Connected servers', String(info.mcp.length)), kv('Skills', String(info.skills.length)), kv('Hooks', info.hooks.length + (info.hooks.length === 1 ? ' event' : ' events')), kv('Plugins', String(info.plugins.length)), kv('Commands', String(info.commands.length)), kv('Instruction files', info.instructions.join(', ') || 'None')),
+        info.tasksUseIt ? h('p', { class: 'faint small' }, 'Every task Cully starts goes through ' + info.name + ': it runs the model, uses these servers and skills, and obeys the permissions on the next tab.') : h('p', { class: 'faint small' }, 'Cully reads this harness\'s setup so you can see it next to the others, and its sessions appear everywhere. Tasks started from this page run in ' + AGENT_LABEL[tasksAgent] + '.'),
+        ...info.notes.map((n) => h('p', { class: 'faint small' }, n))));
+    } else if (tab === 'permissions') {
+      const holder = h('div', {}); body.append(holder); renderPermissions(holder, () => null);
+    } else if (tab === 'servers') {
+      const tools = info.tasksUseIt ? await api('/api/admin/tools').catch(() => null) : null;
+      const only = tools ? tools.mcp.only : [];
+      body.append(card('Connected servers', none(info.tasksUseIt ? (only.length ? 'Tasks load only ' + only.join(', ') + '. Change this under Permissions.' : 'Tasks load all of these. Each one adds its tool descriptions to every turn; limit them under Permissions to save tokens.') : 'Servers this harness has set up.'),
+        info.mcp.length ? h('ul', { class: 'hrows' }, ...info.mcp.map((m) => h('li', { class: 'hrow' }, h('div', { class: 'hmain' }, h('div', { class: 'ht mono-s' }, m.name, m.status ? h('span', { class: 'chip ' + (/connect/i.test(m.status) ? 'ok' : 'warn') }, m.status) : null), h('div', { class: 'faint small' }, m.kind + (m.target ? ', ' + m.target : ''))),
+          info.tasksUseIt ? h('div', { class: 'row hact' }, h('span', { class: 'chip ' + (!only.length || only.includes(m.name) ? 'ok' : '') }, !only.length || only.includes(m.name) ? 'Loaded by tasks' : 'Not loaded by tasks')) : null))) : none('None found.')));
+    } else if (tab === 'skills') {
+      body.append(card('Skills', none('Instructions the harness loads when they apply. Only names and descriptions are shown.'), info.skills.length ? h('ul', { class: 'hrows' }, ...info.skills.map((k) => h('li', { class: 'hrow' }, h('div', { class: 'hmain' }, h('div', { class: 'ht' }, k.name), k.description ? h('p', { class: 'hdesc' }, k.description) : null)))) : none('None found in ' + info.name + '\'s own skills folder.')));
+    } else if (tab === 'hooks') {
+      body.append(card('Hooks', none('Programs the harness runs on events, such as before a tool or when a session ends. Only the program names are shown, never their arguments.'), info.hooks.length ? h('ul', { class: 'hrows' }, ...info.hooks.map((k) => h('li', { class: 'hrow' }, h('div', { class: 'hmain' }, h('div', { class: 'ht' }, k.event, h('span', { class: 'chip' }, k.count + (k.count === 1 ? ' hook' : ' hooks'))), k.runs.length ? h('div', { class: 'row' }, ...k.runs.map((r) => h('span', { class: 'chip mono' }, r))) : null)))) : none('No hooks are set up.')));
+    } else {
+      const list = (title, items) => card(title, items.length ? h('div', { class: 'row' }, ...items.map((x) => h('span', { class: 'chip mono' }, x))) : none('None.'));
+      body.append(list('Plugins', info.plugins), list('Slash commands', info.commands), list('Subagents', info.subagents), list('Instruction files', info.instructions));
+    }
+    box.replaceChildren(toolbar('Harness', 'The program that runs the model. Tasks run in the one this page was opened through; sessions, the library, the advisor and the scout cover all three.', picker), tabs, body);
+  }
+
   // ---------- harness permissions ----------
   async function renderPermissions(out, head) {
     const v = await api('/api/admin/tools');
@@ -1163,7 +1330,7 @@
       const open = g.advice.filter((x) => !x.dismissed);
       const asking = g.status === 'asking';
       return h('section', { class: 'group' },
-        h('header', {}, dot(g.agentState), h('a', { class: 'gt', href: '#/agent/' + g.agentId }, g.agentTitle), h('span', { class: 'pill ' + g.agentState }, g.agentState === 'waiting' ? 'needs you' : g.agentState),
+        h('header', {}, dot(g.agentState), h('a', { class: 'gt', href: '#/task/' + g.agentId }, g.agentTitle), h('span', { class: 'pill ' + g.agentState }, g.agentState === 'waiting' ? 'needs you' : g.agentState),
           h('button', { class: 'btn ghost small sp', disabled: asking, onclick: async () => { try { await api('/api/agents/' + g.agentId + '/advise', { method: 'POST' }); drawPanel('advisor', true); } catch (e) { toast(e.message, true); } } }, icon('spark'), asking ? 'Reviewing…' : 'Ask advisor')),
         asking ? h('p', { class: 'status pulse' }, "The advisor is reviewing this agent's work…") : null,
         g.status === 'failed' ? h('p', { class: 'err' }, g.error) : null,
@@ -1214,7 +1381,7 @@
     if (!used.length && !(runs || []).length) kids.push(emptyCard('Scout was off for these tasks', 'Turn on Scout or Recall when you start a task. Cully then searches the web and your memory first, and you can see what it found here.', 'Start a task', '#/'));
     for (const v of used) {
       kids.push(h('section', { class: 'group' },
-        h('header', {}, dot(v.state), h('a', { class: 'gt', href: '#/agent/' + v.agentId }, v.title)),
+        h('header', {}, dot(v.state), h('a', { class: 'gt', href: '#/task/' + v.agentId }, v.title)),
         h('p', { class: 'faint' }, 'Looking into: ' + v.task),
         v.scout.status !== 'skipped' ? stageBlock('Web research', v.scout, 'search') : null,
         v.recall.status !== 'skipped' ? stageBlock('Memory recall', v.recall, 'eye') : null));
@@ -1275,7 +1442,7 @@
     [null, [['overview', 'Overview', 'What needs you']]],
     ['Work', [['advisor', 'Advisor', 'Advice for your tasks'], ['library', 'Session library', 'Every past session, named'], ['health', 'Session health', 'Did sessions finish the job?'], ['evals', 'Evals', 'Test cases and their runs'], ['scout', 'Scout', 'Live searches and findings'], ['activity', 'Activity', 'What was done, step by step']]],
     ['Health', [['setup', 'Setup', 'Is everything connected?'], ['savings', 'Savings', 'What Cully saved and cost']]],
-    ['More', [['jobs', 'Background jobs', 'Runs on a schedule'], ['permissions', 'Harness permissions', 'What the underlying harness may do']]],
+    ['More', [['jobs', 'Background jobs', 'Runs on a schedule']]],
   ];
   const DASH_TITLES = Object.fromEntries(DASH.flatMap(([, items]) => items.map(([k, t, d]) => [k, [t, d]])));
   const fmtTokens = (n) => {
@@ -1299,7 +1466,7 @@
   // ----- overview -----
   function needsList() {
     const rows = [];
-    for (const a of S.agents.filter((x) => x.state === 'waiting')) rows.push({ icon: 'alert', text: a.title + ' is waiting for you', label: 'Open', href: '#/agent/' + a.id });
+    for (const a of S.agents.filter((x) => x.state === 'waiting')) rows.push({ icon: 'alert', text: a.title + ' is waiting for you', label: 'Open', href: '#/task/' + a.id });
     for (const g of S.advice || []) {
       const n = g.advice.filter((x) => !x.applied && !x.dismissed).length;
       if (n) rows.push({ icon: 'spark', text: n + (n === 1 ? ' piece of advice' : ' pieces of advice') + ' for ' + g.agentTitle, label: 'Review', href: '#/dashboard/advisor' });
@@ -1312,31 +1479,78 @@
   function renderNeeds() {
     const box = $('needs');
     if (!box) return;
-    const rows = needsList();
+    const rows = [...needsList(), ...(S.extraNeeds || [])];
     box.replaceChildren(
       h('h2', { class: 'hello' }, rows.length ? (rows.length === 1 ? 'One thing needs you' : rows.length + ' things need you') : 'Nothing needs you right now'),
       rows.length ? h('ul', { class: 'needs' }, ...rows.map((r) => h('li', {}, icon(r.icon), h('span', {}, r.text),
         r.href ? h('a', { class: 'btn small', href: r.href }, r.label) : h('button', { class: 'btn small', onclick: r.onclick }, r.label))))
-        : h('p', { class: 'faint' }, 'Agents are running smoothly, or none are running. Start one from the Agents tab.'));
+        : h('p', { class: 'faint' }, 'Tasks are running smoothly, or none are running. Start one from the Tasks tab.'));
   }
   async function renderOverview(out, head) {
     const repo = encodeURIComponent(S.opts.repo || '');
-    const [impact, setup, activity] = await Promise.all([api('/api/impact?days=14').catch(() => null), api('/api/setup').catch(() => null), api('/api/activity?repo=' + repo).catch(() => null)]);
+    const [impact, setup, activity, lib, usage, running, agents, proposals, coach, limitsAll] = await Promise.all([api('/api/impact?days=14').catch(() => null), api('/api/setup').catch(() => null), api('/api/activity?repo=' + repo).catch(() => null),
+      api('/api/sessions/library').catch(() => null), api('/api/usage?days=7').catch(() => null), api('/api/running').catch(() => null), api('/api/identities').catch(() => []), api('/api/agent-suggestions').catch(() => []), api('/api/coach').catch(() => null), api('/api/limits').catch(() => null)]);
     S.overview = { impact, setup, activity };
-    const mine = (S.sessions || []).filter((x) => !x.detached);
-    const folders = new Set(mine.map((x) => x.repo || x.cwd)).size;
-    const sess = mine.length;
-    const daily = impact ? impact.daily.map((d) => d.saved) : [];
+    // Things that need a decision, beyond tasks waiting for a reply.
+    const extra = [];
+    const drafts = agents.filter((x) => !x.approved);
+    if (drafts.length) extra.push({ icon: 'check', text: drafts.length + (drafts.length === 1 ? ' agent is a draft waiting for your approval' : ' agents are drafts waiting for your approval'), label: 'Review', href: '#/agents' });
+    if (proposals.length) extra.push({ icon: 'spark', text: 'Cully noticed work you repeat and proposed ' + proposals.length + (proposals.length === 1 ? ' agent' : ' agents'), label: 'Look', href: '#/agents' });
+    const tight = S.agents.filter((x) => x.context && x.context.near && ['working', 'waiting'].includes(x.state));
+    for (const x of tight) extra.push({ icon: 'alert', text: '"' + x.title + '" has used ' + x.context.percent + '% of its context', label: 'Hand off', href: '#/task/' + x.id });
+    S.extraNeeds = extra;
+    const sessions = lib ? lib.sessions : [];
+    const dayAgo = (n) => Date.now() - n * 864e5;
+    const week = sessions.filter((x) => new Date(x.updated).getTime() >= dayAgo(7)); const prior = sessions.filter((x) => { const t = new Date(x.updated).getTime(); return t < dayAgo(7) && t >= dayAgo(14); });
+    const sec = (l) => l.reduce((n, x) => n + x.activeSec, 0);
+    const trend = sec(prior) ? Math.round(((sec(week) - sec(prior)) * 100) / sec(prior)) : null;
+    const judged = week.filter((x) => x.source === 'ai' && x.completed);
+    const avgHealth = judged.length ? Math.round(judged.reduce((n, x) => n + x.health, 0) / judged.length) : null;
+    const byHarness = {}; for (const x of week) byHarness[x.agent] = (byHarness[x.agent] || 0) + 1;
+    const kpi = (n, l, sub) => h('div', { class: 'kpi' }, h('b', {}, n), h('span', {}, l), sub ? h('small', { class: 'faint' }, sub) : null);
+    const kpis = h('div', { class: 'kpis' },
+      kpi(dur(sec(week)), 'Time worked, 7 days', trend == null ? null : (trend >= 0 ? 'Up ' : 'Down ') + Math.abs(trend) + '% on the week before'),
+      kpi(String(week.length), 'Sessions, 7 days', Object.entries(byHarness).map(([k, v]) => (AGENT_LABEL[k] || k) + ' ' + v).join(', ') || null),
+      usage && usage.tasks ? kpi(fmtTokens(usage.tokens), 'Task tokens, 7 days', usage.cachedShare + '% from cache, about ' + fmtTokens(usage.saved) + ' saved') : kpi('None yet', 'Task tokens, 7 days', 'Shows once a task finishes'),
+      avgHealth == null ? kpi('Not judged', 'Session health', 'Start naming sessions') : kpi(String(avgHealth), 'Session health', judged.filter((x) => x.completed === 'yes').length + ' of ' + judged.length + ' finished the job'));
+    // Right now.
+    const live = S.agents.filter((x) => ['preparing', 'working', 'waiting'].includes(x.state));
+    const taskRow = (x) => h('li', {}, h('span', { class: 'dot ' + x.state }), h('a', { class: 'rt', href: '#/task/' + x.id }, x.title),
+      x.context ? h('span', { class: 'chip ' + (x.context.near ? 'warn' : ''), title: 'How full this task\'s context window is' }, x.context.percent + '% of context') : null, h('span', { class: 'faint small' }, stateLabel(x.state)));
+    const open = running ? running.sessions.filter((x) => !x.detached) : [];
+    const nowCard = h('section', { class: 'lib-card' }, h('div', { class: 'row' }, h('b', {}, 'Right now'), h('a', { class: 'linkbtn sp', href: '#/board' }, 'Open the board')),
+      h('ul', { class: 'rn-list' },
+        ...live.slice(0, 5).map(taskRow),
+        ...(running ? running.agents.map((a) => h('li', {}, h('span', { class: 'dot working' }), h('a', { class: 'rt', href: '#/task/' + a.taskId }, a.name), h('span', { class: 'chip' }, 'Agent at work'))) : []),
+        ...open.slice(0, 4).map((x) => h('li', {}, harnessChip(x.agent), h('b', {}, x.name), h('span', { class: 'faint small' }, 'open in a terminal')))),
+      !live.length && !open.length && !(running && running.agents.length) ? h('p', { class: 'faint small' }, 'Nothing is running. Start a task, or open Claude, Codex or Cursor in a terminal and it shows here.') : null);
+    const attention = judged.filter((x) => x.health < 70).sort((x, y) => x.health - y.health).slice(0, 3);
+    const lookCard = h('section', { class: 'lib-card' }, h('div', { class: 'row' }, h('b', {}, 'Worth a look'), h('a', { class: 'linkbtn sp', href: '#/dashboard/health' }, 'Session health')),
+      attention.length ? h('ul', { class: 'attn-list' }, ...attention.map((x) => h('li', {}, ring(x.health, 34), h('div', {}, h('b', {}, x.title || x.name), harnessChip(x.agent), h('div', { class: 'faint small' }, (x.signals || []).join('. ') || 'Low health')))))
+        : h('p', { class: 'faint small' }, judged.length ? 'Every session this week looks healthy.' : 'Once your sessions are named, the ones that went wrong show here.'),
+      coach && coach.items.length ? h('div', { class: 'coachline' }, h('span', { class: 'kind' }, COACH_KIND[coach.items[0].kind] || coach.items[0].kind), h('div', {}, h('b', {}, coach.items[0].title), h('div', { class: 'faint small' }, coach.items[0].how)), h('button', { class: 'btn small', onclick: () => pushSuggestion(coach.items[0]) }, 'Apply')) : null);
+    // Harness mix and agents.
+    const mixTotal = Object.values(byHarness).reduce((n, v) => n + v, 0);
+    const mix = mixTotal ? h('div', {}, h('span', { class: 'opt-label' }, 'Sessions by harness, 7 days'), h('div', { class: 'stackbar' }, ...Object.entries(byHarness).map(([k, v]) => { const i = h('i', { class: 'seg-' + k, title: (AGENT_LABEL[k] || k) + ': ' + v }); i.style.width = (v / mixTotal * 100) + '%'; return i; })),
+      h('div', { class: 'row legend' }, ...Object.entries(byHarness).map(([k, v]) => h('span', { class: 'chip harness h-' + k }, (AGENT_LABEL[k] || k) + ' ' + v)))) : null;
+    const limitsCard = h('section', { class: 'lib-card' }, h('b', {}, 'Usage limits'),
+      ...((limitsAll && limitsAll.claude.length) ? limitsAll.claude.map((l) => h('div', { class: 'lim-acct' }, h('span', { class: 'chip harness h-claude' }, 'Claude'), h('span', { class: 'faint small' }, l.account), limitBar('Last 5 hours', l.limits.fiveHour), limitBar('Last 7 days', l.limits.sevenDay))) : [h('p', { class: 'faint small' }, 'Claude reports its limits when a task runs; none has run since this page started.')]),
+      limitsAll && limitsAll.codex && limitsAll.codex.limits ? h('div', { class: 'lim-acct' }, h('span', { class: 'chip harness h-codex' }, 'Codex'), limitBar('Primary window', limitsAll.codex.limits.fiveHour), limitBar('Secondary window', limitsAll.codex.limits.sevenDay)) : h('p', { class: 'faint small' }, 'Codex has not reported limits in its recent sessions.'),
+      h('p', { class: 'faint small' }, 'Cursor does not record usage limits.'));
+    const approved = agents.filter((x) => x.approved);
+    const teamCard = h('section', { class: 'lib-card' }, h('div', { class: 'row' }, h('b', {}, 'Your agents'), h('a', { class: 'linkbtn sp', href: '#/agents' }, 'Manage')),
+      agents.length || proposals.length ? h('p', { class: 'faint small' }, approved.length + (approved.length === 1 ? ' approved' : ' approved') + (drafts.length ? ', ' + drafts.length + ' draft' + (drafts.length === 1 ? '' : 's') : '') + (proposals.length ? ', ' + proposals.length + ' proposed by Cully' : '') + '. ' + approved.filter((x) => x.enabled).length + ' on a schedule.')
+        : h('p', { class: 'faint small' }, 'No agents yet. Cully proposes one when it sees work you repeat, or you can create your own.'),
+      mix);
     out.replaceChildren(head(refreshBtn(() => drawPanel('overview', true))),
       h('div', { id: 'needs', class: 'overview-needs' }),
+      kpis,
+      h('div', { class: 'insight-grid' }, nowCard, lookCard, teamCard, limitsCard),
       h('div', { class: 'glance' },
-        h('a', { class: 'glance-row', href: '#/sessions' }, h('span', { class: 'gl' }, 'Open now'), h('span', { class: 'gv' }, sess ? sess + (sess === 1 ? ' session' : ' sessions') + ' in ' + folders + (folders === 1 ? ' folder' : ' folders') : 'No sessions open'), h('span', { class: 'ga' }, 'See sessions')),
-        h('a', { class: 'glance-row', href: '#/dashboard/savings' }, h('span', { class: 'gl' }, 'Last 14 days'),
-          h('span', { class: 'gv' }, impact && impact.net > 0 ? 'Saved about ' + fmtTokens(impact.net) + ' tokens' : 'Nothing saved yet', daily.some((v) => v > 0) ? h('span', { class: 'sparkwrap' }, sparkline(daily)) : null), h('span', { class: 'ga' }, 'Details')),
-        h('a', { class: 'glance-row', href: '#/dashboard/setup' }, h('span', { class: 'gl' }, 'Setup'),
-          h('span', { class: 'gv' }, !setup ? 'Not checked' : setup.allReady ? 'All set' : 'Needs attention'), h('span', { class: 'ga' }, 'Details')),
-        h('a', { class: 'glance-row', href: '#/dashboard/activity' }, h('span', { class: 'gl' }, 'Activity'),
-          h('span', { class: 'gv' }, activity && activity.recorded ? activity.facts.edits + (activity.facts.edits === 1 ? ' edit' : ' edits') + ' recorded in this folder' : 'Nothing recorded in this folder yet'), h('span', { class: 'ga' }, 'Details'))),
+        h('a', { class: 'glance-row', href: '#/dashboard/savings' }, h('span', { class: 'gl' }, 'Savings'), h('span', { class: 'gv' }, impact && impact.net > 0 ? 'Cully saved about ' + fmtTokens(impact.net) + ' tokens in 14 days' : 'Nothing saved yet'), h('span', { class: 'ga' }, 'Details')),
+        h('a', { class: 'glance-row', href: '#/dashboard/setup' }, h('span', { class: 'gl' }, 'Setup'), h('span', { class: 'gv' }, !setup ? 'Not checked' : setup.allReady ? 'Everything is connected' : 'Needs attention'), h('span', { class: 'ga' }, 'Details')),
+        h('a', { class: 'glance-row', href: '#/dashboard/library' }, h('span', { class: 'gl' }, 'Library'), h('span', { class: 'gv' }, lib ? lib.totals.sessions + ' sessions, ' + lib.totals.analyzed + ' named' : 'Not available'), h('span', { class: 'ga' }, 'Details')),
+        h('a', { class: 'glance-row', href: '#/dashboard/activity' }, h('span', { class: 'gl' }, 'This folder'), h('span', { class: 'gv' }, activity && activity.recorded ? activity.facts.edits + (activity.facts.edits === 1 ? ' edit' : ' edits') + ' recorded' : 'Nothing recorded yet'), h('span', { class: 'ga' }, 'Details'))),
       h('section', { class: 'start-else' }, h('h3', {}, 'Start somewhere else'), h('p', { class: 'faint' }, 'Choose any folder on this machine and start a new task there.'),
         h('div', { class: 'row' }, h('button', { class: 'btn', onclick: () => openFolderChooser() }, icon('folder'), 'Choose a folder'),
           ...recentFolders(5).filter((r) => r.git && r.path !== S.opts.repo).map((r) => h('button', { class: 'chip', title: r.path, onclick: () => startIn(r.path) }, icon('folder'), r.name)))));
@@ -1414,7 +1628,7 @@
       h('div', { class: 'kpis' }, ...[[fmtTokens(u.tokens), 'Tokens handled'], [u.cachedShare + '%', 'Input from the cache'], [fmtTokens(u.saved), 'Saved by the cache'], [String(u.tasks), u.tasks === 1 ? 'Task' : 'Tasks']].map(([n, l]) => h('div', { class: 'kpi' }, h('b', {}, n), h('span', {}, l)))),
       chart, mcp,
       u.folders.length ? h('div', {}, h('span', { class: 'opt-label' }, 'Where the tokens went'), h('ul', { class: 'fbars' }, ...u.folders.map((f) => h('li', {}, h('span', { class: 'fname' }, f.name), h('span', { class: 'fbar' }, fill(Math.round(f.tokens / maxF * 100))), h('span', { class: 'faint small' }, fmtTokens(f.tokens) + ', ' + f.tasks + (f.tasks === 1 ? ' task' : ' tasks')))))) : null,
-      u.top.length ? h('div', {}, h('span', { class: 'opt-label' }, 'Biggest tasks'), h('ul', { class: 'hrows' }, ...u.top.map((t) => h('li', { class: 'hrow' }, h('div', { class: 'hmain' }, h('div', { class: 'ht' }, t.title), h('div', { class: 'row' }, h('span', { class: 'chip' }, fmtTokens(t.tokens) + ' tokens'), h('span', { class: 'chip' }, t.cachedShare + '% from cache'), h('span', { class: 'chip' }, ago(t.time)))), h('div', { class: 'row hact' }, h('a', { class: 'btn ghost small', href: '#/agent/' + t.taskId }, 'Open')))))) : null);
+      u.top.length ? h('div', {}, h('span', { class: 'opt-label' }, 'Biggest tasks'), h('ul', { class: 'hrows' }, ...u.top.map((t) => h('li', { class: 'hrow' }, h('div', { class: 'hmain' }, h('div', { class: 'ht' }, t.title), h('div', { class: 'row' }, h('span', { class: 'chip' }, fmtTokens(t.tokens) + ' tokens'), h('span', { class: 'chip' }, t.cachedShare + '% from cache'), h('span', { class: 'chip' }, ago(t.time)))), h('div', { class: 'row hact' }, h('a', { class: 'btn ghost small', href: '#/task/' + t.taskId }, 'Open')))))) : null);
   }
 
   // ----- activity -----
@@ -1844,7 +2058,7 @@
       go.disabled = true; err.hidden = true;
       try {
         const v = await api('/api/history/' + x.id + '/resume', { method: 'POST', body: JSON.stringify({ prompt: ta.value, fork }) });
-        closeMCP(); await refresh(); location.hash = '#/agent/' + v.id;
+        closeMCP(); await refresh(); location.hash = '#/task/' + v.id;
       } catch (e) { err.textContent = e.message; err.hidden = false; go.disabled = false; }
     } }, icon('send'), fork ? 'Fork and start' : 'Resume');
     const modal = h('div', { class: 'modal', role: 'dialog', 'aria-modal': 'true', 'aria-label': fork ? 'Fork session' : 'Resume session' },
@@ -1871,6 +2085,12 @@
   }
   // Sessions open right now, drawn as cards like the recent ones. When the agent
   // has recorded the session, its title and the Fork button come from there.
+  // What the harness recorded about a session's context, or plainly that it records none.
+  function snapChip(sn) {
+    if (!sn) return null;
+    if (sn.context) return h('span', { class: 'chip ctx ' + (sn.context.near ? 'warn' : ''), title: fmtTokens(sn.context.used) + ' of ' + (sn.context.estimated ? 'about ' : '') + fmtTokens(sn.context.window) + ' tokens in the context' }, 'Context ' + sn.context.percent + '%');
+    return h('span', { class: 'chip', title: sn.note || '' }, sn.agent === 'cursor' ? 'No usage recorded' : 'Context not recorded yet');
+  }
   function drawActive() {
     const box = $('active');
     if (!box) return;
@@ -1886,7 +2106,8 @@
           h('div', { class: 'faint small path' }, x.cwd),
           h('div', { class: 'row' }, x.branch ? h('span', { class: 'chip mono' }, icon('branch'), x.branch) : null,
             h('span', { class: 'chip' }, x.via === 'cully' ? 'In the Cully terminal' : 'In a plain terminal'),
-            x.started && !x.started.startsWith('0001') ? h('span', { class: 'chip' }, 'open for ' + ago(x.started).replace(' ago', '')) : null)),
+            x.started && !x.started.startsWith('0001') ? h('span', { class: 'chip' }, 'open for ' + ago(x.started).replace(' ago', '')) : null,
+            snapChip(x.snapshot))),
         h('div', { class: 'row hact' },
           rec && S.hist && S.hist.agent === 'claude' ? h('button', { class: 'btn small', title: 'Start a new session from this one; the original stays as it is', onclick: () => continueSession(rec, true) }, icon('branch'), 'Fork') : null,
           h('button', { class: rec ? 'btn ghost small' : 'btn small', disabled: !x.repo, title: x.repo ? '' : 'This folder is not a git repository', onclick: () => startHere(x) }, icon('plus'), 'New task here'),
@@ -1941,7 +2162,7 @@
     try {
       const view = await api('/api/agents/' + a.id + '/review', { method: 'POST' });
       await refresh();
-      location.hash = '#/agent/' + view.id;
+      location.hash = '#/task/' + view.id;
       toast('Review started');
     } catch (e) { toast(e.message, true); }
   }
@@ -2026,7 +2247,7 @@
   }
   function attentionKeys() {
     const keys = new Map();
-    for (const a of S.agents.filter((x) => x.state === 'waiting')) keys.set('wait:' + a.id, [a.title + ' needs you', '', '#/agent/' + a.id]);
+    for (const a of S.agents.filter((x) => x.state === 'waiting')) keys.set('wait:' + a.id, [a.title + ' needs you', '', '#/task/' + a.id]);
     for (const g of S.advice || []) for (const x of g.advice) if (!x.applied && !x.dismissed) keys.set('adv:' + x.id, ['New advice for ' + g.agentTitle, x.text, '#/dashboard/advisor']);
     if (memoryMode() === 'mcp') for (const m of mcpNeeding()) keys.set('auth:' + m.agent, ['Cully MCP needs sign-in', 'for ' + AGENT_NAMES[m.agent], '#/dashboard/setup']);
     return keys;
@@ -2053,7 +2274,7 @@
     try { done = !!localStorage.getItem('cully-notify-nudged') || !!localStorage.getItem(NOTIFY_KEY); } catch (_) { done = true; }
     if (done) return;
     try { localStorage.setItem('cully-notify-nudged', '1'); } catch (_) { return; }
-    toastAction('Get a heads-up when an agent needs you?', 'Notification settings', () => $('notifybtn').click());
+    toastAction('Get a heads-up when a task needs you?', 'Notification settings', () => $('notifybtn').click());
   }
   function mountNotifyMenu() {
     const btn = $('notifybtn');
@@ -2074,7 +2295,7 @@
         draw();
       } }, icon(p[key] ? 'check' : 'bell'), h('span', {}, h('b', {}, name), h('small', {}, desc)));
       const el = h('div', { class: 'thememenu notifymenu', role: 'menu' },
-        h('div', { class: 'menu-note' }, 'Get told when an agent needs you, advice arrives, or sign-in is needed.'),
+        h('div', { class: 'menu-note' }, 'Get told when a task needs you, advice arrives, or sign-in is needed.'),
         row('flash', 'Flash the tab title', 'Works everywhere'),
         row('sound', 'Play a sound', 'A short tone'),
         row('desktop', 'Desktop notifications', problem ? 'Not available here' : 'Alerts when this tab is in the background', !!problem && Notification && Notification.permission !== 'default'),

@@ -14,8 +14,10 @@ import (
 
 // Counting a Codex rollout the way scanTranscript counts a Claude transcript:
 // requests, tool calls by tool, files changed (from apply_patch), test runs and
-// working time. Codex does not record a plain exit status for a command, so
-// tool errors and repeated failures are not counted for it, and the page says so.
+// working time. A command that failed is recognised by the exit code Codex
+// prints in its output.
+
+var uiCodexExit = regexp.MustCompile(`(?i)(?:process exited with code|exit code)[: ]+(\d+)`)
 
 var uiPatchFile = regexp.MustCompile(`(?m)^\*\*\* (?:Update|Add|Delete) File: (.+)$`)
 
@@ -29,6 +31,8 @@ type uiCodexRec struct {
 		Input     string          `json:"input"`
 		Arguments string          `json:"arguments"`
 		Content   json.RawMessage `json:"content"`
+		CallID    string          `json:"call_id"`
+		Output    json.RawMessage `json:"output"`
 	} `json:"payload"`
 }
 
@@ -61,6 +65,7 @@ func scanCodex(path string, withDigest bool) (uiSessionFacts, uiDigest, bool) {
 	files := map[string]struct{}{}
 	var prev time.Time
 	last, run, sinceCheck := "", 0, false
+	hashes, fails := map[string]string{}, map[string]int{}
 	r := bufio.NewReaderSize(f, 256<<10)
 	for {
 		line, err := r.ReadBytes('\n')
@@ -87,6 +92,16 @@ func scanCodex(path string, withDigest bool) (uiSessionFacts, uiDigest, bool) {
 						if p.Role == "assistant" && withDigest && text != "" {
 							dg.Last = text
 						}
+					case "function_call_output", "custom_tool_call_output":
+						if m := uiCodexExit.FindStringSubmatch(uiCodexText(p.Output)); m != nil && m[1] != "0" {
+							facts.Errors++
+							if h, ok := hashes[p.CallID]; ok {
+								fails[h]++
+								if fails[h] > facts.MaxFailRepeat {
+									facts.MaxFailRepeat = fails[h]
+								}
+							}
+						}
 					case "function_call", "custom_tool_call":
 						facts.Tools++
 						if facts.ToolNames == nil {
@@ -95,6 +110,9 @@ func scanCodex(path string, withDigest bool) (uiSessionFacts, uiDigest, bool) {
 						facts.ToolNames[p.Name]++
 						body := p.Input + p.Arguments
 						hash := p.Name + "|" + body
+						if p.CallID != "" {
+							hashes[p.CallID] = hash
+						}
 						if hash == last {
 							run++
 						} else {
@@ -141,8 +159,11 @@ func scanCodex(path string, withDigest bool) (uiSessionFacts, uiDigest, bool) {
 
 // uiScanAgent counts a session file of any supported harness.
 func uiScanAgent(agent, path string, withDigest bool) (uiSessionFacts, uiDigest, bool) {
-	if agent == "codex" {
+	switch agent {
+	case "codex":
 		return scanCodex(path, withDigest)
+	case "cursor":
+		return scanCursor(path, withDigest)
 	}
 	return scanTranscript(path, withDigest)
 }

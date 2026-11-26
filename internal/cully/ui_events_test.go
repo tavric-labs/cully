@@ -105,3 +105,52 @@ func TestResultEventsReportTokenUseAndCacheShare(t *testing.T) {
 		t.Fatal("usage invented for a result that reported none")
 	}
 }
+
+func TestTheModelAndContextSizeAreReadFromTheStream(t *testing.T) {
+	if p := parseStreamLine([]byte(`{"type":"system","subtype":"init","model":"claude-opus-5-5[1m]"}`)); p.Model != "claude-opus-5-5[1m]" {
+		t.Fatalf("model = %q", p.Model)
+	}
+	p := parseStreamLine([]byte(`{"type":"assistant","message":{"content":[{"type":"text","text":"hi"}],"usage":{"input_tokens":10,"cache_read_input_tokens":150000,"cache_creation_input_tokens":5000,"output_tokens":3}}}`))
+	if p.Context != 155010 {
+		t.Fatalf("context = %d", p.Context)
+	}
+	c := contextOf("claude-sonnet-5-5", 170000, 0)
+	if c.Window != 200000 || c.Percent != 85 || c.Left != 30000 || !c.Near {
+		t.Fatalf("context = %+v", c)
+	}
+	if c := contextOf("claude-opus-5-5[1m]", 170000, 0); c.Window != 1000000 || c.Near {
+		t.Fatalf("1m context = %+v", c)
+	}
+	if contextOf("x", 0, 0) != nil {
+		t.Fatal("a context was invented")
+	}
+}
+
+func TestATaskShowsHowFullItsContextIs(t *testing.T) {
+	body := uiFakeHead + `  echo '{"type":"assistant","message":{"content":[{"type":"text","text":"ok"}],"usage":{"input_tokens":1000,"cache_read_input_tokens":170000,"cache_creation_input_tokens":0,"output_tokens":5}}}'
+` + uiFakeTail
+	m, repo, _ := uiTestManager(t, uiWriteScript(t, strings.Replace(body, `echo '{"type":"system","subtype":"init"}'`, `echo '{"type":"system","subtype":"init","model":"claude-sonnet-5-5"}'`, 1)), "tok-aaa1")
+	a, err := m.start(uiStartRequest{Repo: repo, Prompt: "go"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	uiWaitState(t, a, "waiting")
+	c := a.snapshot().Context
+	if c == nil || c.Used != 171000 || c.Percent != 85 || !c.Near || c.Model != "claude-sonnet-5-5" {
+		t.Fatalf("context = %+v", c)
+	}
+}
+
+func TestLimitsWindowAndCostAreReadFromTheStream(t *testing.T) {
+	p := parseStreamLine([]byte(`{"type":"rate_limit_event","rate_limit_info":{"status":"allowed_warning","rateLimitType":"seven_day","utilization":0.26,"unifiedWindows":{"five_hour":{"utilization":0.62,"resetsAt":1795701000,"status":"allowed"},"seven_day":{"utilization":0.26,"resetsAt":1796216400,"status":"allowed"}}}}`))
+	if p.Limits == nil || p.Limits.FiveHour.Used != 62 || p.Limits.SevenDay.Used != 26 || p.Limits.FiveHour.ResetsAt != 1795701000 || p.Limits.Status != "allowed_warning" {
+		t.Fatalf("limits = %+v", p.Limits)
+	}
+	r := parseStreamLine([]byte(`{"type":"result","result":"ok","total_cost_usd":0.0031,"modelUsage":{"claude-sonnet-5-5":{"contextWindow":1000000,"inputTokens":2}}}`))
+	if r.Window != 1000000 || r.Cost != 0.0031 {
+		t.Fatalf("window = %d cost = %v", r.Window, r.Cost)
+	}
+	if c := contextOf("claude-sonnet-5-5", 170000, 1000000); c.Window != 1000000 || c.Percent != 17 || c.Near {
+		t.Fatalf("reported window ignored: %+v", c)
+	}
+}

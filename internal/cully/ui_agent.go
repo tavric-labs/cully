@@ -123,9 +123,12 @@ type uiAgentView struct {
 	Updated  time.Time      `json:"updated"` // when the latest activity happened
 	Harness  *uiHarnessView `json:"harness,omitempty"`
 	Usage    *uiUsageView   `json:"usage,omitempty"`
-	Run      *uiRunInfo     `json:"run,omitempty"`    // how the harness underneath was set up for this task
-	Group    string         `json:"group,omitempty"`  // fan-out: options of one task share it
-	Option   string         `json:"option,omitempty"` // fan-out: "A", "B", ...
+	Context  *uiContextView `json:"context,omitempty"` // how full the model's context is
+	Cost     float64        `json:"cost,omitempty"`    // list price of the session so far, in dollars
+	Limits   *uiLimits      `json:"limits,omitempty"`  // the account's five-hour and seven-day limits
+	Run      *uiRunInfo     `json:"run,omitempty"`     // how the harness underneath was set up for this task
+	Group    string         `json:"group,omitempty"`   // fan-out: options of one task share it
+	Option   string         `json:"option,omitempty"`  // fan-out: "A", "B", ...
 }
 
 type uiManager struct {
@@ -138,12 +141,20 @@ type uiManager struct {
 
 	alerted map[string]struct{} // file|idA|idB pairs already warned about
 
-	evalRuns   []*uiEvalRun
-	identities []*uiIdentity
-	coachMu    sync.Mutex
-	idxMu      sync.Mutex
-	index      *uiIndexFile
-	analyzedAt []time.Time
+	evalRuns  []*uiEvalRun
+	infoMu    sync.Mutex
+	infoCache map[string]struct {
+		at   time.Time
+		info uiHarnessInfo
+	}
+	lastMCP       map[string]string
+	limitMu       sync.Mutex
+	accountLimits map[int]uiLimits
+	identities    []*uiIdentity
+	coachMu       sync.Mutex
+	idxMu         sync.Mutex
+	index         *uiIndexFile
+	analyzedAt    []time.Time
 
 	policyMu     sync.Mutex
 	policy       uiPolicy
@@ -421,6 +432,11 @@ type uiAgent struct {
 	pending       int // turns sent and not yet answered by a result
 	harness       *uiHarness
 	runInfo       *uiRunInfo
+	model         string  // reported by the agent when it starts
+	window        int     // the model's context window, as reported
+	cost          float64 // what the session has cost at list price, as reported
+	limits        *uiLimits
+	ctx           int // tokens in its context after its latest call
 	usage         uiTokens
 	turns         int // turns that reported usage
 	usageRecorded bool
@@ -445,7 +461,7 @@ func (a *uiAgent) snapshot() uiAgentView {
 	return uiAgentView{
 		ID: a.id, Title: a.title, Repo: a.repo, Branch: a.branch, Worktree: a.worktree,
 		Token: a.token, State: a.state, Created: a.created,
-		Stages: a.stagesCopyLocked(), Events: len(a.events), Files: a.sortedFilesLocked(), Last: a.last, Updated: a.updated, Group: a.req.group, Option: a.req.option, Harness: a.harnessView(), Usage: usageOf(a.usage), Run: a.runInfo, MCP: append([]uiMCPServer(nil), a.mcp...),
+		Stages: a.stagesCopyLocked(), Events: len(a.events), Files: a.sortedFilesLocked(), Last: a.last, Updated: a.updated, Group: a.req.group, Option: a.req.option, Harness: a.harnessView(), Usage: usageOf(a.usage), Run: a.runInfo, Context: contextOf(a.model, a.ctx, a.window), Cost: a.cost, Limits: a.limitsView(), MCP: append([]uiMCPServer(nil), a.mcp...),
 	}
 }
 
@@ -701,6 +717,9 @@ func (a *uiAgent) handleLine(line []byte) {
 	uses := p.Uses
 	if len(p.MCP) > 0 {
 		a.mcp = p.MCP
+		if a.mgr != nil {
+			a.mgr.rememberMCP(p.MCP)
+		}
 	}
 	a.mu.Unlock()
 	for id, u := range uses {
@@ -721,6 +740,33 @@ func (a *uiAgent) handleLine(line []byte) {
 			a.journalToolResult(use, r.Failed)
 		}
 		a.harnessResult(r.ID, r.Failed)
+	}
+	if p.Window > 0 || p.Cost > 0 || p.Limits != nil {
+		a.mu.Lock()
+		if p.Window > 0 {
+			a.window = p.Window
+		}
+		if p.Cost > 0 {
+			a.cost = p.Cost
+		}
+		if p.Limits != nil {
+			p.Limits.Seen = time.Now().Unix()
+			a.limits = p.Limits
+			if a.mgr != nil && a.token > 0 {
+				a.mgr.setLimits(a.token, *p.Limits)
+			}
+		}
+		a.mu.Unlock()
+	}
+	if p.Model != "" || p.Context > 0 {
+		a.mu.Lock()
+		if p.Model != "" {
+			a.model = p.Model
+		}
+		if p.Context > 0 {
+			a.ctx = p.Context
+		}
+		a.mu.Unlock()
 	}
 	if p.Usage != nil {
 		a.mu.Lock()
@@ -958,4 +1004,73 @@ func usageOf(u uiTokens) *uiUsageView {
 		return nil
 	}
 	return &uiUsageView{Tokens: u.Total(), Fresh: u.Input + u.CacheWrite, Cached: u.CacheRead, Output: u.Output, CachedShare: u.CachedShare(), Saved: u.CacheRead * 9 / 10}
+}
+
+// uiContextView is how full the model's context window is. The window size is
+// worked out from the model's name, so it is shown as an estimate.
+type uiContextView struct {
+	Model   string `json:"model"`
+	Used    int    `json:"used"`
+	Window  int    `json:"window"`
+	Left    int    `json:"left"`
+	Percent int    `json:"percent"`
+	Near    bool   `json:"near"` // 80 percent or more: time to hand off to a fresh task
+}
+
+func uiContextWindow(model string, reported int) int {
+	if reported > 0 {
+		return reported
+	}
+	m := strings.ToLower(model)
+	if strings.Contains(m, "1m") {
+		return 1_000_000
+	}
+	return 200_000
+}
+
+func contextOf(model string, used, reported int) *uiContextView {
+	if used <= 0 {
+		return nil
+	}
+	w := uiContextWindow(model, reported)
+	left := w - used
+	if left < 0 {
+		left = 0
+	}
+	p := used * 100 / w
+	if p > 100 {
+		p = 100
+	}
+	return &uiContextView{Model: model, Used: used, Window: w, Left: left, Percent: p, Near: p >= 80}
+}
+
+// limitsView is the latest limits heard on this task, or on any task that used the same account.
+// The caller holds the agent's lock.
+func (a *uiAgent) limitsView() *uiLimits {
+	if a.limits != nil {
+		l := *a.limits
+		return &l
+	}
+	if a.mgr != nil && a.token > 0 {
+		if l, ok := a.mgr.limitsFor(a.token); ok {
+			return &l
+		}
+	}
+	return nil
+}
+
+func (m *uiManager) setLimits(token int, l uiLimits) {
+	m.limitMu.Lock()
+	defer m.limitMu.Unlock()
+	if m.accountLimits == nil {
+		m.accountLimits = map[int]uiLimits{}
+	}
+	m.accountLimits[token] = l
+}
+
+func (m *uiManager) limitsFor(token int) (uiLimits, bool) {
+	m.limitMu.Lock()
+	defer m.limitMu.Unlock()
+	l, ok := m.accountLimits[token]
+	return l, ok
 }

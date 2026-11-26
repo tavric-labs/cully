@@ -127,6 +127,8 @@ func newUIServer(m *uiManager, token string, loopback bool) http.Handler {
 	mux.Handle("GET /api/evals/runs", s.api(s.evalRunsGet))
 	mux.Handle("GET /api/coach", s.api(s.coachGetH))
 	mux.Handle("GET /api/running", s.api(s.runningGet))
+	mux.Handle("GET /api/limits", s.api(s.limitsGet))
+	mux.Handle("GET /api/harness", s.api(s.harnessGet))
 	mux.Handle("GET /api/usage", s.api(s.usageGet))
 	mux.Handle("GET /api/agent-suggestions", s.api(s.agentSuggestListH))
 	mux.Handle("POST /api/agent-suggestions/run", s.api(s.agentSuggestRunH))
@@ -141,6 +143,8 @@ func newUIServer(m *uiManager, token string, loopback bool) http.Handler {
 	mux.Handle("POST /api/coach/run", s.api(s.coachRunH))
 	mux.Handle("POST /api/evals/{id}/run", s.api(s.evalRunStart))
 	mux.Handle("POST /api/sessions/{id}/summarize", s.api(s.summarize))
+	mux.Handle("GET /api/sessions/{id}/handoff", s.api(s.sessionHandoffGet))
+	mux.Handle("POST /api/sessions/{id}/continue", s.api(s.sessionContinue))
 	mux.Handle("POST /api/sessions/{id}/eval", s.api(s.evalCreate))
 	mux.Handle("GET /api/sessions/{id}/eval", s.api(s.evalGet))
 	mux.Handle("POST /api/sessions/analysis", s.api(s.analysisSet))
@@ -621,6 +625,9 @@ func (s *uiServer) sessionList(w http.ResponseWriter, r *http.Request) {
 	if all == nil {
 		all = []uiSession{}
 	}
+	for i := range all {
+		all[i].Snapshot = s.m.snapshotFor(all[i].Agent, all[i].Cwd)
+	}
 	uiJSON(w, http.StatusOK, all)
 }
 
@@ -1075,4 +1082,45 @@ func (s *uiServer) identityApproveH(w http.ResponseWriter, r *http.Request) {
 
 func (s *uiServer) runningGet(w http.ResponseWriter, r *http.Request) {
 	uiJSON(w, http.StatusOK, s.m.running())
+}
+
+func (s *uiServer) sessionHandoffGet(w http.ResponseWriter, r *http.Request) {
+	e, err := s.m.sessionEntry(r.PathValue("id"))
+	if err != nil {
+		uiError(w, http.StatusNotFound, err.Error())
+		return
+	}
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	_, _ = io.WriteString(w, s.m.cfg.Tokens.redact(uiSessionHandoff(e)))
+}
+
+func (s *uiServer) sessionContinue(w http.ResponseWriter, r *http.Request) {
+	a, err := s.m.continueFromSession(r.PathValue("id"))
+	if err != nil {
+		uiError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	uiJSON(w, http.StatusCreated, a.snapshot())
+}
+
+func (s *uiServer) limitsGet(w http.ResponseWriter, r *http.Request) {
+	uiJSON(w, http.StatusOK, s.m.limitsAll())
+}
+
+func (s *uiServer) harnessGet(w http.ResponseWriter, r *http.Request) {
+	agent := r.URL.Query().Get("agent")
+	if agent == "" {
+		agent = "claude"
+		for _, a := range []string{"claude", "codex", "cursor"} {
+			if s.m.mcp.isInUse(a) {
+				agent = a
+				break
+			}
+		}
+	}
+	if !uiKnownAgent(agent) {
+		uiError(w, http.StatusBadRequest, "unknown harness")
+		return
+	}
+	uiJSON(w, http.StatusOK, s.m.harnessInfo(agent))
 }

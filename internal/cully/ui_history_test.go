@@ -101,7 +101,7 @@ func TestHistoryListsCodexSessions(t *testing.T) {
 	if len(h.Sessions) != 1 || h.Sessions[0].Resume != "cd '"+repo+"' && codex resume "+uiTestSessA {
 		t.Fatalf("history = %+v", h)
 	}
-	if c := m.history("cursor", 7); len(c.Sessions) != 0 || c.Note == "" {
+	if c := m.history("cursor", 7); len(c.Sessions) != 0 {
 		t.Fatalf("cursor = %+v", c)
 	}
 }
@@ -259,9 +259,6 @@ func TestHistoryAllMergesHarnessesNewestFirst(t *testing.T) {
 	}
 	if all.Sessions[0].Updated.Before(all.Sessions[1].Updated) {
 		t.Fatal("not newest first")
-	}
-	if all.Note == "" {
-		t.Fatal("the Cursor note is missing")
 	}
 }
 

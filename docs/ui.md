@@ -163,6 +163,12 @@ Suggestions from the coach can be applied from the Advisor and Session library p
 
 Each finished task writes one line of counts to `usage-log.jsonl` in the Cully folder: turns, fresh input, input served from the prompt cache, output, and whether it loaded every connected MCP server or only the ones you chose. No prompt or reply is stored. The **Savings** page adds these up for the last 7, 14 or 30 days: tokens handled, the share of input that came from the cache, tokens saved by the cache (about nine tenths of the cached tokens, because a cache read costs about a tenth of fresh input), a per-day chart, where the tokens went by folder, and the biggest tasks. Once there are tasks of both kinds it compares the input each turn carries with every server loaded against only the chosen ones, and shows what limiting servers saved.
 
+## The harness
+
+The **Harness** page is about the program that runs the model (Claude Code, Codex or Cursor). Tasks run in the one the page was opened through; sessions, the library, the advisor and the scout cover all three, and each session is marked with its harness. For each harness the page lists what it has set up on this machine: its version and model, its own permission mode, the MCP servers it has connected (with their status once a task has reported it, and whether tasks load each one), its skills, hooks, plugins, slash commands, subagents and instruction files. Only names and counts are read: headers, environment values, command arguments and URL queries are never shown. For the harness tasks run in there is also a **Permissions** tab: the groups of tools a task may use, the connected servers it loads, extra allowed tools and the always-blocked list.
+
+Each task has a panel down the left side: what it is doing, how full its context window is and how many tokens are left, the harness's own 5-hour and 7-day usage limits with their reset times (as the harness reports them), tokens used by the task, today and this week, how much came from the prompt cache, the list price so far, and a link to how the harness underneath was set up. When the context passes 80 percent the panel and the task header offer a new task that starts from a handoff. Sessions of every harness show a context percentage where the harness records one (Claude estimates the window from the model name; Codex records the real one; Cursor records none).
+
 ## Security model
 
 - Every API call needs the token (cookie or bearer); changes also need the `X-Cully-UI` header; loopback binds reject other `Host` names.

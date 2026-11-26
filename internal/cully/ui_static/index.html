@@ -14,6 +14,7 @@
     <nav id="nav" aria-label="Sections">
       <a data-route="agents" href="#/">Tasks <span id="badge" class="badge" hidden></span></a>
       <a data-route="team" href="#/agents">Agents</a>
+      <a data-route="harness" href="#/harness">Harness</a>
       <a data-route="sessions" href="#/sessions">Sessions <span id="sbadge" class="badge" hidden></span></a>
       <a data-route="board" href="#/board">Board</a>
       <a data-route="dashboard" href="#/dashboard">Dashboard <span id="dbadge" class="badge" hidden></span></a>
@@ -26,10 +27,13 @@
   <main id="view-agents" class="view agents-view">
     <aside class="rail" aria-label="Tasks">
       <a class="newbtn" href="#/"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>New task</a>
+      <div id="taskpanel"></div>
       <div id="rail"></div>
     </aside>
     <section id="stage" class="stage"></section>
   </main>
+
+  <main id="view-harness" class="view" hidden><div id="harness" class="boardwrap"></div></main>
 
   <main id="view-team" class="view" hidden><div id="team" class="boardwrap"></div></main>
 

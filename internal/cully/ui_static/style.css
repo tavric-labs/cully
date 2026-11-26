@@ -713,3 +713,33 @@ ul.optimal .fbar i { display: block; height: 100%; background: var(--forest-hi);
 .rn-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px 22px; margin-top: 10px; }
 ul.rn-list { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 8px; }
 ul.rn-list li { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+
+/* overview, context, run info */
+.ctxnote { display: flex; align-items: center; gap: 12px; margin: 8px 20px; padding: 10px 14px; border-radius: 12px; background: var(--peach); color: var(--peach-ink); }
+.ctxnote > div { flex: 1; }
+.chip.ctx { font-variant-numeric: tabular-nums; }
+.riwrap .ri { margin: 10px 0; } .riwrap p { margin: 4px 0; }
+.coachline { display: flex; gap: 10px; align-items: center; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); }
+.coachline > div { flex: 1; }
+.coachline .kind { font: 600 11px var(--sans); padding: 4px 8px; border-radius: 99px; background: var(--forest-hi); color: #fff; white-space: nowrap; }
+.stackbar i.seg-claude { background: var(--peach-ink); opacity: .75; } .stackbar i.seg-codex { background: var(--forest-hi); } .stackbar i.seg-cursor { background: var(--faint); }
+a.rt { color: var(--ink); font-weight: 600; text-decoration: none; }
+
+.sessact { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 10px; padding: 10px 12px; border: 1px dashed var(--line2); border-radius: 10px; background: var(--surface2); }
+.sessact > div { flex: 1 1 200px; }
+
+/* task panel */
+#taskpanel { padding: 4px 12px 12px; display: grid; gap: 10px; }
+.tp-sec { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; background: var(--raised); display: grid; gap: 6px; }
+.tp-h { font: 600 12px var(--sans); color: var(--soft); }
+.tp-last { margin: 0; font-size: 13px; overflow-wrap: anywhere; }
+.tp-gauge { display: flex; gap: 12px; align-items: center; }
+.tp-gauge .kv { margin: 0; }
+.kv { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; }
+.gauge .gtrack { stroke: var(--surface2); } .gauge .garc { stroke: var(--forest-hi); } .gauge.mid .garc { stroke: var(--peach-ink); } .gauge.hot .garc { stroke: var(--red); }
+.gauge .gnum { font: 700 8px var(--sans); fill: var(--ink); }
+.lim { display: grid; gap: 3px; font-size: 13px; }
+.lim .fbar { display: block; height: 7px; border-radius: 99px; background: var(--surface2); overflow: hidden; }
+.lim .fbar i { display: block; height: 100%; background: var(--forest-hi); }
+.lim .fbar.mid i { background: var(--peach-ink); } .lim .fbar.hot i { background: var(--red); }
+.lim-acct { display: grid; gap: 6px; margin: 8px 0; }
