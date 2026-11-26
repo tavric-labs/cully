@@ -126,6 +126,7 @@ func newUIServer(m *uiManager, token string, loopback bool) http.Handler {
 	mux.Handle("GET /api/sessions/evals", s.api(s.evalList))
 	mux.Handle("GET /api/evals/runs", s.api(s.evalRunsGet))
 	mux.Handle("GET /api/coach", s.api(s.coachGetH))
+	mux.Handle("GET /api/usage", s.api(s.usageGet))
 	mux.Handle("GET /api/agent-suggestions", s.api(s.agentSuggestListH))
 	mux.Handle("POST /api/agent-suggestions/run", s.api(s.agentSuggestRunH))
 	mux.Handle("POST /api/agent-suggestions/{id}/{state}", s.api(s.agentSuggestSetH))
@@ -1051,4 +1052,17 @@ func (s *uiServer) agentSuggestSetH(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *uiServer) usageGet(w http.ResponseWriter, r *http.Request) {
+	days := 14
+	if q := r.URL.Query().Get("days"); q != "" {
+		n, err := strconv.Atoi(q)
+		if err != nil || n < 1 || n > 365 {
+			uiError(w, http.StatusBadRequest, "days must be a number from 1 to 365")
+			return
+		}
+		days = n
+	}
+	uiJSON(w, http.StatusOK, s.m.usageSummary(days))
 }

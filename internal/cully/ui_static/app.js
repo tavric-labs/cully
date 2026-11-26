@@ -1338,6 +1338,7 @@
   // ----- savings -----
   async function renderSavings(out, head, days) {
     const v = await api('/api/impact?days=' + days);
+    const u = await api('/api/usage?days=' + days).catch(() => null);
     const seg = h('div', { class: 'seg', role: 'group', 'aria-label': 'Period' }, ...[7, 14, 30].map((d) => h('button', { type: 'button', class: d === days ? 'on' : '', onclick: () => { S.dashSig = ''; drawPanel('savings', true, d); } }, d + ' days')));
     const total = v.saved + v.cost;
     const bar = h('div', { class: 'balance', role: 'img', 'aria-label': 'Saved versus spent' }, h('span', { class: 'saved' }), v.cost > 0 ? h('span', { class: 'cost' }) : null);
@@ -1353,9 +1354,28 @@
         bar, h('div', { class: 'legend' }, h('span', {}, h('i', { class: 'k saved' }), 'Saved ' + fmtTokens(v.saved)), h('span', {}, h('i', { class: 'k cost' }), 'Spent ' + fmtTokens(v.cost))),
         bars, h('div', { class: 'axis faint small' }, h('span', {}, v.daily[0].date), h('span', {}, 'today'))),
       h('div', { class: 'stats' }, stat(String(v.memoryHits), 'Memory lookups', 'times prior work was found'), stat(String(v.analysesSkipped), 'Analyses avoided', 'estimated tokens not sent'), stat(String(v.loopsCaught), 'Loops caught', 'repeated failing commands'), stat(String(v.wasteSessions), 'Oversized output', v.wasteTokens ? fmtTokens(v.wasteTokens) + ' tokens flagged' : 'sessions flagged')),
+      tasksTokenCard(u),
       h('details', { class: 'more' }, h('summary', {}, 'How this is measured'),
         h('p', {}, 'Saved is an estimate of tokens Cully avoided sending, such as analyses it skipped. Spent is what its memory lookups cost, measured. Memory savings are only counted when there is a trustworthy with-and-without comparison.'),
+        h('p', {}, 'Tokens used by your tasks are counted from what each task reports when it finishes. Input served from the prompt cache costs about a tenth of fresh input, so about nine tenths of the cached tokens are counted as saved. Limiting the connected servers is compared by the input each turn carries, for tasks that loaded every server and tasks limited to the ones you chose; it needs a few of each before it shows a number. Only counts are stored.'),
         v.basis ? h('p', { class: 'faint' }, v.basis) : null));
+  }
+
+  // What the tasks started from Cully really used, and what the cache and the connected-tools choice saved.
+  function tasksTokenCard(u) {
+    if (!u) return null;
+    if (!u.tasks) return h('section', { class: 'lib-card' }, h('b', {}, 'Tokens used by your tasks'), h('p', { class: 'faint small' }, 'No finished tasks in this period yet. When a task started from Cully finishes, what it used shows up here: how much came from the prompt cache, and where the rest went.'));
+    const max = Math.max(1, ...u.daily.map((d) => d.tokens));
+    const chart = h('div', { class: 'daychart', role: 'img', 'aria-label': 'Tokens used per day' }, ...u.daily.map((d) => { const bar = h('i', { title: d.date + ': ' + fmtTokens(d.tokens) + ' tokens, ' + d.tasks + (d.tasks === 1 ? ' task' : ' tasks') }); bar.style.height = Math.max(d.tokens ? 6 : 2, Math.round((d.tokens / max) * 100)) + '%'; return h('span', { class: 'dc' + (d.tokens ? '' : ' none') }, bar, h('small', {}, d.date.slice(8))); }));
+    const maxF = Math.max(1, ...u.folders.map((f) => f.tokens));
+    const mcp = u.mcpSaved > 0
+      ? h('p', {}, 'Limiting connected servers saved about ', h('b', {}, fmtTokens(u.mcpSaved)), ' tokens: tasks that loaded every server carried about ' + fmtTokens(u.allPerTurn) + ' input tokens a turn, and those limited to your choice about ' + fmtTokens(u.filteredPerTurn) + '.')
+      : h('p', { class: 'faint small' }, u.filteredTasks ? 'Limiting connected servers is on for ' + u.filteredTasks + ' ' + (u.filteredTasks === 1 ? 'task' : 'tasks') + '. A comparison shows once there are tasks of both kinds.' : 'Every task loaded all your connected servers. Choosing only the ones tasks need, on the Harness permissions page, usually cuts the input each turn carries.');
+    return h('section', { class: 'lib-card' }, h('b', {}, 'Tokens used by your tasks'),
+      h('div', { class: 'kpis' }, ...[[fmtTokens(u.tokens), 'Tokens handled'], [u.cachedShare + '%', 'Input from the cache'], [fmtTokens(u.saved), 'Saved by the cache'], [String(u.tasks), u.tasks === 1 ? 'Task' : 'Tasks']].map(([n, l]) => h('div', { class: 'kpi' }, h('b', {}, n), h('span', {}, l)))),
+      chart, mcp,
+      u.folders.length ? h('div', {}, h('span', { class: 'opt-label' }, 'Where the tokens went'), h('ul', { class: 'fbars' }, ...u.folders.map((f) => h('li', {}, h('span', { class: 'fname' }, f.name), h('span', { class: 'fbar' }, fill(Math.round(f.tokens / maxF * 100))), h('span', { class: 'faint small' }, fmtTokens(f.tokens) + ', ' + f.tasks + (f.tasks === 1 ? ' task' : ' tasks')))))) : null,
+      u.top.length ? h('div', {}, h('span', { class: 'opt-label' }, 'Biggest tasks'), h('ul', { class: 'hrows' }, ...u.top.map((t) => h('li', { class: 'hrow' }, h('div', { class: 'hmain' }, h('div', { class: 'ht' }, t.title), h('div', { class: 'row' }, h('span', { class: 'chip' }, fmtTokens(t.tokens) + ' tokens'), h('span', { class: 'chip' }, t.cachedShare + '% from cache'), h('span', { class: 'chip' }, ago(t.time)))), h('div', { class: 'row hact' }, h('a', { class: 'btn ghost small', href: '#/agent/' + t.taskId }, 'Open')))))) : null);
   }
 
   // ----- activity -----

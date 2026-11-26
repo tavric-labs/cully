@@ -159,6 +159,10 @@ Cully also proposes agents. About once an hour while naming is on, it reads the 
 
 Suggestions from the coach can be applied from the Advisor and Session library pages: to a task started from Cully (sent as a message), as a new task, or copied for a session open in a terminal, which the page cannot write to.
 
+## Token use and savings
+
+Each finished task writes one line of counts to `usage-log.jsonl` in the Cully folder: turns, fresh input, input served from the prompt cache, output, and whether it loaded every connected MCP server or only the ones you chose. No prompt or reply is stored. The **Savings** page adds these up for the last 7, 14 or 30 days: tokens handled, the share of input that came from the cache, tokens saved by the cache (about nine tenths of the cached tokens, because a cache read costs about a tenth of fresh input), a per-day chart, where the tokens went by folder, and the biggest tasks. Once there are tasks of both kinds it compares the input each turn carries with every server loaded against only the chosen ones, and shows what limiting servers saved.
+
 ## Security model
 
 - Every API call needs the token (cookie or bearer); changes also need the `X-Cully-UI` header; loopback binds reject other `Host` names.

@@ -403,14 +403,17 @@ type uiAgent struct {
 		Write([]byte) (int, error)
 		Close() error
 	}
-	stopped bool
-	pending int // turns sent and not yet answered by a result
-	harness *uiHarness
-	usage   uiTokens
-	uses    map[string]uiToolUse
-	files   map[string]struct{}
-	base    string // commit the worktree started from
-	mgr     *uiManager
+	stopped       bool
+	pending       int // turns sent and not yet answered by a result
+	harness       *uiHarness
+	usage         uiTokens
+	turns         int // turns that reported usage
+	usageRecorded bool
+	mcpFiltered   bool // the task loaded only chosen MCP servers
+	uses          map[string]uiToolUse
+	files         map[string]struct{}
+	base          string // commit the worktree started from
+	mgr           *uiManager
 
 	advice       []uiAdvice
 	adviceStatus string
@@ -472,6 +475,7 @@ func (a *uiAgent) setState(s string) {
 	a.mu.Unlock()
 	if a.mgr != nil && (s == uiDone || s == uiFailed || s == uiStopped) {
 		go a.mgr.drainQueue()
+		a.mgr.recordUsage(a)
 	}
 }
 
@@ -590,7 +594,13 @@ func (a *uiAgent) run(m *uiManager) {
 	args := []string{"-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose",
 		"--permission-mode", permission, "--allowedTools", allowed,
 		"--disallowedTools", denied}
-	args = append(args, m.mcpFilterArgs()...)
+	mcpArgs := m.mcpFilterArgs()
+	args = append(args, mcpArgs...)
+	if len(mcpArgs) > 0 {
+		a.mu.Lock()
+		a.mcpFiltered = true
+		a.mu.Unlock()
+	}
 	if a.req.appendSystem != "" {
 		args = append(args, "--append-system-prompt", a.req.appendSystem)
 	}
@@ -697,6 +707,7 @@ func (a *uiAgent) handleLine(line []byte) {
 	if p.Usage != nil {
 		a.mu.Lock()
 		a.usage = a.usage.add(*p.Usage)
+		a.turns++
 		a.mu.Unlock()
 	}
 	if p.TurnDone {
