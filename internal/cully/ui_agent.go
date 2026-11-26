@@ -1,0 +1,775 @@
+package cully
+
+import (
+	"bufio"
+	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net/url"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"regexp"
+	"strings"
+	"sync"
+	"syscall"
+	"time"
+)
+
+const (
+	uiMaxPromptRunes = 20000
+	uiEventCap       = 5000
+	uiStderrTail     = 4096
+)
+
+// uiDeniedTools blocks the obvious ways an agent could publish its work or
+// reach the network. It is defense in depth, not a sandbox: a determined
+// command can still find another route, so run cully ui as a user with no
+// credentials you would not give the agent.
+const uiDeniedTools = "Bash(git push:*),Bash(curl:*),Bash(wget:*),Bash(ssh:*),Bash(scp:*),Bash(nc:*),Bash(kubectl:*)"
+
+var (
+	uiModelName = regexp.MustCompile(`^[A-Za-z0-9._\[\]-]{1,64}$`)
+	uiSlugChars = regexp.MustCompile(`[^a-z0-9]+`)
+)
+
+// Agent states.
+const (
+	uiPreparing = "preparing"
+	uiWorking   = "working"
+	uiWaiting   = "waiting"
+	uiDone      = "done"
+	uiFailed    = "failed"
+	uiStopped   = "stopped"
+)
+
+type uiConfig struct {
+	// ScoutStream runs the scout with live progress; when nil the scout uses Advisor.
+	ScoutStream uiScoutFunc
+	Repos       []string // allow-list of git repositories agents may work in
+	Tokens      *uiTokenPool
+	ClaudeBin   string // default: claudeExecutable()
+	MaxAgents   int    // live agents at once; default 4
+	// NoConflictAlerts stops Cully telling two agents that they edited the same file.
+	NoConflictAlerts bool
+	// HideSessionsIn keeps sessions started in these folders (and below) out of the Sessions list.
+	HideSessionsIn []string
+	// Advisor runs the recall and scout stages; default runAdvisorAgent.
+	Advisor func(agent, cwd string, research bool, prompt string) (string, error)
+}
+
+type uiStartRequest struct {
+	Repo    string `json:"repo"`
+	Title   string `json:"title"`
+	Prompt  string `json:"prompt"`
+	Model   string `json:"model"`
+	Context bool   `json:"context"`
+	Recall  bool   `json:"recall"`
+	Scout   bool   `json:"scout"`
+	Mode    string `json:"mode"` // "" or "edit" (accept edits) or "plan" (read-only planning)
+
+	// Set by Cully for review agents; never read from the request body.
+	addDirs []string
+	rules   string
+}
+
+type uiStage struct {
+	Name   string   `json:"name"`
+	Status string   `json:"status"`
+	Detail string   `json:"detail,omitempty"`
+	Log    []string `json:"log,omitempty"` // searches and page reads, as they happen
+	Output string   `json:"-"`             // findings; read through /api/scout
+}
+
+type uiAgentView struct {
+	ID       string        `json:"id"`
+	Title    string        `json:"title"`
+	Repo     string        `json:"repo"`
+	Branch   string        `json:"branch"`
+	Worktree string        `json:"worktree"`
+	Token    int           `json:"token"` // 1-based index; the value is never exposed
+	State    string        `json:"state"`
+	Created  time.Time     `json:"created"`
+	Stages   []uiStage     `json:"stages"`
+	Events   int           `json:"events"`
+	Files    []string      `json:"files"`   // project-relative files this agent has edited
+	MCP      []uiMCPServer `json:"mcp"`     // MCP servers as the agent saw them at start
+	Last     string        `json:"last"`    // one line describing the latest activity
+	Updated  time.Time     `json:"updated"` // when the latest activity happened
+}
+
+type uiManager struct {
+	cfg       uiConfig
+	repos     []string
+	mcp       *uiMCP
+	repoMu    sync.RWMutex
+	repoInfos []uiRepoInfo
+
+	alerted map[string]struct{} // file|idA|idB pairs already warned about
+
+	mu     sync.Mutex
+	agents map[string]*uiAgent
+	order  []string
+}
+
+func newUIManager(cfg uiConfig) *uiManager {
+	if cfg.MaxAgents <= 0 {
+		cfg.MaxAgents = 4
+	}
+	if cfg.Tokens == nil {
+		cfg.Tokens = &uiTokenPool{}
+	}
+	if cfg.Advisor == nil {
+		cfg.Advisor = runAdvisorAgent
+	}
+	m := &uiManager{cfg: cfg, agents: map[string]*uiAgent{}, mcp: newUIMCP(), alerted: map[string]struct{}{}}
+	for _, r := range cfg.Repos {
+		_, _ = m.addRepo(r) // folders that are not git repositories are skipped
+	}
+	return m
+}
+
+func canonicalDir(p string) (string, error) {
+	abs, err := filepath.Abs(p)
+	if err != nil {
+		return "", err
+	}
+	return filepath.EvalSymlinks(abs)
+}
+
+// addRepo allows agents to run in a git repository. The folder must be an
+// absolute path to a directory the current user owns, inside a git repository;
+// the repository root is what gets added.
+func (m *uiManager) addRepo(path string) (uiRepoInfo, error) {
+	if !filepath.IsAbs(path) {
+		return uiRepoInfo{}, errors.New("give the full path of the folder")
+	}
+	info, err := os.Stat(path)
+	if err != nil || !info.IsDir() {
+		return uiRepoInfo{}, errors.New("that folder does not exist")
+	}
+	if st, ok := info.Sys().(*syscall.Stat_t); ok && int(st.Uid) != os.Getuid() {
+		return uiRepoInfo{}, errors.New("that folder belongs to another user")
+	}
+	root, err := uiRepoRoot(path)
+	if err != nil {
+		return uiRepoInfo{}, err
+	}
+	m.repoMu.Lock()
+	defer m.repoMu.Unlock()
+	for _, r := range m.repoInfos {
+		if r.Path == root {
+			return r, nil
+		}
+	}
+	ri := uiRepoInfo{Path: root, Name: filepath.Base(root), Remote: uiRepoRemote(root)}
+	m.repos = append(m.repos, root)
+	m.repoInfos = append(m.repoInfos, ri)
+	return ri, nil
+}
+
+func (m *uiManager) repoList() []uiRepoInfo {
+	m.repoMu.RLock()
+	defer m.repoMu.RUnlock()
+	return append([]uiRepoInfo{}, m.repoInfos...)
+}
+
+func (m *uiManager) resolveRepo(req string) (string, error) {
+	m.repoMu.RLock()
+	defer m.repoMu.RUnlock()
+	if len(m.repos) == 0 {
+		return "", errors.New("no folder has been added yet; add a git repository folder first")
+	}
+	if req == "" {
+		return m.repos[0], nil
+	}
+	real, err := canonicalDir(req)
+	if err != nil {
+		return "", errors.New("repo is not an allowed repository")
+	}
+	for _, r := range m.repos {
+		if r == real {
+			return r, nil
+		}
+	}
+	return "", errors.New("repo is not an allowed repository")
+}
+
+func uiNewID() string {
+	b := make([]byte, 4)
+	_, _ = rand.Read(b)
+	return hex.EncodeToString(b)
+}
+
+func uiSlug(s string) string {
+	s = strings.Trim(uiSlugChars.ReplaceAllString(strings.ToLower(s), "-"), "-")
+	if len(s) > 24 {
+		s = strings.Trim(s[:24], "-")
+	}
+	if s == "" {
+		s = "task"
+	}
+	return s
+}
+
+func (m *uiManager) liveCount() int {
+	n := 0
+	for _, a := range m.agents {
+		switch a.snapshot().State {
+		case uiPreparing, uiWorking, uiWaiting:
+			n++
+		}
+	}
+	return n
+}
+
+// start validates the request and launches the agent pipeline in the
+// background; progress is visible through the agent's state and events.
+func (m *uiManager) start(req uiStartRequest) (*uiAgent, error) {
+	req.Prompt = strings.TrimSpace(req.Prompt)
+	if req.Prompt == "" {
+		return nil, errors.New("prompt is required")
+	}
+	if len([]rune(req.Prompt)) > uiMaxPromptRunes {
+		return nil, errors.New("prompt is too long")
+	}
+	if req.Mode != "" && req.Mode != "edit" && req.Mode != "plan" {
+		return nil, errors.New(`mode must be "edit" or "plan"`)
+	}
+	if req.Model != "" && !uiModelName.MatchString(req.Model) {
+		return nil, errors.New("invalid model name")
+	}
+	repo, err := m.resolveRepo(req.Repo)
+	if err != nil {
+		return nil, err
+	}
+	if out, err := exec.Command("git", "-C", repo, "rev-parse", "--git-dir").CombinedOutput(); err != nil {
+		return nil, fmt.Errorf("repo is not a git repository: %s", strings.TrimSpace(string(out)))
+	}
+	title := strings.TrimSpace(req.Title)
+	if title == "" {
+		title = req.Prompt
+	}
+	if r := []rune(title); len(r) > 60 {
+		title = string(r[:60]) + "…"
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.liveCount() >= m.cfg.MaxAgents {
+		return nil, fmt.Errorf("already running %d agents; stop one first", m.cfg.MaxAgents)
+	}
+	id := uiNewID()
+	a := &uiAgent{
+		id: id, title: title, repo: repo, req: req, created: time.Now().UTC(),
+		branch:   "cully/" + uiSlug(req.Title+" "+boolText(req.Title == "", req.Prompt)) + "-" + id,
+		worktree: filepath.Join(ConfigDir(), "ui-worktrees", id),
+		tokens:   m.cfg.Tokens, mgr: m, state: uiPreparing,
+		notify: make(chan struct{}), uses: map[string]uiToolUse{}, files: map[string]struct{}{}, done: make(chan struct{}),
+	}
+	m.agents[id] = a
+	m.order = append(m.order, id)
+	_ = m.mcp.markInUse("claude") // UI-spawned agents run Claude
+	go a.run(m)
+	return a, nil
+}
+
+func boolText(use bool, s string) string {
+	if use {
+		return s
+	}
+	return ""
+}
+
+func (m *uiManager) get(id string) (*uiAgent, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	a, ok := m.agents[id]
+	return a, ok
+}
+
+func (m *uiManager) list() []uiAgentView {
+	m.mu.Lock()
+	ids := append([]string(nil), m.order...)
+	m.mu.Unlock()
+	out := make([]uiAgentView, 0, len(ids))
+	for i := len(ids) - 1; i >= 0; i-- { // newest first
+		if a, ok := m.get(ids[i]); ok {
+			out = append(out, a.snapshot())
+		}
+	}
+	return out
+}
+
+func (m *uiManager) stopAll() {
+	m.mcp.stopAll()
+	m.mu.Lock()
+	var all []*uiAgent
+	for _, a := range m.agents {
+		all = append(all, a)
+	}
+	m.mu.Unlock()
+	for _, a := range all {
+		a.stop()
+	}
+	for _, a := range all {
+		select {
+		case <-a.done:
+		case <-time.After(5 * time.Second):
+		}
+	}
+}
+
+type uiAgent struct {
+	id, title, repo, branch, worktree string
+	req                               uiStartRequest
+	created                           time.Time
+	tokens                            *uiTokenPool
+	done                              chan struct{}
+
+	mu      sync.Mutex
+	state   string
+	token   int
+	stages  []uiStage
+	events  []uiEvent
+	nextSeq int
+	notify  chan struct{}
+	cmd     *exec.Cmd
+	stdin   interface {
+		Write([]byte) (int, error)
+		Close() error
+	}
+	stopped bool
+	pending int // turns sent and not yet answered by a result
+	uses    map[string]uiToolUse
+	files   map[string]struct{}
+	base    string // commit the worktree started from
+	mgr     *uiManager
+
+	advice       []uiAdvice
+	adviceStatus string
+	adviceError  string
+	adviceAsked  time.Time
+	last         string
+	updated      time.Time
+	mcp          []uiMCPServer
+}
+
+func (a *uiAgent) snapshot() uiAgentView {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return uiAgentView{
+		ID: a.id, Title: a.title, Repo: a.repo, Branch: a.branch, Worktree: a.worktree,
+		Token: a.token, State: a.state, Created: a.created,
+		Stages: a.stagesCopyLocked(), Events: len(a.events), Files: a.sortedFilesLocked(), Last: a.last, Updated: a.updated, MCP: append([]uiMCPServer(nil), a.mcp...),
+	}
+}
+
+func (a *uiAgent) add(ev uiEvent) {
+	ev.Text = a.tokens.redact(ev.Text)
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.nextSeq++
+	ev.Seq, ev.Time = a.nextSeq, time.Now().UTC()
+	a.events = append(a.events, ev)
+	if line := uiLastLine(ev); line != "" {
+		a.last, a.updated = line, ev.Time
+	}
+	if len(a.events) > uiEventCap {
+		a.events = append([]uiEvent(nil), a.events[len(a.events)-uiEventCap:]...)
+	}
+	close(a.notify)
+	a.notify = make(chan struct{})
+}
+
+// eventsSince returns events after seq and a channel closed by the next append.
+func (a *uiAgent) eventsSince(seq int) ([]uiEvent, <-chan struct{}) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	var out []uiEvent
+	for _, e := range a.events {
+		if e.Seq > seq {
+			out = append(out, e)
+		}
+	}
+	return out, a.notify
+}
+
+func (a *uiAgent) allEvents() []uiEvent {
+	evs, _ := a.eventsSince(0)
+	return evs
+}
+
+func (a *uiAgent) setState(s string) {
+	a.mu.Lock()
+	a.state = s
+	a.mu.Unlock()
+}
+
+func (a *uiAgent) fail(msg string) {
+	a.add(uiEvent{Kind: "error", Text: msg})
+	a.setState(uiFailed)
+}
+
+func (a *uiAgent) journal(ev journalEvent) {
+	appendJournal(a.worktree, "ui-"+a.id, ev)
+}
+
+func (a *uiAgent) addWorktree() error {
+	if err := os.MkdirAll(filepath.Dir(a.worktree), 0o700); err != nil {
+		return err
+	}
+	out, err := exec.Command("git", "-C", a.repo, "worktree", "add", "-q", "-b", a.branch, a.worktree).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("%v: %s", err, strings.TrimSpace(string(out)))
+	}
+	if head, err := exec.Command("git", "-C", a.worktree, "rev-parse", "HEAD").Output(); err == nil {
+		a.mu.Lock()
+		a.base = strings.TrimSpace(string(head))
+		a.mu.Unlock()
+	}
+	return nil
+}
+
+func uiAgentEnv(token string) []string {
+	var env []string
+	for _, kv := range os.Environ() {
+		k, _, _ := strings.Cut(kv, "=")
+		switch {
+		case k == "ANTHROPIC_API_KEY", k == "ANTHROPIC_AUTH_TOKEN", k == "CLAUDE_CODE_OAUTH_TOKEN",
+			strings.HasPrefix(k, "CULLY_PANE"), k == "CULLY_SESSION", k == "CULLY_AGENT", k == "MODEL_HINT_GUARD":
+			continue
+		}
+		env = append(env, kv)
+	}
+	if token != "" {
+		env = append(env, "CLAUDE_CODE_OAUTH_TOKEN="+token)
+	}
+	return env
+}
+
+type uiTail struct {
+	mu  sync.Mutex
+	buf []byte
+}
+
+func (t *uiTail) Write(p []byte) (int, error) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.buf = append(t.buf, p...)
+	if len(t.buf) > uiStderrTail {
+		t.buf = t.buf[len(t.buf)-uiStderrTail:]
+	}
+	return len(p), nil
+}
+
+func (t *uiTail) String() string {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return strings.TrimSpace(string(t.buf))
+}
+
+func (a *uiAgent) isStopped() bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.stopped
+}
+
+func (a *uiAgent) run(m *uiManager) {
+	defer close(a.done)
+	prompt := a.prepare(m)
+	if err := a.addWorktree(); err != nil {
+		a.fail("could not create worktree: " + err.Error())
+		return
+	}
+	if a.isStopped() {
+		a.setState(uiStopped)
+		return
+	}
+	bin := m.cfg.ClaudeBin
+	if bin == "" {
+		bin = claudeExecutable()
+	}
+	idx, tok := m.cfg.Tokens.take()
+	permission := "acceptEdits"
+	if a.req.Mode == "plan" {
+		permission = "plan"
+	}
+	args := []string{"-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose",
+		"--permission-mode", permission, "--allowedTools", "Read,Glob,Grep,Edit,Write,Bash",
+		"--disallowedTools", uiDeniedTools}
+	if a.req.Model != "" {
+		args = append(args, "--model", a.req.Model)
+	}
+	for _, dir := range a.req.addDirs {
+		args = append(args, "--add-dir", dir)
+	}
+	cmd := exec.Command(bin, args...)
+	cmd.Dir = a.worktree
+	cmd.Env = uiAgentEnv(tok)
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		a.fail("stdin: " + err.Error())
+		return
+	}
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		a.fail("stdout: " + err.Error())
+		return
+	}
+	stderr := &uiTail{}
+	cmd.Stderr = stderr
+	if err := cmd.Start(); err != nil {
+		a.fail("cannot start claude: " + err.Error())
+		return
+	}
+	a.mu.Lock()
+	a.cmd, a.stdin, a.token = cmd, stdin, idx
+	stopped := a.stopped
+	a.mu.Unlock()
+	if stopped {
+		a.kill()
+	}
+	a.journal(journalEvent{Agent: "claude", Class: journalStart})
+	a.add(uiEvent{Kind: "user", Text: a.req.Prompt})
+	if err := a.write(prompt); err != nil {
+		a.add(uiEvent{Kind: "error", Text: "could not send the task: " + err.Error()})
+	}
+
+	sc := bufio.NewScanner(stdout)
+	sc.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
+	for sc.Scan() {
+		a.handleLine(sc.Bytes())
+	}
+	waitErr := cmd.Wait()
+	a.journal(journalEvent{Agent: "claude", Class: journalEnd})
+
+	a.mu.Lock()
+	stopped = a.stopped
+	a.mu.Unlock()
+	switch {
+	case stopped:
+		a.setState(uiStopped)
+	case waitErr == nil:
+		a.setState(uiDone)
+	default:
+		msg := "claude exited: " + waitErr.Error()
+		if tail := stderr.String(); tail != "" {
+			msg += "\n" + tail
+		}
+		a.fail(msg)
+	}
+}
+
+func (a *uiAgent) handleLine(line []byte) {
+	p := parseStreamLine(line)
+	a.mu.Lock()
+	for id, u := range p.Uses {
+		a.uses[id] = u
+	}
+	if len(p.MCP) > 0 {
+		a.mcp = p.MCP
+	}
+	a.mu.Unlock()
+	for _, ev := range p.Events {
+		if ev.Kind == "tool" || ev.Kind == "tool_result" {
+			// Show paths as the agent's own project sees them.
+			ev.Text = strings.ReplaceAll(ev.Text, a.worktree+string(os.PathSeparator), "")
+		}
+		a.add(ev)
+	}
+	for _, r := range p.Results {
+		a.mu.Lock()
+		use, ok := a.uses[r.ID]
+		a.mu.Unlock()
+		if ok {
+			a.journalToolResult(use, r.Failed)
+		}
+	}
+	if p.TurnDone {
+		a.mu.Lock()
+		if a.pending > 0 {
+			a.pending--
+		}
+		if a.pending == 0 && (a.state == uiWorking || a.state == uiPreparing) {
+			a.state = uiWaiting
+		}
+		a.mu.Unlock()
+	}
+}
+
+func (a *uiAgent) journalToolResult(use uiToolUse, failed bool) {
+	class := journalClassFor(use.Name, use.Command)
+	ev := journalEvent{Agent: "claude", Class: class, Failed: failed, Tool: use.Name}
+	if class == journalCheck || use.Name == "Bash" {
+		ev.Sig = use.Sig
+	}
+	rel := ""
+	if use.Path != "" {
+		rel = relProjectPath(a.worktree, use.Path)
+	}
+	if class == journalEdit && !failed && rel != "" {
+		a.mu.Lock()
+		_, seen := a.files[rel]
+		a.files[rel] = struct{}{} // board only; held in memory
+		a.mu.Unlock()
+		if !seen && a.mgr != nil && !a.mgr.cfg.NoConflictAlerts {
+			go a.mgr.conflictAlerts(a, rel)
+		}
+	}
+	if journalPathsEnabled() && rel != "" {
+		ev.Path = rel
+		switch use.Name {
+		case "Read":
+			ev.Op = opRead
+		case "Write":
+			ev.Op = opWrite
+		case "Edit", "MultiEdit":
+			ev.Op = opEdit
+		}
+	}
+	a.journal(ev)
+}
+
+func (a *uiAgent) write(text string) error {
+	line, err := json.Marshal(map[string]any{
+		"type":    "user",
+		"message": map[string]any{"role": "user", "content": text},
+	})
+	if err != nil {
+		return err
+	}
+	a.mu.Lock()
+	stdin := a.stdin
+	if stdin != nil {
+		a.pending++
+		if a.state == uiPreparing || a.state == uiWaiting {
+			a.state = uiWorking
+		}
+	}
+	a.mu.Unlock()
+	if stdin == nil {
+		return errors.New("agent is not running")
+	}
+	_, err = stdin.Write(append(line, '\n'))
+	return err
+}
+
+// send delivers a message to a running agent.
+func (a *uiAgent) send(text string) error {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return errors.New("message is empty")
+	}
+	if len([]rune(text)) > uiMaxPromptRunes {
+		return errors.New("message is too long")
+	}
+	switch a.snapshot().State {
+	case uiDone, uiFailed, uiStopped:
+		return errors.New("agent has finished")
+	}
+	if err := a.write(text); err != nil {
+		return err
+	}
+	a.add(uiEvent{Kind: "user", Text: text})
+	return nil
+}
+
+func (a *uiAgent) kill() {
+	a.mu.Lock()
+	cmd := a.cmd
+	a.mu.Unlock()
+	if cmd == nil || cmd.Process == nil {
+		return
+	}
+	pid := cmd.Process.Pid
+	_ = syscall.Kill(-pid, syscall.SIGTERM)
+	time.AfterFunc(2*time.Second, func() { _ = syscall.Kill(-pid, syscall.SIGKILL) })
+}
+
+// stop ends the agent and everything it started.
+func (a *uiAgent) stop() {
+	a.mu.Lock()
+	a.stopped = true
+	stdin := a.stdin
+	a.mu.Unlock()
+	a.kill()
+	if stdin != nil {
+		_ = stdin.Close()
+	}
+}
+
+const uiLastMax = 90
+
+// uiLastLine summarises an event for the agent list. Stage and system events
+// are bookkeeping and do not count as activity.
+func uiLastLine(ev uiEvent) string {
+	var line string
+	switch ev.Kind {
+	case "text":
+		line = ev.Text
+	case "tool":
+		line = strings.TrimSpace(ev.Tool + " " + ev.Text)
+	case "user":
+		line = "you: " + ev.Text
+	case "error":
+		line = "error: " + ev.Text
+	case "result":
+		line = "turn done"
+	default:
+		return ""
+	}
+	line = strings.Join(strings.Fields(line), " ")
+	if r := []rune(line); len(r) > uiLastMax {
+		line = string(r[:uiLastMax]) + "…"
+	}
+	return line
+}
+
+type uiRepoInfo struct {
+	Path   string `json:"path"`
+	Name   string `json:"name"`
+	Remote string `json:"remote,omitempty"` // host/owner/name, never with credentials
+}
+
+func uiRepoRemote(path string) string {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "git", "-C", path, "remote", "get-url", "origin").Output()
+	if err != nil {
+		return ""
+	}
+	return uiCleanRemote(string(out))
+}
+
+// uiCleanRemote turns a git remote into host/owner/name for display, dropping
+// the scheme, any user:password, the port and a trailing .git.
+func uiCleanRemote(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	if !strings.Contains(raw, "://") {
+		colon := strings.Index(raw, ":")
+		if colon <= 0 || strings.ContainsAny(raw, " \t") {
+			return ""
+		}
+		host := raw[:colon]
+		if at := strings.Index(host, "@"); at >= 0 {
+			host = host[at+1:]
+		}
+		path := strings.TrimSuffix(strings.Trim(raw[colon+1:], "/"), ".git")
+		if host == "" || path == "" {
+			return ""
+		}
+		return host + "/" + path
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.Hostname() == "" {
+		return ""
+	}
+	return u.Hostname() + "/" + strings.TrimSuffix(strings.Trim(u.Path, "/"), ".git")
+}

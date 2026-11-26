@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Cully</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <script src="/theme.js"></script>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header class="top">
+    <a class="brand" href="#/"><img src="/favicon.svg" alt="" width="26" height="26"><span>cully</span></a>
+    <nav id="nav" aria-label="Sections">
+      <a data-route="agents" href="#/">Agents <span id="badge" class="badge" hidden></span></a>
+      <a data-route="sessions" href="#/sessions">Sessions <span id="sbadge" class="badge" hidden></span></a>
+      <a data-route="board" href="#/board">Board</a>
+      <a data-route="dashboard" href="#/dashboard">Dashboard <span id="dbadge" class="badge" hidden></span></a>
+    </nav>
+    <div class="meta"><button id="mcpchip" class="mcpchip" hidden></button><span id="themewrap" class="themewrap"><button id="themebtn" class="themebtn" aria-label="Change theme" title="Change theme"></button></span><span id="live" class="live" title="Connection to the Cully server">live</span><span id="meta"></span></div>
+  </header>
+  <div id="banner" class="banner" hidden></div>
+
+  <main id="view-agents" class="view agents-view">
+    <aside class="rail" aria-label="Agents">
+      <a class="newbtn" href="#/"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>New task</a>
+      <div id="rail"></div>
+    </aside>
+    <section id="stage" class="stage"></section>
+  </main>
+
+  <main id="view-sessions" class="view" hidden><div id="sessions" class="boardwrap"></div></main>
+
+  <main id="view-board" class="view" hidden><div id="board" class="boardwrap"></div></main>
+
+  <main id="view-dashboard" class="view dash-view" hidden>
+    <nav id="panels" class="panels" aria-label="Dashboard panels"></nav>
+    <section id="panel" class="panelout"></section>
+  </main>
+
+  <div id="modal-root"></div>
+  <div id="toasts" class="toasts" aria-live="polite"></div>
+  <script src="/app.js"></script>
+</body>
+</html>
