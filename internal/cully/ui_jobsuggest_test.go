@@ -17,6 +17,13 @@ func TestJobProposalsAreCheckedStrictly(t *testing.T) {
 		`JOB|badtime|app|["make","test"]|25:99|x`,
 		`JOB|nofolder|other|["make","test"]|02:00|x`,
 		`JOB|Bad_Name|app|["make","test"]|02:00|x`,
+		`JOB|gitc|app|["git","-c","core.sshCommand=touch x","-C","{folder}","fetch"]|02:00|x`,
+		`JOB|gitup|app|["git","-C","{folder}","fetch","--upload-pack=touch x"]|02:00|x`,
+		`JOB|makevar|app|["make","-C","{folder}","test","SHELL=/bin/sh"]|02:00|x`,
+		`JOB|goexec|app|["go","-C","{folder}","test","-exec","sh","./..."]|02:00|x`,
+		`JOB|find|app|["find","{folder}","-exec","id",";"]|02:00|x`,
+		`JOB|abs|app|["/usr/bin/make","-C","{folder}","test"]|02:00|x`,
+		`JOB|npmbad|app|["npm","--prefix","{folder}","run","evil"]|02:00|x`,
 		`JOB|notjson|app|make test|02:00|x`,
 		`JOB|missing|app|["definitely-not-installed-xyz"]|02:00|x`,
 	}, "\n")

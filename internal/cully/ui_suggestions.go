@@ -3,6 +3,7 @@ package cully
 import (
 	"net/http"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -31,7 +32,7 @@ func (m *uiManager) suggestions() []uiSuggestion {
 		out = append(out, uiSuggestion{ID: s.ID, Kind: "agent", Title: "Agent: " + s.Name, Why: s.Why, Detail: s.Role, At: s.Created, Href: "#/dashboard/agents"})
 	}
 	for _, s := range m.jobSuggestionsList() {
-		out = append(out, uiSuggestion{ID: s.ID, Kind: "job", Title: "Background job: " + s.Name, Why: s.Why, Command: strings.Join(s.Command, " "), After: s.After, At: s.Created, Href: "#/dashboard/jobs"})
+		out = append(out, uiSuggestion{ID: s.ID, Kind: "job", Title: "Background job: " + s.Name, Why: s.Why, Command: uiShowArgv(s.Command), After: s.After, At: s.Created, Href: "#/dashboard/jobs"})
 	}
 	if c := m.coachGet(); !c.At.IsZero() {
 		for i, it := range c.Items {
@@ -86,4 +87,17 @@ func (s *uiServer) jobSuggestDismissH(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// uiShowArgv writes a command the way a shell would need it, quoting any word
+// with a space or quote, so what the user reads is exactly the argument list.
+func uiShowArgv(cmd []string) string {
+	out := make([]string, len(cmd))
+	for i, a := range cmd {
+		if strings.ContainsAny(a, " \t'\"") {
+			a = strconv.Quote(a)
+		}
+		out[i] = a
+	}
+	return strings.Join(out, " ")
 }
