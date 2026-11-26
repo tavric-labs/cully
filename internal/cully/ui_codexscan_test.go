@@ -120,7 +120,7 @@ func TestAnEarlierSessionCanBeContinuedInANewTaskWithItsHandoff(t *testing.T) {
 	if strings.Contains(text, "SECRET") {
 		t.Fatal("conversation text in the handoff")
 	}
-	a, err := m.continueFromSession(uiTestSessA)
+	a, err := m.continueFromSession(uiTestSessA, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -129,11 +129,11 @@ func TestAnEarlierSessionCanBeContinuedInANewTaskWithItsHandoff(t *testing.T) {
 	if !strings.Contains(string(in), "Continue the work of an earlier Codex session") {
 		t.Fatalf("the new task was not given the handoff: %s", in)
 	}
-	if _, err := m.continueFromSession("not-a-session"); err == nil {
+	if _, err := m.continueFromSession("not-a-session", ""); err == nil {
 		t.Fatal("bad id accepted")
 	}
 	m.cfg.HideSessionsIn = []string{repo}
-	if _, err := m.continueFromSession(uiTestSessA); err == nil {
+	if _, err := m.continueFromSession(uiTestSessA, ""); err == nil {
 		t.Fatal("a hidden folder session was continued")
 	}
 }

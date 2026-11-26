@@ -388,8 +388,17 @@ func (m *uiManager) resumeSession(id, prompt string, fork bool) (*uiAgent, error
 		}
 	}
 	m.mu.Unlock()
-	info, err := m.addRepo(s.Cwd)
-	if err != nil {
+	req := uiStartRequest{Prompt: prompt, resumeID: id, resumeDir: s.Cwd, fork: fork}
+	if info, err := m.addRepo(s.Cwd); err == nil {
+		req.Repo = info.Path
+	} else if _, gitErr := uiRepoRoot(s.Cwd); gitErr != nil && !strings.Contains(err.Error(), "dubious ownership") {
+		// A folder with no git cannot have a worktree, but a resumed session runs where it
+		// started anyway, so it simply runs there.
+		if !uiWritable(s.Cwd) {
+			return nil, errors.New("you do not have write access to that folder")
+		}
+		req.inPlaceDir = s.Cwd
+	} else {
 		return nil, err
 	}
 	what := "Continue"
@@ -400,7 +409,8 @@ func (m *uiManager) resumeSession(id, prompt string, fork bool) (*uiAgent, error
 	if title == "" {
 		title = s.Name
 	}
-	return m.start(uiStartRequest{Repo: info.Path, Title: what + ": " + title, Prompt: prompt, resumeID: id, resumeDir: s.Cwd, fork: fork})
+	req.Title = what + ": " + title
+	return m.start(req)
 }
 
 // uiOriginLabel turns what an agent records about how a session started into

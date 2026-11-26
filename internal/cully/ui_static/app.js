@@ -2309,6 +2309,38 @@
     }
     return h('div', { class: 'sumbox' }, ...kids);
   }
+  // Continue any session, from any harness, as a new task. The task runs in the harness this page was
+  // opened with; the session's handoff (goal, what it did, where it ended, what went wrong, and where its
+  // full record is) is its first message, so work started in Cursor or Codex carries on in Claude.
+  async function continueAsTask(x) {
+    const ta = h('textarea', { 'aria-label': 'What to do next', rows: '3', placeholder: 'What should it do next? Leave empty to finish what is left.' });
+    const err = h('div', { class: 'err', hidden: true });
+    const pre = h('pre', { class: 'handoff' }, 'Loading the handoff…');
+    const named = !!(x.library && x.library.named) || x.source === 'ai';
+    const load = async () => { try { const r = await fetch('/api/sessions/' + x.id + '/handoff', { credentials: 'same-origin', headers: { 'X-Cully-UI': '1' } }); pre.textContent = r.ok ? await r.text() : 'The handoff is not available.'; } catch (_) { pre.textContent = 'The handoff is not available.'; } };
+    load();
+    const go = h('button', { class: 'btn', onclick: async () => {
+      go.disabled = true; err.hidden = true;
+      try { const v = await api('/api/sessions/' + x.id + '/continue', { method: 'POST', body: JSON.stringify({ prompt: ta.value }) }); closeMCP(); await refresh(); location.hash = '#/task/' + v.id; }
+      catch (e) { err.textContent = e.message; err.hidden = false; go.disabled = false; }
+    } }, icon('plus'), 'Start the task');
+    const target = AGENT_NAMES[(S.info && S.info.agent) || 'claude'] || 'Claude';
+    const modal = h('div', { class: 'modal', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Continue as a task' },
+      h('header', {}, h('h2', {}, 'Continue as a task'), h('button', { class: 'btn ghost small sp', onclick: closeMCP }, 'Cancel')),
+      h('div', { class: 'mbody' },
+        h('p', {}, harnessChip(x.agent), ' ', h('b', {}, x.title || x.name)),
+        h('p', { class: 'faint small path' }, x.cwd),
+        h('p', { class: 'faint' }, 'A new task starts in ' + target + ', Cully\'s harness, with this handoff as its first message and the original session record available to read. ' + (x.agent === target.toLowerCase() ? '' : 'The session stays in ' + (AGENT_NAMES[x.agent] || x.agent) + ' as it was; the work carries on here.')),
+        named ? null : h('p', { class: 'callout' }, 'This session has not been analysed yet, so the handoff has only its size and checks. Analysis runs in the background; start it from the Session library.'),
+        h('details', { class: 'rl' }, h('summary', {}, h('span', { class: 'rq' }, 'The handoff the task starts with')), h('div', { class: 'rbody' }, pre)),
+        ta, err, h('div', { class: 'row' }, go)));
+    const bg = h('div', { class: 'modal-bg', onclick: (e) => { if (e.target === bg) closeMCP(); } }, modal);
+    $('modal-root').replaceChildren(bg);
+    S.modal = { agent: 'continue' };
+    document.removeEventListener('keydown', escClose);
+    document.addEventListener('keydown', escClose);
+    ta.focus();
+  }
   // Continue or fork a past Claude session as an agent this page runs, in the folder it started in.
   function continueSession(x, fork) {
     const ta = h('textarea', { 'aria-label': 'What to ask first', rows: '3', placeholder: 'What should it do next? Leave empty to continue where it left off.' });
@@ -2409,6 +2441,7 @@
               h('button', { class: 'btn small', disabled: !x.exists, title: 'Continue this same session here', onclick: () => continueSession(x, false) }, icon('send'), 'Resume')]
             : [h('button', { class: 'btn ghost small', disabled: !x.exists, onclick: copyCmd(x.fork || x.resume, 'fork it') }, icon('branch'), 'Copy fork command'),
               h('button', { class: 'btn small', disabled: !x.exists, onclick: copyCmd(x.resume, 'continue it') }, icon('copy'), 'Copy resume command')],
+          h('button', { class: runnable ? 'btn ghost small' : 'btn small', disabled: !x.exists, title: 'Start a new task from this session\'s handoff, in the harness Cully runs tasks in', onclick: () => continueAsTask(x) }, icon('plus'), 'Continue as a task'),
           runnable ? h('button', { class: 'linkbtn', title: 'Copy the terminal command instead', onclick: copyCmd(x.resume, 'continue it') }, 'Copy command') : null)); })));
       if (items.length > shown) parts.push(h('div', { class: 'row' }, h('button', { class: 'btn ghost', onclick: () => { S.histShown = { ...(S.histShown || {}), [bucket]: shown + 20 }; drawHistory(); } }, 'Show ' + Math.min(20, items.length - shown) + ' more of ' + (items.length - shown))));
     }

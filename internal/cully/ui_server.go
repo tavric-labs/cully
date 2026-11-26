@@ -1113,7 +1113,13 @@ func (s *uiServer) sessionHandoffGet(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *uiServer) sessionContinue(w http.ResponseWriter, r *http.Request) {
-	a, err := s.m.continueFromSession(r.PathValue("id"))
+	var body struct {
+		Prompt string `json:"prompt"`
+	}
+	if r.ContentLength > 0 && !uiDecode(w, r, &body) {
+		return
+	}
+	a, err := s.m.continueFromSession(r.PathValue("id"), body.Prompt)
 	if err != nil {
 		uiError(w, http.StatusBadRequest, err.Error())
 		return

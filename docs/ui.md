@@ -143,6 +143,10 @@ The **coach** reads all analysed sessions and suggests a job, skill, MCP server,
 
 Turn on **Keep going until checked** when you start an agent and, after each turn, Cully makes sure the agent ran tests after changing files, steers it when it repeats the same call or the same failing call, and judges its work against the "done when" lines you wrote. It stops after three rounds (up to six), after 200 tool calls, or after eight identical calls in a row. Every message Cully sends is shown in the feed.
 
+## Continue any session as a task
+
+Every session on the Sessions page, from Claude, Codex or Cursor, has **Continue as a task**. It starts a new task in the harness Cully runs tasks in (the one you opened the page with, Claude by default) and gives it the session's handoff as its first message: the goal, what it did, where it ended, whether it drifted or left changes untested, what would have gone better, and the path to the full record, which the task is allowed to read. You can add what to do next. The handoff is built from the analysis the library already did in the background; a session not analysed yet gets only its size and checks, and the dialog says so. The original session is not touched, so work begun in Cursor carries on in Claude. A folder with no git works too: the task runs in it directly, with no worktree. Resume and Fork of a Claude session also work in a folder with no git, for the same reason.
+
 ## Suggestions, background jobs and the Advisor
 
 The Advisor is the one place Cully suggests things. The Advisor page opens with a **Suggestions** inbox that gathers every pending suggestion: agents, background jobs, tips from the coach, a workflow-rules update and the latest scout digest. The other pages (Agents, Background jobs, Workflow rules) show what you have approved.

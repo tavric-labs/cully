@@ -296,3 +296,40 @@ func TestBoardIsRedesignedAndDoesNotRedrawWhenNothingChanged(t *testing.T) {
 		}
 	}
 }
+
+func TestResumeWorksInAFolderWithNoGit(t *testing.T) {
+	body := strings.Replace(fakeClaude, `echo "$@"`, `echo "$PWD" >> "$FAKE_OUT/pwd.log"`+"\n"+`echo "$@"`, 1)
+	m, _, out := uiTestManager(t, uiWriteScript(t, body), "tok-aaa1")
+	saved := uiListProcs
+	uiListProcs = func() []uiProc { return nil }
+	t.Cleanup(func() { uiListProcs = saved })
+	plain := t.TempDir() // not a git repository
+	uiWriteTranscript(t, filepath.Join(ConfigDir(), "projects", "enc"), uiTestSessA, plain, "Look at the notes", 2*time.Hour)
+	a, err := m.resumeSession(uiTestSessA, "carry on", false)
+	if err != nil {
+		t.Fatalf("a session in a folder with no git could not be resumed: %v", err)
+	}
+	uiWaitState(t, a, "waiting")
+	pwd, _ := os.ReadFile(filepath.Join(out, "pwd.log"))
+	want, _ := canonicalDir(plain)
+	if got, _ := canonicalDir(strings.TrimSpace(string(pwd))); got != want {
+		t.Fatalf("ran in %q, want %q", got, want)
+	}
+	if v := a.snapshot(); v.Branch != "no git" || v.Worktree != plain {
+		t.Fatalf("view = %+v", v)
+	}
+	if _, err := os.Stat(filepath.Join(ConfigDir(), "ui-worktrees", a.id)); err == nil {
+		t.Fatal("a worktree was made for a folder with no git")
+	}
+}
+
+func TestHandoffForAnotherHarnessCarriesWhatTheUserWantsNext(t *testing.T) {
+	e := uiIndexed{ID: uiTestSessA, Agent: "cursor", Cwd: "/tmp/p", Title: "Team intent flow", Task: "Add the flow", Completed: "partly"}
+	got := uiSessionHandoffNext(e, "  run the end-to-end QA  ")
+	if !strings.Contains(got, "earlier Cursor session") || !strings.Contains(got, "only partly finished") || !strings.HasSuffix(got, "What the user wants next: run the end-to-end QA") {
+		t.Fatalf("handoff = %q", got)
+	}
+	if strings.Contains(uiSessionHandoffNext(e, ""), "wants next") {
+		t.Fatal("an empty next step was added")
+	}
+}

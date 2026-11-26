@@ -31,6 +31,15 @@ func (m *uiManager) sessionEntry(id string) (uiIndexed, error) {
 	return cp, nil
 }
 
+// uiSessionHandoffNext is the handoff plus, when the user typed one, what to do next.
+func uiSessionHandoffNext(e uiIndexed, next string) string {
+	h := uiSessionHandoff(e)
+	if next = strings.TrimSpace(next); next != "" {
+		h += "\n\nWhat the user wants next: " + uiClip(next, 2000)
+	}
+	return h
+}
+
 func uiHarnessName(agent string) string {
 	switch agent {
 	case "codex":
@@ -81,7 +90,7 @@ func uiSessionHandoff(e uiIndexed) string {
 }
 
 // continueFromSession starts a new task in the session's folder with its handoff.
-func (m *uiManager) continueFromSession(id string) (*uiAgent, error) {
+func (m *uiManager) continueFromSession(id, next string) (*uiAgent, error) {
 	e, err := m.sessionEntry(id)
 	if err != nil {
 		return nil, err
@@ -90,7 +99,7 @@ func (m *uiManager) continueFromSession(id string) (*uiAgent, error) {
 	if err != nil || !st {
 		return nil, errors.New("the folder this session worked in is gone")
 	}
-	req := uiStartRequest{Title: "Continue: " + uiClipWords(firstNonEmpty(e.Title, e.Name), 50), Prompt: uiSessionHandoff(e), Context: true}
+	req := uiStartRequest{Title: "Continue: " + uiClipWords(firstNonEmpty(e.Title, e.Name), 50), Prompt: uiSessionHandoffNext(e, m.cfg.Tokens.redact(next)), Context: true}
 	if e.File != "" {
 		req.addDirs = []string{filepath.Dir(e.File)}
 	}
