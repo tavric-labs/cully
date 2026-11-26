@@ -20,6 +20,11 @@ func uiFakeProcs(t *testing.T, procs []uiProc) {
 
 func uiNewBranchRepo(t *testing.T, branch string) string {
 	t.Helper()
+	// A machine with no git identity (such as a CI runner) cannot commit without one.
+	t.Setenv("GIT_AUTHOR_NAME", "t")
+	t.Setenv("GIT_AUTHOR_EMAIL", "t@example.com")
+	t.Setenv("GIT_COMMITTER_NAME", "t")
+	t.Setenv("GIT_COMMITTER_EMAIL", "t@example.com")
 	repo := filepath.Join(t.TempDir(), "proj-"+branch)
 	os.MkdirAll(filepath.Join(repo, "pkg"), 0o755)
 	for _, args := range [][]string{{"init", "-q", "-b", branch}, {"commit", "-q", "--allow-empty", "-m", "init"}} {

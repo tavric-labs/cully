@@ -77,7 +77,7 @@ The **Sessions** tab lists every Claude, Codex and Cursor session open on this c
 
 The Dashboard has an **Advisor** and a **Scout** section.
 
-- **Advisor.** Ask the advisor to review an agent's work. It gives up to three pieces of advice, each marked as a warning, a caution or a suggestion and tied to the agent it is for. **Send to <agent>** passes the advice to that agent as a message; **Dismiss** removes it. The advisor follows Cully's usual limits: at most six requests an hour, two minutes apart.
+- **Advisor.** Ask the advisor to review an agent's work. It gives up to three pieces of advice, each marked as a warning, a caution or a suggestion and tied to the agent it is for. **Send to task** passes the advice to that agent as a message; **Dismiss** removes it. The advisor follows Cully's usual limits: at most six requests an hour, two minutes apart.
 - **Scout.** When you start a task with Scout turned on, Cully searches the web for current practice. The Scout section shows it working, each search and page it reads as it happens, and the findings with their sources. Clicking the scout or recall step on an agent opens it. Recall shows what Cully memory returned.
 
 ## Do it from the page
