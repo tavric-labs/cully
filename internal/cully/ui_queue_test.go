@@ -142,7 +142,7 @@ func TestBoardPageOffersQueueFanOutCompareAndLineComments(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"/api/queue", "Up next", "Compare options", "Keep this one", "Send to agent", "Queue for later"} {
+	for _, want := range []string{"/api/queue", "Up next", "Compare options", "Keep this one", "Send to task", "Queue for later"} {
 		if !strings.Contains(string(b), want) {
 			t.Errorf("app.js lacks %q", want)
 		}

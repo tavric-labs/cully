@@ -92,3 +92,16 @@ func TestParseInitWithoutMCPServers(t *testing.T) {
 		t.Fatalf("mcp = %+v", p.MCP)
 	}
 }
+
+func TestResultEventsReportTokenUseAndCacheShare(t *testing.T) {
+	p := parseStreamLine([]byte(`{"type":"result","is_error":false,"result":"ok","usage":{"input_tokens":200,"cache_read_input_tokens":800,"cache_creation_input_tokens":0,"output_tokens":50}}`))
+	if p.Usage == nil || p.Usage.Input != 200 || p.Usage.CacheRead != 800 || p.Usage.Output != 50 {
+		t.Fatalf("usage = %+v", p.Usage)
+	}
+	if p.Usage.CachedShare() != 80 || p.Usage.Total() != 1050 {
+		t.Fatalf("share = %d, total = %d", p.Usage.CachedShare(), p.Usage.Total())
+	}
+	if q := parseStreamLine([]byte(`{"type":"result","result":"ok"}`)); q.Usage != nil {
+		t.Fatal("usage invented for a result that reported none")
+	}
+}

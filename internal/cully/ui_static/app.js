@@ -54,7 +54,7 @@
     diffKey: '', panelCache: {},
   };
   const PANELS = {
-    advisor: 'Advice for your agents', scout: 'What the scout searched and found', handoff: 'Where the work stands',
+    advisor: 'Advice for your tasks', scout: 'What the scout searched and found', handoff: 'Where the work stands',
     status: 'Session health and setup', timeline: 'What happened, step by step', replay: 'Files, commands and checks',
     suggestions: 'Tips from your terminal sessions', impact: 'What Cully saved and cost', jobs: 'Background jobs', rescue: 'Is a session stuck?',
   };
@@ -204,7 +204,7 @@
             h('span', { class: 'chip' }, ago(a.updated || a.created)))));
       }
     }
-    if (!kids.length) kids.push(h('div', { class: 'hint', style: null }, 'No agents yet.'));
+    if (!kids.length) kids.push(h('div', { class: 'hint', style: null }, 'No tasks yet.'));
     rail.replaceChildren(...kids);
     const waiting = S.agents.filter((a) => a.state === 'waiting').length;
     $('badge').hidden = waiting === 0;
@@ -230,12 +230,12 @@
         h('div', { class: 'row' }, h('a', { class: 'btn', href: '#/sessions' }, 'See sessions'), h('a', { class: 'btn ghost', href: '#/dashboard' }, 'Open the dashboard'))));
       return;
     }
-    const ta = h('textarea', { id: 'prompt', placeholder: 'Describe the task. Cully gathers context, then spawns an agent in its own worktree.', 'aria-label': 'Task' });
+    const ta = h('textarea', { id: 'prompt', placeholder: 'Describe the task. Cully gathers context, then starts it in its own worktree.', 'aria-label': 'Task' });
     ta.value = S.draft;
     ta.addEventListener('input', () => { S.draft = ta.value; });
     const err = h('div', { class: 'err', hidden: true });
-    const start = h('button', { class: 'btn', type: 'submit' }, 'Start agent', icon('send'));
-    const later = h('button', { class: 'btn ghost', type: 'button', title: 'Hold this task until an agent slot is free' }, 'Queue for later');
+    const start = h('button', { class: 'btn', type: 'submit' }, 'Start task', icon('send'));
+    const later = h('button', { class: 'btn ghost', type: 'button', title: 'Hold this task until a slot is free' }, 'Queue for later');
     const segBtn = (mode, label) => {
       const b = h('button', { type: 'button', class: S.opts.mode === mode ? 'on' : '' }, label);
       b.addEventListener('click', () => { S.opts.mode = mode; for (const x of seg.children) x.classList.toggle('on', x === b); });
@@ -263,7 +263,7 @@
       err.hidden = true;
       try {
         await api('/api/queue', { method: 'POST', body: JSON.stringify({ prompt: ta.value, repo: S.opts.repo || (repo ? repo.value : ''), mode: S.opts.mode, context: S.opts.context, recall: S.opts.recall, scout: S.opts.scout }) });
-        S.draft = ''; ta.value = ''; toast('Queued. It starts when an agent slot is free.'); location.hash = '#/board';
+        S.draft = ''; ta.value = ''; toast('Queued. It starts when a slot is free.'); location.hash = '#/board';
       } catch (x) { err.textContent = x.message; err.hidden = false; }
     });
     ta.addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) form.requestSubmit(); });
@@ -284,7 +284,7 @@
     const fleet = h('div', { id: 'fleet' });
     $('stage').className = 'stage home-bg';
     $('stage').replaceChildren(h('div', { class: 'home' },
-      h('h1', {}, 'What should the agents work on?'),
+      h('h1', {}, 'What should Cully work on?'),
       h('p', { class: 'sub' }, 'Give a task. Cully prepares context, starts an agent on the next token, and you can keep talking to it. ⌘/Ctrl+Enter to start.'),
       h('div', { id: 'mcpbanner' }), form, repoLine, fleet));
     renderFleet();
@@ -308,7 +308,7 @@
       box.replaceChildren(h('div', { class: 'section-h' }, 'What happens when you start'), h('ol', { class: 'how' },
         h('li', {}, h('b', {}, 'Context'), "The project's latest journal and live git state go to the agent first."),
         h('li', {}, h('b', {}, 'Recall and scout'), 'Optionally pull memory from Cully and fresh notes from the web.'),
-        h('li', {}, h('b', {}, 'Worktree'), 'Each agent works on its own branch, so nothing touches your checkout.'),
+        h('li', {}, h('b', {}, 'Worktree'), 'Each task works on its own branch, so nothing touches your checkout.'),
         h('li', {}, h('b', {}, 'Conversation'), 'Send follow-ups while it works, review the diff, then continue elsewhere.')));
     }
   }
@@ -326,7 +326,7 @@
     const jump = h('button', { class: 'btn ghost small jump', hidden: true, onclick: () => { body.scrollTop = body.scrollHeight; } }, icon('down'), 'Latest');
     const quick = h('div', { class: 'quick' }, ...['Continue', 'Run the tests', 'Summarize what you changed', 'Commit your work'].map((t) =>
       h('button', { type: 'button', onclick: () => sendMessage(a.id, t) }, t)));
-    const ta = h('textarea', { rows: '1', placeholder: 'Message this agent…', 'aria-label': 'Message' });
+    const ta = h('textarea', { rows: '1', placeholder: 'Message this task…', 'aria-label': 'Message' });
     ta.addEventListener('input', () => { ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, 160) + 'px'; ta.style.overflowY = ta.scrollHeight > 160 ? 'auto' : 'hidden'; });
     ta.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); const t = ta.value; ta.value = ''; ta.style.height = 'auto'; sendMessage(a.id, t); } });
     const composer = h('div', { id: 'composer' }, h('div', { class: 'composer' }, h('div', { class: 'box' }, ta),
@@ -360,18 +360,19 @@
     $('ahead').replaceChildren(h('h2', {}, a.title), h('span', { class: 'pill ' + a.state }, dot(a.state), stateLabel(a.state)),
       h('span', { class: 'sp' },
         h('button', { class: 'btn ghost small', title: "Ask the advisor to review this agent's work", onclick: () => askAdvisor(a) }, icon('spark'), 'Ask advisor'),
-        h('button', { class: 'btn ghost small', title: 'Start a read-only agent that critiques this change', onclick: () => startReview(a) }, icon('eye'), 'Review'),
-        finished ? null : h('button', { class: 'btn ghost small', title: "Send this agent's reply or changes to another agent", onclick: () => openRelay(a) }, icon('send'), 'Send to agent'),
-        h('button', { class: 'btn ghost small', onclick: () => continueFrom(a) }, icon('plus'), 'Continue in new agent'),
+        h('button', { class: 'btn ghost small', title: 'Start a read-only review of this change', onclick: () => startReview(a) }, icon('eye'), 'Review'),
+        finished ? null : h('button', { class: 'btn ghost small', title: "Send this agent's reply or changes to another agent", onclick: () => openRelay(a) }, icon('send'), 'Send to task'),
+        h('button', { class: 'btn ghost small', onclick: () => continueFrom(a) }, icon('plus'), 'Continue in a new task'),
         finished ? null : stop));
     $('sub2').replaceChildren(
       h('button', { class: 'chip mono', title: 'Copy branch name', onclick: () => copy(a.branch, 'branch') }, icon('branch'), a.branch),
       a.token ? h('span', { class: 'chip' }, 'token ' + a.token) : h('span', { class: 'chip' }, 'ambient login'),
       h('span', { class: 'chip' }, 'started ' + ago(a.created)), h('span', { class: 'chip' }, 'active ' + ago(a.updated || a.created)),
-      a.harness ? h('span', { class: 'chip ' + (a.harness.status === 'done' ? 'ok' : a.harness.status === 'stopped' ? 'warn' : ''), title: 'Cully is checking this agent\'s work' }, icon('check'), 'Checking: round ' + a.harness.round + ' of ' + a.harness.max + ', ' + ({ working: 'working', verifying: 'asking it to verify', steering: 'steering it', judging: 'judging the work', done: 'checks done', stopped: 'stopped' }[a.harness.status] || a.harness.status)) : null,
+      a.usage ? h('span', { class: 'chip', title: 'Tokens this task has handled. Input served from the prompt cache costs about a tenth of fresh input, so a high share means tokens saved. About ' + fmtTokens(a.usage.saved) + ' tokens of cost saved so far.' }, icon('spark'), fmtTokens(a.usage.tokens) + ' tokens, ' + a.usage.cachedShare + '% from cache') : null,
+      a.harness ? h('span', { class: 'chip ' + (a.harness.status === 'done' ? 'ok' : a.harness.status === 'stopped' ? 'warn' : ''), title: 'Cully is checking this task\'s work' }, icon('check'), 'Checking: round ' + a.harness.round + ' of ' + a.harness.max + ', ' + ({ working: 'working', verifying: 'asking it to verify', steering: 'steering it', judging: 'judging the work', done: 'checks done', stopped: 'stopped' }[a.harness.status] || a.harness.status)) : null,
       a.files && a.files.length ? h('span', { class: 'chip' }, a.files.length + (a.files.length === 1 ? ' file changed' : ' files changed')) : null,
       openAdviceFor(a.id) ? h('button', { class: 'chip warn', title: 'See and send the advisor\'s advice', onclick: () => { location.hash = '#/dashboard/advisor'; } }, icon('spark'), openAdviceFor(a.id) + (openAdviceFor(a.id) === 1 ? ' piece of advice' : ' pieces of advice')) : null,
-      (a.mcp || []).some((m) => m.name === 'cully' && needsAuthStatus(m.status)) ? h('button', { class: 'chip warn', title: 'This agent started without Cully MCP access', onclick: () => openMCP('claude') }, icon('alert'), 'Cully MCP needs sign-in') : null);
+      (a.mcp || []).some((m) => m.name === 'cully' && needsAuthStatus(m.status)) ? h('button', { class: 'chip warn', title: 'This task started without Cully MCP access', onclick: () => openMCP('claude') }, icon('alert'), 'Cully MCP needs sign-in') : null);
     $('stepper').replaceChildren(...(a.stages || []).map((s) => {
       const label = (({ ok: '✓ ', failed: '✗ ', skipped: '– ', running: '● ' })[s.status] || '') + s.name;
       const look = s.name === 'scout' || s.name === 'recall';
@@ -482,7 +483,7 @@
     if (!force && key === S.diffKey) return;
     S.diffKey = key;
     const refreshBtn = h('button', { class: 'btn ghost small sp', onclick: () => loadSide(a, true) }, icon('refresh'), 'Refresh');
-    head.replaceChildren(h('span', {}, kind === 'changes' ? 'Full change against the commit this agent started from' : 'Where this agent left off'), refreshBtn);
+    head.replaceChildren(h('span', {}, kind === 'changes' ? 'Full change against the commit this task started from' : 'Where this task left off'), refreshBtn);
     try {
       if (kind === 'handoff') {
         const sum = await api('/api/agents/' + a.id + '/summary');
@@ -496,11 +497,11 @@
       const bar = h('div', { class: 'notebar', hidden: !notes.length });
       const drawBar = () => {
         bar.hidden = !notes.length;
-        bar.replaceChildren(h('span', {}, notes.length + (notes.length === 1 ? ' comment' : ' comments') + ' ready for the agent'),
+        bar.replaceChildren(h('span', {}, notes.length + (notes.length === 1 ? ' comment' : ' comments') + ' ready for the task'),
           h('button', { class: 'btn small', onclick: async () => {
             const text = 'Please address these review comments on your change:\n' + notes.map((n, i) => (i + 1) + '. ' + n.file + ' — "' + n.line + '": ' + n.text).join('\n');
             try { await api('/api/agents/' + a.id + '/message', { method: 'POST', body: JSON.stringify({ text }) }); notes.length = 0; drawBar(); toast('Comments sent to ' + a.title); S.tab = 'chat'; mountAgent(a.id); } catch (x) { toast(x.message, true); }
-          } }, icon('send'), 'Send to agent'),
+          } }, icon('send'), 'Send to task'),
           h('button', { class: 'btn ghost small', onclick: () => { notes.length = 0; drawBar(); } }, 'Clear'));
       };
       drawBar();
@@ -594,7 +595,7 @@
       }
       return;
     }
-    toast(kind === 'queue' ? 'Drop a waiting task on Starting or Working to start it.' : 'Drop a running agent on Finished to stop it.');
+    toast(kind === 'queue' ? 'Drop a waiting task on Starting or Working to start it.' : 'Drop a running task on Finished to stop it.');
   }
   function openCompare(group) {
     const opts = S.agents.filter((a) => a.group === group).sort((x, y) => (x.option || '').localeCompare(y.option || ''));
@@ -625,13 +626,13 @@
     const prefs = boardPrefs();
     const repoName = (p) => p.split('/').filter(Boolean).pop() || p;
     const repos = [...new Set(S.agents.map((a) => a.repo))];
-    const cols = [['queued', 'Up next', 'Waiting for a free agent slot'], ['preparing', 'Starting', 'Gathering context and a clean branch'], ['working', 'Working', 'Agents busy right now'], ['waiting', 'Needs you', 'Waiting for your reply'], ['finished', 'Finished', 'Review, then continue elsewhere']];
+    const cols = [['queued', 'Up next', 'Waiting for a free slot'], ['preparing', 'Starting', 'Gathering context and a clean branch'], ['working', 'Working', 'Agents busy right now'], ['waiting', 'Needs you', 'Waiting for your reply'], ['finished', 'Finished', 'Review, then continue elsewhere']];
     const bucket = (a) => (a.state === 'preparing' ? 'preparing' : a.state === 'working' ? 'working' : a.state === 'waiting' ? 'waiting' : 'finished');
     const q = prefs.q.trim().toLowerCase();
     const shown = S.agents.filter((a) => (!prefs.repo || a.repo === prefs.repo) && (!q || (a.title + ' ' + a.branch + ' ' + (a.files || []).join(' ')).toLowerCase().includes(q)));
     const title = (id) => (S.agents.find((a) => a.id === id) || {}).title || id;
     if (!S.agents.length && !queue.length) {
-      $('board').replaceChildren(h('div', { class: 'empty-state' }, h('h2', {}, 'No agents yet'), h('p', { class: 'faint' }, 'Give Cully a task and its agents show up here, moving from Starting to Finished.'), h('a', { class: 'btn', href: '#/' }, icon('plus'), 'Start an agent')));
+      $('board').replaceChildren(h('div', { class: 'empty-state' }, h('h2', {}, 'No tasks yet'), h('p', { class: 'faint' }, 'Give Cully a task and it shows up here, moving from Starting to Finished.'), h('a', { class: 'btn', href: '#/' }, icon('plus'), 'Start a task')));
       return;
     }
     const count = (k) => (k === 'queued' ? queue.length : shown.filter((a) => bucket(a) === k).length);
@@ -709,11 +710,11 @@
     const modal = h('div', { class: 'modal wide', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Apply this suggestion' },
       h('header', {}, h('h2', {}, 'Apply this suggestion'), h('button', { class: 'btn ghost small sp', onclick: closeMCP }, 'Close')),
       h('div', { class: 'mbody' }, h('p', {}, h('b', {}, it.title)), ta,
-        live.length ? h('div', {}, h('span', { class: 'opt-label' }, 'Send it to an agent that is running'),
+        live.length ? h('div', {}, h('span', { class: 'opt-label' }, 'Send it to a task that is running'),
           h('div', { class: 'row' }, ...live.map((a) => h('button', { class: 'btn small', onclick: () => run(async () => { await api('/api/agents/' + a.id + '/message', { method: 'POST', body: JSON.stringify({ text: ta.value }) }); closeMCP(); toast('Sent to ' + a.title); location.hash = '#/agent/' + a.id; }) }, icon('send'), a.title))))
-          : h('p', { class: 'faint small' }, 'No agent started from Cully is running right now.'),
+          : h('p', { class: 'faint small' }, 'No task started from Cully is running right now.'),
         h('div', { class: 'row' },
-          h('button', { class: 'btn', onclick: () => run(async () => { const v = await api('/api/agents', { method: 'POST', body: JSON.stringify({ prompt: ta.value, repo: S.opts.repo || '', mode: 'edit', context: true }) }); closeMCP(); await refresh(); location.hash = '#/agent/' + v.id; }) }, icon('plus'), 'Start an agent for this'),
+          h('button', { class: 'btn', onclick: () => run(async () => { const v = await api('/api/agents', { method: 'POST', body: JSON.stringify({ prompt: ta.value, repo: S.opts.repo || '', mode: 'edit', context: true }) }); closeMCP(); await refresh(); location.hash = '#/agent/' + v.id; }) }, icon('plus'), 'Start a task for this'),
           h('button', { class: 'btn ghost', onclick: () => writeClip(ta.value).then(() => toast('Copied')).catch(() => showCommand(ta.value)) }, icon('copy'), 'Copy for a session in a terminal')),
         h('p', { class: 'faint small' }, 'Sessions open in a terminal, an editor or a desktop app cannot be written to from this page, so copy the text and paste it there.'), err));
     const bg = h('div', { class: 'modal-bg', onclick: (e) => { if (e.target === bg) closeMCP(); } }, modal);
@@ -740,7 +741,7 @@
         h('div', { class: 'hmain' }, h('div', { class: 'ht' }, r.task, h('span', { class: 'chip run-' + r.status }, RUN_LABEL[r.status] || r.status)),
           r.reason ? h('p', { class: 'hdesc' }, r.reason) : null,
           h('div', { class: 'row' }, h('span', { class: 'chip' }, ago(r.started)), r.seconds ? h('span', { class: 'chip' }, dur(r.seconds)) : null, r.files ? h('span', { class: 'chip' }, r.files + ' files changed') : null)),
-        r.agentId ? h('div', { class: 'row hact' }, h('a', { class: 'btn ghost small', href: '#/agent/' + r.agentId }, 'Open the agent')) : null)))
+        r.agentId ? h('div', { class: 'row hact' }, h('a', { class: 'btn ghost small', href: '#/agent/' + r.agentId }, 'Open the task')) : null)))
         : emptyCard('No eval runs yet', 'Run a case below: a fresh agent gets the goal, then a judge checks its work against the checks.', null, null),
       h('h3', { class: 'section-h' }, 'Eval cases'),
       cases.length ? h('ul', { class: 'hrows' }, ...cases.map((c) => { const last = lastFor(c.id); const btn = h('button', { class: 'btn small' }, icon('send'), last ? 'Run again' : 'Run');
@@ -837,7 +838,7 @@
       h('div', { class: 'kpis' }, ...[['Sessions', String(t.sessions)], ['Time worked', dur(t.activeSec)], ['Named', t.analyzed + ' of ' + total]].map(([k, v]) => h('div', { class: 'kpi' }, h('b', {}, v), h('span', {}, k)))),
       analysis, await coachCard(again), folders,
       h('h3', { class: 'section-h' }, 'Sessions'),
-      rows.length ? h('ul', { class: 'hrows' }, ...rows) : emptyCard('No sessions yet', 'Sessions you run appear here, with how long you worked and what you did.', 'Start an agent', '#/'),
+      rows.length ? h('ul', { class: 'hrows' }, ...rows) : emptyCard('No sessions yet', 'Sessions you run appear here, with how long you worked and what you did.', 'Start a task', '#/'),
       lib.sessions.length > shown ? h('div', { class: 'row' }, h('button', { class: 'btn ghost', onclick: () => { S.libShown = shown + 30; again(); } }, 'Show more')) : null);
     if (lib.analysis.on) setTimeout(() => { if (live()) again(); }, 30000);
   }
@@ -927,8 +928,8 @@
     kids.push(h('section', {}, h('h3', {}, o.agent ? 'What changed' : 'Changes in ' + (sum.branch || 'this repository')), ...changed));
     if (sum.activity || o.agent) kids.push(h('section', {}, h('h3', {}, 'Checks'), h('p', {}, checksSentence(sum.checks, sum.editsSinceCheck))));
     if (sum.loops > 0) kids.push(h('div', { class: 'callout' }, h('b', {}, 'Heads up. '), 'The same command failed several times in a row. Look at it before continuing.'));
-    if (!o.agent && !sum.activity) kids.push(h('div', { class: 'callout' }, 'Cully has no session recorded for this project yet. Start an agent from the Agents tab and what it does shows up here.'));
-    if (o.agent) kids.push(h('div', { class: 'row' }, h('button', { class: 'btn small', onclick: () => continueFrom(o.agent) }, icon('plus'), 'Continue in new agent')));
+    if (!o.agent && !sum.activity) kids.push(h('div', { class: 'callout' }, 'Cully has no session recorded for this project yet. Start a task from the Tasks tab and what it does shows up here.'));
+    if (o.agent) kids.push(h('div', { class: 'row' }, h('button', { class: 'btn small', onclick: () => continueFrom(o.agent) }, icon('plus'), 'Continue in a new task')));
     return h('div', { class: 'summary' }, ...kids);
   }
 
@@ -947,14 +948,14 @@
       x.action === 'handoff' ? h('button', { class: 'btn small', onclick: async () => {
         try { await writeClip(await api('/api/agents/' + g.agentId + '/handoff')); toast('Handoff copied. Paste it into the session you are continuing.'); } catch (e) { toast('Could not copy: ' + e.message, true); }
       } }, icon('copy'), 'Copy handoff from this session') : null,
-      h('button', { class: x.action === 'handoff' ? 'btn ghost small' : 'btn small', disabled: !live(g.agentState), title: live(g.agentState) ? '' : 'This agent has finished', onclick: async () => {
+      h('button', { class: x.action === 'handoff' ? 'btn ghost small' : 'btn small', disabled: !live(g.agentState), title: live(g.agentState) ? '' : 'This task has finished', onclick: async () => {
         try { await api('/api/agents/' + g.agentId + '/advice/' + x.id + '/apply', { method: 'POST' }); toast('Sent to ' + g.agentTitle); drawPanel('advisor', true); } catch (e) { toast(e.message, true); }
       } }, icon('send'), 'Send to ' + g.agentTitle),
       h('button', { class: 'btn ghost small', onclick: async () => { try { await api('/api/agents/' + g.agentId + '/advice/' + x.id + '/dismiss', { method: 'POST' }); drawPanel('advisor', true); } catch (e) { toast(e.message, true); } } }, 'Dismiss')));
     return h('div', { class: 'advcard ' + x.level + ' ' + state }, ...kids);
   }
   function renderAdvisor(list) {
-    if (!list.length) return emptyCard('No agents yet', 'The advisor reviews what a running agent is doing and suggests what to fix or check. Start an agent to get advice.', 'Start an agent', '#/');
+    if (!list.length) return emptyCard('No tasks yet', 'The advisor reviews what a running agent is doing and suggests what to fix or check. Start a task to get advice.', 'Start a task', '#/');
     return h('div', { class: 'groups' }, ...list.map((g) => {
       const open = g.advice.filter((x) => !x.dismissed);
       const asking = g.status === 'asking';
@@ -1022,7 +1023,7 @@
   const HEADINGS = { Evidence: 'What Cully saw', 'Recovery steps': 'What to try next' };
   const EMPTY_RE = /nothing recorded|nothing to show|no cully suggestions|no sessions|no scheduled jobs|no jobs/i;
   const EMPTY_TEXT = {
-    status: ['No sessions yet', 'Cully has not recorded a session for this project. Start an agent from the Agents tab and its health shows up here.'],
+    status: ['No sessions yet', 'Cully has not recorded a session for this project. Start a task from the Tasks tab and its health shows up here.'],
     rescue: ['Nothing to check yet', 'There is no session history for this project, so there is nothing to diagnose. If an agent gets stuck, the check appears here.'],
     suggestions: ['No tips right now', 'Cully has no suggestions from your terminal sessions.'],
     impact: ['Nothing to measure yet', 'Savings appear once Cully has recorded some sessions.'],
@@ -1041,7 +1042,7 @@
   function renderText(name, text) {
     const t = (text || '').trim();
     const [etitle, ebody] = EMPTY_TEXT[name] || ['Nothing to show yet', 'There is nothing here yet.'];
-    if (!t) return emptyCard(etitle, ebody, 'Start an agent', '#/');
+    if (!t) return emptyCard(etitle, ebody, 'Start a task', '#/');
     if (name === 'timeline' || name === 'replay') return h('pre', { class: 'pre' }, t);
     const lines = t.split('\n').filter((l) => l.trim() && l.trim() !== 'CULLY');
     const dropped = lines.filter((l) => EMPTY_RE.test(l));
@@ -1062,14 +1063,14 @@
       const isHead = /^\S/.test(line) && (/^\s/.test(next) || /^\s*(?:[-*]|\d+\.)\s/.test(next)) && line.length < 60;
       blocks.push(isHead ? h('h3', {}, HEADINGS[line.trim()] || line.trim()) : h('p', {}, ...inline(shortenItem(line.trim()))));
     }
-    if (dropped.length && (!blocks.length || name === 'rescue')) return emptyCard(etitle, ebody, 'Start an agent', '#/');
+    if (dropped.length && (!blocks.length || name === 'rescue')) return emptyCard(etitle, ebody, 'Start a task', '#/');
     return h('div', { class: 'plaintext' }, dropped.length ? emptyCard(etitle, ebody, null) : null, ...blocks);
   }
 
   // ----- structure -----
   const DASH = [
     [null, [['overview', 'Overview', 'What needs you']]],
-    ['Work', [['advisor', 'Advisor', 'Advice for your agents'], ['library', 'Session library', 'Every past session, named'], ['health', 'Session health', 'Did sessions finish the job?'], ['evals', 'Evals', 'Test cases and their runs'], ['scout', 'Scout', 'Live searches and findings'], ['activity', 'Activity', 'What was done, step by step']]],
+    ['Work', [['advisor', 'Advisor', 'Advice for your tasks'], ['library', 'Session library', 'Every past session, named'], ['health', 'Session health', 'Did sessions finish the job?'], ['evals', 'Evals', 'Test cases and their runs'], ['scout', 'Scout', 'Live searches and findings'], ['activity', 'Activity', 'What was done, step by step']]],
     ['Health', [['setup', 'Setup', 'Is everything connected?'], ['savings', 'Savings', 'What Cully saved and cost']]],
     ['More', [['jobs', 'Background jobs', 'Runs on a schedule'], ['permissions', 'Agent permissions', 'What agents may do']]],
   ];
@@ -1133,7 +1134,7 @@
           h('span', { class: 'gv' }, !setup ? 'Not checked' : setup.allReady ? 'All set' : 'Needs attention'), h('span', { class: 'ga' }, 'Details')),
         h('a', { class: 'glance-row', href: '#/dashboard/activity' }, h('span', { class: 'gl' }, 'Activity'),
           h('span', { class: 'gv' }, activity && activity.recorded ? activity.facts.edits + (activity.facts.edits === 1 ? ' edit' : ' edits') + ' recorded in this folder' : 'Nothing recorded in this folder yet'), h('span', { class: 'ga' }, 'Details'))),
-      h('section', { class: 'start-else' }, h('h3', {}, 'Start somewhere else'), h('p', { class: 'faint' }, 'Choose any folder on this machine and start a new agent there.'),
+      h('section', { class: 'start-else' }, h('h3', {}, 'Start somewhere else'), h('p', { class: 'faint' }, 'Choose any folder on this machine and start a new task there.'),
         h('div', { class: 'row' }, h('button', { class: 'btn', onclick: () => openFolderChooser() }, icon('folder'), 'Choose a folder'),
           ...recentFolders(5).filter((r) => r.git && r.path !== S.opts.repo).map((r) => h('button', { class: 'chip', title: r.path, onclick: () => startIn(r.path) }, icon('folder'), r.name)))));
     renderNeeds();
@@ -1227,7 +1228,7 @@
       data.recorded
         ? h('section', { class: 'group' }, h('header', {}, h('span', { class: 'gt' }, 'What was done'), h('span', { class: 'faint small' }, data.sessions + (data.sessions === 1 ? ' recorded session' : ' recorded sessions') + ', latest shown')), chips, renderTimeline(data, filter),
           h('p', { class: 'faint small' }, 'Shows what the agent did: files, commands and checks. It never shows prompts or replies.'))
-        : emptyCard('No activity recorded yet', 'Activity appears here after an agent runs in the Cully terminal or from this page.', 'Start an agent', '#/'));
+        : emptyCard('No activity recorded yet', 'Activity appears here after an agent runs in the Cully terminal or from this page.', 'Start a task', '#/'));
   }
 
   // ----- the drawing switch -----
@@ -1247,7 +1248,7 @@
         if (!live()) return;
         if (name === 'advisor') {
           const tab = S.advisorTab || 'agents';
-          const tabs = h('div', { class: 'seg', role: 'group', 'aria-label': 'Source' }, ...[['agents', 'For your agents'], ['terminal', 'From terminal sessions']].map(([k, l]) => h('button', { type: 'button', class: k === tab ? 'on' : '', onclick: () => { S.advisorTab = k; drawPanel('advisor', true); } }, l)));
+          const tabs = h('div', { class: 'seg', role: 'group', 'aria-label': 'Source' }, ...[['agents', 'For your tasks'], ['terminal', 'From terminal sessions']].map(([k, l]) => h('button', { type: 'button', class: k === tab ? 'on' : '', onclick: () => { S.advisorTab = k; drawPanel('advisor', true); } }, l)));
           let body;
           if (tab === 'terminal') { const text = await api('/api/panel/suggestions?repo=' + encodeURIComponent(S.opts.repo || '')); body = renderText('suggestions', text); } else body = renderAdvisor(data);
           if (!live()) return;
@@ -1495,7 +1496,7 @@
     return [...seen.values()].slice(0, limit || 6);
   }
   async function startIn(path, init) {
-    try { const info = await addFolder(path, init); closeMCP(); location.hash = '#/'; if (S.route.name === 'home') mountHome(); toast('Ready to start an agent in ' + info.name); } catch (e) { toast(e.message, true); }
+    try { const info = await addFolder(path, init); closeMCP(); location.hash = '#/'; if (S.route.name === 'home') mountHome(); toast('Ready to start a task in ' + info.name); } catch (e) { toast(e.message, true); }
   }
   // A folder that is not a git repository needs one first: agents work on their own branch.
   function startHere(path, isGit) {
@@ -1537,7 +1538,7 @@
         d && d.truncated ? h('p', { class: 'faint small' }, 'Showing the first folders only. Paste a path to go further.') : null,
         h('div', { class: 'row foot' }, pathIn,
           d && d.writable ? h('button', { class: 'btn', onclick: () => startHere(d.path, d.isGit) }, icon('plus'), 'Use this folder')
-            : h('span', { class: 'faint small' }, d ? 'You do not have write access to this folder, so an agent cannot work here.' : '')));
+            : h('span', { class: 'faint small' }, d ? 'You do not have write access to this folder, so Cully cannot work here.' : '')));
     }
     draw();
     load(state.path);
@@ -1546,7 +1547,7 @@
 
   const AGENT_LABEL = { claude: 'Claude', codex: 'Codex', cursor: 'Cursor' };
   async function startHere(sess) {
-    try { await addFolder(sess.repo); location.hash = '#/'; toast('Ready to start an agent in ' + sess.name); } catch (e) { toast(e.message, true); }
+    try { await addFolder(sess.repo); location.hash = '#/'; toast('Ready to start a task in ' + sess.name); } catch (e) { toast(e.message, true); }
   }
   async function viewHistory(sess) {
     try { await addFolder(sess.repo); location.hash = '#/dashboard/status'; } catch (e) { toast(e.message, true); }
@@ -1567,7 +1568,7 @@
     if (hiddenClosed || S.showClosedSessions) toggles.push(h('button', { class: 'linkbtn', onclick: () => { S.showClosedSessions = !S.showClosedSessions; S.sessSig = ''; renderSessions(); } }, S.showClosedSessions ? 'Hide sessions whose terminal was closed' : 'Show ' + hiddenClosed + (hiddenClosed === 1 ? ' session' : ' sessions') + ' whose terminal was closed'));
     if (toggles.length) kids.push(h('div', { class: 'row' }, ...toggles));
     const mine = S.agents.length;
-    if (mine) kids.push(h('p', { class: 'faint small' }, mine + (mine === 1 ? ' agent was' : ' agents were') + ' started from this page. ', h('a', { class: 'ext', href: '#/' }, 'See them on the Agents tab')));
+    if (mine) kids.push(h('p', { class: 'faint small' }, mine + (mine === 1 ? ' agent was' : ' agents were') + ' started from this page. ', h('a', { class: 'ext', href: '#/' }, 'See them on the Tasks tab')));
     kids.push(h('div', { id: 'history' }));
     box.replaceChildren(...kids);
     drawActive();
@@ -1649,7 +1650,7 @@
     const box = $('active');
     if (!box) return;
     const list = (S.sessions || []).filter((x) => S.showClosedSessions || !x.detached);
-    if (!list.length) { box.replaceChildren(h('h3', { class: 'section-h' }, 'Open now'), emptyCard('Nothing is open right now', 'Open ' + (mcpUsed().map((m) => AGENT_LABEL[m.agent]).join(' or ') || 'Claude') + ' in a terminal and it appears here. Or start an agent from this page.', 'Start an agent', '#/')); return; }
+    if (!list.length) { box.replaceChildren(h('h3', { class: 'section-h' }, 'Open now'), emptyCard('Nothing is open right now', 'Open ' + (mcpUsed().map((m) => AGENT_LABEL[m.agent]).join(' or ') || 'Claude') + ' in a terminal and it appears here. Or start an agent from this page.', 'Start a task', '#/')); return; }
     const recorded = (S.hist && S.hist.sessions) || [];
     box.replaceChildren(h('h3', { class: 'section-h' }, 'Open now'), h('ul', { class: 'hrows active' }, ...list.map((x) => {
       const rec = recorded.find((r) => r.open && r.cwd === x.cwd);
@@ -1663,7 +1664,7 @@
             x.started && !x.started.startsWith('0001') ? h('span', { class: 'chip' }, 'open for ' + ago(x.started).replace(' ago', '')) : null)),
         h('div', { class: 'row hact' },
           rec && S.hist && S.hist.agent === 'claude' ? h('button', { class: 'btn small', title: 'Start a new session from this one; the original stays as it is', onclick: () => continueSession(rec, true) }, icon('branch'), 'Fork') : null,
-          h('button', { class: rec ? 'btn ghost small' : 'btn small', disabled: !x.repo, title: x.repo ? '' : 'This folder is not a git repository', onclick: () => startHere(x) }, icon('plus'), 'New agent here'),
+          h('button', { class: rec ? 'btn ghost small' : 'btn small', disabled: !x.repo, title: x.repo ? '' : 'This folder is not a git repository', onclick: () => startHere(x) }, icon('plus'), 'New task here'),
           h('button', { class: 'btn ghost small', disabled: !x.repo, onclick: () => viewHistory(x) }, 'View history')));
     })));
   }
@@ -1677,7 +1678,7 @@
     const label = hist.days === 0 ? 'of all time' : hist.days === 7 ? 'in the last 7 days' : 'in the last ' + hist.days + ' days';
     const parts = [h('h3', { class: 'section-h' }, 'Recent'), h('p', { class: 'faint small' }, (AGENT_LABEL[hist.agent] || hist.agent) + ' sessions ' + label + ', named from what each one did.')];
     if (hist.note) parts.push(h('p', { class: 'faint' }, hist.note));
-    if (!hist.sessions.filter((x) => !x.open).length && !hist.note) parts.push(emptyCard('No recent sessions', 'Sessions you run appear here so you can continue them.', 'Start an agent', '#/'));
+    if (!hist.sessions.filter((x) => !x.open).length && !hist.note) parts.push(emptyCard('No recent sessions', 'Sessions you run appear here so you can continue them.', 'Start a task', '#/'));
     const copyCmd = (cmd, what) => async () => {
       try { await writeClip(cmd); toast('Copied. Paste it in a terminal to ' + what + '.'); } catch (_) { showCommand(cmd); }
     };
@@ -1711,7 +1712,7 @@
       const view = await api('/api/agents/' + a.id + '/review', { method: 'POST' });
       await refresh();
       location.hash = '#/agent/' + view.id;
-      toast('Review agent started');
+      toast('Review started');
     } catch (e) { toast(e.message, true); }
   }
 
@@ -1726,7 +1727,7 @@
         ? h('div', { class: 'targets', role: 'radiogroup', 'aria-label': 'Send to' }, ...targets.map((x) =>
           h('button', { type: 'button', role: 'radio', 'aria-checked': to === x.id ? 'true' : 'false', class: 'target' + (to === x.id ? ' on' : ''), onclick: () => { to = x.id; draw(); } },
             dot(x.state), h('span', { class: 't' }, x.title), h('span', { class: 'chip mono' }, x.branch.replace(/^cully\//, '')))))
-        : h('div', { class: 'callout' }, 'No other agent is running. Start one first, then send to it.');
+        : h('div', { class: 'callout' }, 'No other task is running. Start one first, then send to it.');
       const noteIn = h('input', { type: 'text', placeholder: 'Optional note, for example: please check the error handling', 'aria-label': 'Note' });
       noteIn.value = note;
       noteIn.addEventListener('input', () => { note = noteIn.value; });
@@ -1738,8 +1739,8 @@
           toast('Sent to ' + (targets.find((x) => x.id === to) || {}).title);
         } catch (e) { err.textContent = e.message; err.hidden = false; }
       } }, icon('send'), 'Send');
-      const modal = h('div', { class: 'modal', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Send to another agent' },
-        h('header', {}, h('h2', {}, 'Send to another agent'), h('button', { class: 'btn ghost small sp', onclick: closeMCP }, 'Close')),
+      const modal = h('div', { class: 'modal', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Send to another task' },
+        h('header', {}, h('h2', {}, 'Send to another task'), h('button', { class: 'btn ghost small sp', onclick: closeMCP }, 'Close')),
         h('div', { class: 'mbody' },
           h('p', {}, 'Cully relays this to the other agent and shows it in both feeds. The other agent will respond to it.'),
           h('div', {}, h('div', { class: 'opt-label' }, 'What to send'), h('div', { class: 'seg' }, kindBtn('reply', 'Latest reply'), kindBtn('diff', 'Changes (diff)'))),

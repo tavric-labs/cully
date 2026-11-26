@@ -53,6 +53,39 @@ type uiParsed struct {
 	TurnDone bool
 	Uses     map[string]uiToolUse
 	Results  []uiToolResult
+	Usage    *uiTokens // tokens the turn reported, when it did
+}
+
+// uiTokens is what one turn used, as the agent reported it. Cache reads cost a
+// fraction of ordinary input, so a high cached share is how a task saves tokens.
+type uiTokens struct {
+	Input      int `json:"input"`      // fresh input tokens
+	CacheRead  int `json:"cacheRead"`  // input served from the prompt cache
+	CacheWrite int `json:"cacheWrite"` // input written to the cache
+	Output     int `json:"output"`
+}
+
+func (u uiTokens) add(o uiTokens) uiTokens {
+	return uiTokens{u.Input + o.Input, u.CacheRead + o.CacheRead, u.CacheWrite + o.CacheWrite, u.Output + o.Output}
+}
+
+// Total is every token the turn handled.
+func (u uiTokens) Total() int { return u.Input + u.CacheRead + u.CacheWrite + u.Output }
+
+// CachedShare is the part of the input that came from the cache, from 0 to 100.
+func (u uiTokens) CachedShare() int {
+	in := u.Input + u.CacheRead + u.CacheWrite
+	if in == 0 {
+		return 0
+	}
+	return u.CacheRead * 100 / in
+}
+
+func uiNum(v any) int {
+	if f, ok := v.(float64); ok && f > 0 {
+		return int(f)
+	}
+	return 0
 }
 
 var uiCheckCommand = regexp.MustCompile(`(^|[\s;&|])(go (test|vet|build)|pytest|npm (run )?test|yarn test|make (test|check)|cargo (test|check|build)|tsc|jest|vitest)\b`)
@@ -114,6 +147,9 @@ func parseStreamLine(line []byte) uiParsed {
 		failed, _ := raw["is_error"].(bool)
 		text, _ := raw["result"].(string)
 		out.Final = text
+		if u, ok := raw["usage"].(map[string]any); ok {
+			out.Usage = &uiTokens{Input: uiNum(u["input_tokens"]), CacheRead: uiNum(u["cache_read_input_tokens"]), CacheWrite: uiNum(u["cache_creation_input_tokens"]), Output: uiNum(u["output_tokens"])}
+		}
 		out.Events = append(out.Events, uiEvent{Kind: "result", Text: clipUIText(text), Failed: failed})
 	case "assistant", "user":
 		msg, _ := raw["message"].(map[string]any)

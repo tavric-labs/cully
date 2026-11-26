@@ -117,6 +117,7 @@ type uiAgentView struct {
 	Last     string         `json:"last"`    // one line describing the latest activity
 	Updated  time.Time      `json:"updated"` // when the latest activity happened
 	Harness  *uiHarnessView `json:"harness,omitempty"`
+	Usage    *uiUsageView   `json:"usage,omitempty"`
 	Group    string         `json:"group,omitempty"`  // fan-out: options of one task share it
 	Option   string         `json:"option,omitempty"` // fan-out: "A", "B", ...
 }
@@ -402,6 +403,7 @@ type uiAgent struct {
 	stopped bool
 	pending int // turns sent and not yet answered by a result
 	harness *uiHarness
+	usage   uiTokens
 	uses    map[string]uiToolUse
 	files   map[string]struct{}
 	base    string // commit the worktree started from
@@ -422,7 +424,7 @@ func (a *uiAgent) snapshot() uiAgentView {
 	return uiAgentView{
 		ID: a.id, Title: a.title, Repo: a.repo, Branch: a.branch, Worktree: a.worktree,
 		Token: a.token, State: a.state, Created: a.created,
-		Stages: a.stagesCopyLocked(), Events: len(a.events), Files: a.sortedFilesLocked(), Last: a.last, Updated: a.updated, Group: a.req.group, Option: a.req.option, Harness: a.harnessView(), MCP: append([]uiMCPServer(nil), a.mcp...),
+		Stages: a.stagesCopyLocked(), Events: len(a.events), Files: a.sortedFilesLocked(), Last: a.last, Updated: a.updated, Group: a.req.group, Option: a.req.option, Harness: a.harnessView(), Usage: usageOf(a.usage), MCP: append([]uiMCPServer(nil), a.mcp...),
 	}
 }
 
@@ -685,6 +687,11 @@ func (a *uiAgent) handleLine(line []byte) {
 		}
 		a.harnessResult(r.ID, r.Failed)
 	}
+	if p.Usage != nil {
+		a.mu.Lock()
+		a.usage = a.usage.add(*p.Usage)
+		a.mu.Unlock()
+	}
 	if p.TurnDone {
 		a.mu.Lock()
 		if a.pending > 0 {
@@ -897,4 +904,22 @@ func uiInitRepo(path string) error {
 		}
 	}
 	return nil
+}
+
+type uiUsageView struct {
+	Tokens      int `json:"tokens"` // everything the task handled
+	Fresh       int `json:"fresh"`  // input read at full price
+	Cached      int `json:"cached"` // input served from the prompt cache
+	Output      int `json:"output"`
+	CachedShare int `json:"cachedShare"` // percent of input that came from the cache
+	// Saved is the cost the cache saved, in tokens at full price: a cache read costs about a tenth of fresh input.
+	Saved int `json:"saved"`
+}
+
+// usageOf turns a task's token counts into what the page shows. The caller holds the agent's lock.
+func usageOf(u uiTokens) *uiUsageView {
+	if u.Total() == 0 {
+		return nil
+	}
+	return &uiUsageView{Tokens: u.Total(), Fresh: u.Input + u.CacheWrite, Cached: u.CacheRead, Output: u.Output, CachedShare: u.CachedShare(), Saved: u.CacheRead * 9 / 10}
 }

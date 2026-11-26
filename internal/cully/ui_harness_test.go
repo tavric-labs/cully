@@ -136,7 +136,7 @@ func TestPageOffersTheHarnessAndTheScoutHistory(t *testing.T) {
 
 func TestAdvisorPageCanApplySuggestionsAndShowsWhereSessionsStarted(t *testing.T) {
 	b, _ := uiStaticFS.ReadFile("ui_static/app.js")
-	for _, want := range []string{"function pushSuggestion", "Start an agent for this", "Copy for a session in a terminal", "Where this session was started", "coachCard(again, true)"} {
+	for _, want := range []string{"function pushSuggestion", "Start a task for this", "Copy for a session in a terminal", "Where this session was started", "coachCard(again, true)"} {
 		if !strings.Contains(string(b), want) {
 			t.Errorf("app.js lacks %q", want)
 		}

@@ -362,3 +362,23 @@ func TestAgentsMayUseCullyMemoryToolsButNotDeleteThem(t *testing.T) {
 		t.Errorf("plan-only agent may write memory: %s", line)
 	}
 }
+
+func TestTaskAddsUpTokensAcrossTurns(t *testing.T) {
+	body := uiFakeHead + `  echo '{"type":"result","subtype":"success","is_error":false,"result":"done","usage":{"input_tokens":100,"cache_read_input_tokens":900,"cache_creation_input_tokens":0,"output_tokens":10}}'
+done
+`
+	m, repo, _ := uiTestManager(t, uiWriteScript(t, body), "tok-aaa1")
+	a, err := m.start(uiStartRequest{Repo: repo, Prompt: "go"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	uiWaitState(t, a, "waiting")
+	if err := a.send("again"); err != nil {
+		t.Fatal(err)
+	}
+	uiWaitFor(t, "two turns of usage", func() bool { u := a.snapshot().Usage; return u != nil && u.Tokens == 2020 })
+	u := a.snapshot().Usage
+	if u.CachedShare != 90 || u.Saved != 1620 || u.Fresh != 200 || u.Output != 20 {
+		t.Fatalf("usage = %+v", u)
+	}
+}

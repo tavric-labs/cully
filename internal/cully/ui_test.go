@@ -85,7 +85,7 @@ func TestStaticAssetsEmbedded(t *testing.T) {
 		}
 	}
 	html, _ := uiStaticFS.ReadFile("ui_static/index.html")
-	for _, want := range []string{"Agents", "Board", "Dashboard", `src="/app.js"`, `href="/style.css"`} {
+	for _, want := range []string{"Tasks", "Board", "Dashboard", `src="/app.js"`, `href="/style.css"`} {
 		if !strings.Contains(string(html), want) {
 			t.Fatalf("index.html lacks %q", want)
 		}
