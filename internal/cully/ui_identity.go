@@ -42,6 +42,8 @@ type uiIdentity struct {
 	Name         string          `json:"name"`
 	Role         string          `json:"role"`         // what it does, in a sentence
 	Instructions string          `json:"instructions"` // how it works and what it must not do
+	Scope        string          `json:"scope"`        // project: tied to a folder. global: for all your projects
+	Approved     bool            `json:"approved"`
 	Folder       string          `json:"folder"`
 	Groups       map[string]bool `json:"groups"` // tool groups it may use
 	Mode         string          `json:"mode"`   // edit or plan
@@ -57,11 +59,13 @@ type uiIdentityInput struct {
 	Name         string          `json:"name"`
 	Role         string          `json:"role"`
 	Instructions string          `json:"instructions"`
+	Scope        string          `json:"scope"`
 	Folder       string          `json:"folder"`
 	Groups       map[string]bool `json:"groups"`
 	Mode         string          `json:"mode"`
 	Schedule     string          `json:"schedule"`
 	Enabled      bool            `json:"enabled"`
+	Approve      bool            `json:"approve"` // make it part of your agents; until then it is a draft
 	ClearMemory  bool            `json:"clearMemory"`
 }
 
@@ -70,34 +74,110 @@ var (
 	uiIdentityName = regexp.MustCompile(`^[\p{L}\p{N}][\p{L}\p{N} ._-]{0,39}$`)
 )
 
-func uiIdentityPath() string { return filepath.Join(cullyDir(), "identities.json") }
+func uiAgentsDir() string {
+	d := filepath.Join(cullyDir(), "agents")
+	_ = os.MkdirAll(d, 0o700)
+	return d
+}
+
+func uiIdentityLegacyPath() string { return filepath.Join(cullyDir(), "identities.json") }
+
+var uiSlugOK = regexp.MustCompile(`[^a-z0-9]+`)
+
+// dir is where one agent lives on disk: a folder named for it, holding its
+// definition (agent.json), its notes as plain Markdown (notes.md), its run
+// history (runs.json) and, when it has no project folder, its own workspace.
+func (id *uiIdentity) dir() string {
+	slug := strings.Trim(uiSlugOK.ReplaceAllString(strings.ToLower(id.Name), "-"), "-")
+	if slug == "" {
+		slug = "agent"
+	}
+	return filepath.Join(uiAgentsDir(), slug+"-"+id.ID)
+}
+
+func (id *uiIdentity) workspace() string { return filepath.Join(id.dir(), "workspace") }
+
+func uiWriteAtomic(path string, b []byte) {
+	tmp := path + ".tmp"
+	if os.WriteFile(tmp, b, 0o600) == nil {
+		_ = os.Rename(tmp, path)
+	}
+}
 
 func (m *uiManager) loadIdentitiesLocked() []*uiIdentity {
 	if m.identities != nil {
 		return m.identities
 	}
 	m.identities = []*uiIdentity{}
-	if b, err := os.ReadFile(uiIdentityPath()); err == nil {
-		_ = json.Unmarshal(b, &m.identities)
-		for _, id := range m.identities {
-			for i := range id.Runs {
-				if id.Runs[i].Status == "running" {
-					id.Runs[i].Status, id.Runs[i].Summary = "failed", "The page's server restarted before this run finished."
-				}
+	dirs, _ := os.ReadDir(uiAgentsDir())
+	for _, d := range dirs {
+		if !d.IsDir() {
+			continue
+		}
+		b, err := os.ReadFile(filepath.Join(uiAgentsDir(), d.Name(), "agent.json"))
+		if err != nil {
+			continue
+		}
+		var id uiIdentity
+		if json.Unmarshal(b, &id) != nil || id.ID == "" {
+			continue
+		}
+		if nb, err := os.ReadFile(filepath.Join(uiAgentsDir(), d.Name(), "notes.md")); err == nil {
+			id.Memory = uiNotesBody(string(nb))
+		}
+		if rb, err := os.ReadFile(filepath.Join(uiAgentsDir(), d.Name(), "runs.json")); err == nil {
+			_ = json.Unmarshal(rb, &id.Runs)
+		}
+		if id.Runs == nil {
+			id.Runs = []uiIdentityRun{}
+		}
+		if id.Scope == "" {
+			id.Scope = "project"
+		}
+		m.identities = append(m.identities, &id)
+	}
+	if len(m.identities) == 0 { // the single file earlier versions wrote
+		if b, err := os.ReadFile(uiIdentityLegacyPath()); err == nil && json.Unmarshal(b, &m.identities) == nil && len(m.identities) > 0 {
+			for _, id := range m.identities {
+				id.Approved, id.Scope = true, "project"
+			}
+			m.saveIdentitiesLocked()
+			_ = os.Rename(uiIdentityLegacyPath(), uiIdentityLegacyPath()+".migrated")
+		}
+	}
+	for _, id := range m.identities {
+		for i := range id.Runs {
+			if id.Runs[i].Status == "running" {
+				id.Runs[i].Status, id.Runs[i].Summary = "failed", "The page's server restarted before this run finished."
 			}
 		}
 	}
 	return m.identities
 }
 
-func (m *uiManager) saveIdentitiesLocked() {
-	b, err := json.MarshalIndent(m.identities, "", "  ")
-	if err != nil {
-		return
+func uiNotesBody(md string) string {
+	lines := strings.SplitN(md, "\n", 3)
+	if len(lines) >= 1 && strings.HasPrefix(lines[0], "# ") {
+		if len(lines) == 3 {
+			return strings.TrimSpace(lines[2])
+		}
+		return ""
 	}
-	tmp := uiIdentityPath() + ".tmp"
-	if os.WriteFile(tmp, b, 0o600) == nil {
-		_ = os.Rename(tmp, uiIdentityPath())
+	return strings.TrimSpace(md)
+}
+
+func (m *uiManager) saveIdentitiesLocked() {
+	for _, id := range m.identities {
+		_ = os.MkdirAll(id.dir(), 0o700)
+		def := *id
+		def.Memory, def.Runs = "", nil
+		if b, err := json.MarshalIndent(def, "", "  "); err == nil {
+			uiWriteAtomic(filepath.Join(id.dir(), "agent.json"), b)
+		}
+		uiWriteAtomic(filepath.Join(id.dir(), "notes.md"), []byte("# "+id.Name+": notes\n\n"+id.Memory+"\n"))
+		if b, err := json.MarshalIndent(id.Runs, "", "  "); err == nil {
+			uiWriteAtomic(filepath.Join(id.dir(), "runs.json"), b)
+		}
 	}
 }
 
@@ -117,7 +197,7 @@ func (m *uiManager) identityList() []uiIdentity {
 	defer uiIdentityMu.Unlock()
 	out := []uiIdentity{}
 	for _, id := range m.loadIdentitiesLocked() {
-		if uiHidden(id.Folder, m.cfg.HideSessionsIn) {
+		if id.Folder != "" && uiHidden(id.Folder, m.cfg.HideSessionsIn) {
 			continue
 		}
 		out = append(out, id.clone())
@@ -161,11 +241,34 @@ func (m *uiManager) validateIdentity(in uiIdentityInput) (uiIdentityInput, error
 			return in, errors.New("unknown tool group " + g)
 		}
 	}
-	info, err := m.addRepo(in.Folder)
-	if err != nil {
-		return in, errors.New("the folder cannot be used: " + err.Error())
+	if in.Scope == "" {
+		in.Scope = "project"
 	}
-	in.Folder = info.Path
+	if in.Scope != "project" && in.Scope != "global" {
+		return in, errors.New(`scope must be "project" or "global"`)
+	}
+	in.Folder = strings.TrimSpace(in.Folder)
+	if in.Scope == "global" {
+		in.Folder = "" // a global agent belongs to no single project
+	}
+	if in.Folder != "" {
+		if !filepath.IsAbs(in.Folder) {
+			return in, errors.New("give the full path of the folder")
+		}
+		real, err := canonicalDir(in.Folder)
+		if err != nil {
+			return in, errors.New("that folder does not exist")
+		}
+		if !uiWritable(real) {
+			return in, errors.New("you do not have write access to that folder")
+		}
+		in.Folder = real
+		if root, err := uiRepoRoot(real); err == nil { // inside a git repository: tasks get a worktree of it
+			if _, err := m.addRepo(root); err != nil {
+				return in, errors.New("the folder cannot be used: " + err.Error())
+			}
+		}
+	}
 	return in, nil
 }
 
@@ -185,8 +288,8 @@ func (m *uiManager) identityCreate(in uiIdentityInput) (uiIdentity, error) {
 			return uiIdentity{}, errors.New("an agent with that name already exists")
 		}
 	}
-	id := &uiIdentity{ID: uiNewID(), Name: in.Name, Role: in.Role, Instructions: in.Instructions, Folder: in.Folder, Groups: in.Groups, Mode: in.Mode,
-		Schedule: in.Schedule, Enabled: in.Enabled && in.Schedule != "", Created: time.Now().UTC(), Runs: []uiIdentityRun{}}
+	id := &uiIdentity{ID: uiNewID(), Name: in.Name, Role: in.Role, Instructions: in.Instructions, Scope: in.Scope, Folder: in.Folder, Groups: in.Groups, Mode: in.Mode,
+		Schedule: in.Schedule, Enabled: in.Enabled && in.Schedule != "" && in.Approve, Approved: in.Approve, Created: time.Now().UTC(), Runs: []uiIdentityRun{}}
 	m.identities = append(all, id)
 	m.saveIdentitiesLocked()
 	return id.clone(), nil
@@ -211,8 +314,15 @@ func (m *uiManager) identityUpdate(id string, in uiIdentityInput) (uiIdentity, e
 	if cur == nil {
 		return uiIdentity{}, errors.New("no such agent")
 	}
-	cur.Name, cur.Role, cur.Instructions, cur.Folder, cur.Groups, cur.Mode = in.Name, in.Role, in.Instructions, in.Folder, in.Groups, in.Mode
-	cur.Schedule, cur.Enabled = in.Schedule, in.Enabled && in.Schedule != ""
+	oldDir := cur.dir()
+	cur.Name, cur.Role, cur.Instructions, cur.Scope, cur.Folder, cur.Groups, cur.Mode = in.Name, in.Role, in.Instructions, in.Scope, in.Folder, in.Groups, in.Mode
+	if in.Approve {
+		cur.Approved = true
+	}
+	cur.Schedule, cur.Enabled = in.Schedule, in.Enabled && in.Schedule != "" && cur.Approved
+	if cur.dir() != oldDir { // renamed: its folder moves with it
+		_ = os.Rename(oldDir, cur.dir())
+	}
 	if in.ClearMemory {
 		cur.Memory = ""
 	}
@@ -226,8 +336,11 @@ func (m *uiManager) identityDelete(id string) error {
 	all := m.loadIdentitiesLocked()
 	for i, x := range all {
 		if x.ID == id {
+			for _, f := range []string{"agent.json", "notes.md", "runs.json"} {
+				_ = os.Remove(filepath.Join(x.dir(), f))
+			}
+			_ = os.Remove(x.dir()) // only if nothing else, such as its workspace, is in it
 			m.identities = append(all[:i:i], all[i+1:]...)
-			m.saveIdentitiesLocked()
 			return nil
 		}
 	}
@@ -277,9 +390,13 @@ func (m *uiManager) identityRun(id string) (uiIdentityRun, error) {
 			cur = x
 		}
 	}
-	if cur == nil || uiHidden(cur.Folder, m.cfg.HideSessionsIn) {
+	if cur == nil || (cur.Folder != "" && uiHidden(cur.Folder, m.cfg.HideSessionsIn)) {
 		uiIdentityMu.Unlock()
 		return uiIdentityRun{}, errors.New("no such agent")
+	}
+	if !cur.Approved {
+		uiIdentityMu.Unlock()
+		return uiIdentityRun{}, errors.New("approve this agent first; until then it is a draft")
 	}
 	for _, r := range cur.Runs {
 		if r.Status == "running" {
@@ -290,8 +407,20 @@ func (m *uiManager) identityRun(id string) (uiIdentityRun, error) {
 	snap := cur.clone()
 	uiIdentityMu.Unlock()
 
-	a, err := m.start(uiStartRequest{Repo: snap.Folder, Title: snap.Name, Prompt: "Do your work now, following how you work. Report what you did and anything that needs a person.",
-		Mode: snap.Mode, groups: snap.Groups, appendSystem: uiIdentityPrompt(snap)})
+	req := uiStartRequest{Title: snap.Name, Prompt: "Do your work now, following how you work. Report what you did and anything that needs a person.",
+		Mode: snap.Mode, groups: snap.Groups, appendSystem: uiIdentityPrompt(snap), identityName: snap.Name}
+	switch {
+	case snap.Scope == "global" || snap.Folder == "": // independent: its own workspace, no git
+		_ = os.MkdirAll(snap.workspace(), 0o700)
+		req.inPlaceDir = snap.workspace()
+	default:
+		if root, err := uiRepoRoot(snap.Folder); err == nil {
+			req.Repo = root
+		} else {
+			req.inPlaceDir = snap.Folder
+		}
+	}
+	a, err := m.start(req)
 	if err != nil {
 		return uiIdentityRun{}, err
 	}
@@ -368,10 +497,24 @@ done:
 func (m *uiManager) identitiesDue() {
 	for _, id := range m.identityList() {
 		d := uiIdentitySchedules[id.Schedule]
-		if !id.Enabled || d == 0 || (!id.LastRun.IsZero() && time.Since(id.LastRun) < d) || !m.hasRoom() {
+		if !id.Approved || !id.Enabled || d == 0 || (!id.LastRun.IsZero() && time.Since(id.LastRun) < d) || !m.hasRoom() {
 			continue
 		}
 		_, _ = m.identityRun(id.ID)
 		return
 	}
+}
+
+// identityApprove makes a draft part of the user's agents, so it can run and be scheduled.
+func (m *uiManager) identityApprove(id string) (uiIdentity, error) {
+	uiIdentityMu.Lock()
+	defer uiIdentityMu.Unlock()
+	for _, x := range m.loadIdentitiesLocked() {
+		if x.ID == id {
+			x.Approved = true
+			m.saveIdentitiesLocked()
+			return x.clone(), nil
+		}
+	}
+	return uiIdentity{}, errors.New("no such agent")
 }

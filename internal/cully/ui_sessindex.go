@@ -67,6 +67,7 @@ type uiIndexed struct {
 	Cwd         string    `json:"cwd"`
 	Name        string    `json:"name"`
 	Branch      string    `json:"branch,omitempty"`
+	File        string    `json:"file,omitempty"` // the harness's own transcript; not sent to the page
 	Origin      string    `json:"origin,omitempty"`
 	Started     time.Time `json:"started"`
 	Updated     time.Time `json:"updated"`
@@ -92,10 +93,13 @@ type uiIndexed struct {
 }
 
 type uiIndexFile struct {
-	Analyze   bool                  `json:"analyze"`
-	AutoScout bool                  `json:"autoScout"`
-	LastScout time.Time             `json:"lastScout,omitempty"`
-	Sessions  map[string]*uiIndexed `json:"sessions"`
+	Analyze   bool      `json:"analyze"`
+	AutoScout bool      `json:"autoScout"`
+	LastScout time.Time `json:"lastScout,omitempty"`
+	// When Cully last looked for repeated work, and how many named sessions it had then.
+	LastAgentCheck  time.Time             `json:"lastAgentCheck,omitempty"`
+	AgentCheckBased int                   `json:"agentCheckBased,omitempty"`
+	Sessions        map[string]*uiIndexed `json:"sessions"`
 }
 
 type uiFolderStat struct {
@@ -332,46 +336,55 @@ func uiSessionFactsOf(path string) (uiSessionFacts, bool) {
 func (m *uiManager) indexSessions(max int) {
 	own := filepath.Join(ConfigDir(), "ui-worktrees")
 	done := 0
-	for _, f := range uiHistoryFiles("claude") {
-		if done >= max {
-			return
+	for _, agent := range []string{"claude", "codex"} {
+		for _, f := range uiHistoryFiles(agent) {
+			if done >= max {
+				return
+			}
+			id := uiSessionIDFromFile(f.path)
+			m.idxMu.Lock()
+			m.loadIndexLocked()
+			cur, seen := m.index.Sessions[id]
+			fresh := seen && cur.Mod == f.mod.UnixNano() && cur.FactsV == uiFactsVersion && cur.File != ""
+			m.idxMu.Unlock()
+			if fresh {
+				continue
+			}
+			var s uiPastSession
+			var ok bool
+			if agent == "claude" {
+				s, ok = uiClaudeSession(f)
+			} else {
+				s, ok = uiCodexSession(f)
+			}
+			if !ok || uiHidden(s.Cwd, m.cfg.HideSessionsIn) || uiHidden(s.Cwd, []string{own}) {
+				continue
+			}
+			facts, _, ok := uiScanAgent(agent, f.path, false)
+			if !ok {
+				continue
+			}
+			done++
+			m.idxMu.Lock()
+			e := m.index.Sessions[id]
+			if e == nil {
+				e = &uiIndexed{ID: id, Agent: agent, Source: "facts"}
+				m.index.Sessions[id] = e
+			}
+			if e.Mod != f.mod.UnixNano() && e.Source == "ai" {
+				e.Synced = false
+			}
+			e.Agent, e.File = agent, f.path
+			e.Cwd, e.Name, e.Branch, e.Started, e.Updated, e.Mod = s.Cwd, filepath.Base(s.Cwd), s.Branch, s.Started, s.Updated, f.mod.UnixNano()
+			e.Origin = s.Origin
+			facts.ToolNames = uiTopTools(facts.ToolNames, 8)
+			e.uiSessionFacts, e.FactsV = facts, uiFactsVersion
+			if e.Title == "" {
+				e.Title = s.Title // the agent's own title, when it kept one
+			}
+			m.saveIndexLocked()
+			m.idxMu.Unlock()
 		}
-		id := strings.TrimSuffix(filepath.Base(f.path), ".jsonl")
-		m.idxMu.Lock()
-		m.loadIndexLocked()
-		cur, seen := m.index.Sessions[id]
-		fresh := seen && cur.Mod == f.mod.UnixNano() && cur.FactsV == uiFactsVersion
-		m.idxMu.Unlock()
-		if fresh {
-			continue
-		}
-		s, ok := uiClaudeSession(f)
-		if !ok || uiHidden(s.Cwd, m.cfg.HideSessionsIn) || uiHidden(s.Cwd, []string{own}) {
-			continue
-		}
-		facts, ok := uiSessionFactsOf(f.path)
-		if !ok {
-			continue
-		}
-		done++
-		m.idxMu.Lock()
-		e := m.index.Sessions[id]
-		if e == nil {
-			e = &uiIndexed{ID: id, Agent: "claude", Source: "facts"}
-			m.index.Sessions[id] = e
-		}
-		if e.Mod != f.mod.UnixNano() && e.Source == "ai" {
-			e.Synced = false
-		}
-		e.Cwd, e.Name, e.Branch, e.Started, e.Updated, e.Mod = s.Cwd, filepath.Base(s.Cwd), s.Branch, s.Started, s.Updated, f.mod.UnixNano()
-		e.Origin = s.Origin
-		facts.ToolNames = uiTopTools(facts.ToolNames, 8)
-		e.uiSessionFacts, e.FactsV = facts, uiFactsVersion
-		if e.Title == "" {
-			e.Title = s.Title // Claude's own title, when it kept one
-		}
-		m.saveIndexLocked()
-		m.idxMu.Unlock()
 	}
 }
 
@@ -388,6 +401,7 @@ func (m *uiManager) sessionLibrary() uiLibrary {
 			continue
 		}
 		v := *e
+		v.File = ""
 		v.Health, v.Signals = uiHealthOf(v)
 		lib.Sessions = append(lib.Sessions, v)
 		lib.Totals.Sessions++
@@ -542,13 +556,15 @@ func (m *uiManager) analyzeNext() int {
 // analyzeSession asks the model about one session and stores the answer. It
 // returns 1 when the session was named.
 func (m *uiManager) analyzeSession(cp uiIndexed) int {
-	path := ""
-	for _, f := range uiHistoryFiles("claude") {
-		if strings.TrimSuffix(filepath.Base(f.path), ".jsonl") == cp.ID {
-			path = f.path
+	path := cp.File
+	if path == "" {
+		for _, f := range uiHistoryFiles("claude") {
+			if strings.TrimSuffix(filepath.Base(f.path), ".jsonl") == cp.ID {
+				path = f.path
+			}
 		}
 	}
-	facts, dg, ok := scanTranscript(path, true)
+	facts, dg, ok := uiScanAgent(cp.Agent, path, true)
 	title, summary, different := "", "", ""
 	var verdict uiVerdict
 	if ok && path != "" {
@@ -616,6 +632,7 @@ func (m *uiManager) runIndexer(ctx context.Context) {
 		m.coachIfDue()
 		m.scoutIfDue()
 		m.identitiesDue()
+		m.agentSuggestIfDue()
 	}
 	tick()
 	t := time.NewTicker(uiIndexTick)

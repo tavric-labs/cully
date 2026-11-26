@@ -135,6 +135,7 @@ func newUIServer(m *uiManager, token string, loopback bool) http.Handler {
 	mux.Handle("PUT /api/identities/{id}", s.api(s.identityUpdateH))
 	mux.Handle("DELETE /api/identities/{id}", s.api(s.identityDeleteH))
 	mux.Handle("POST /api/identities/{id}/run", s.api(s.identityRunH))
+	mux.Handle("POST /api/identities/{id}/approve", s.api(s.identityApproveH))
 	mux.Handle("GET /api/research", s.api(s.researchGet))
 	mux.Handle("POST /api/coach/run", s.api(s.coachRunH))
 	mux.Handle("POST /api/evals/{id}/run", s.api(s.evalRunStart))
@@ -1065,4 +1066,13 @@ func (s *uiServer) usageGet(w http.ResponseWriter, r *http.Request) {
 		days = n
 	}
 	uiJSON(w, http.StatusOK, s.m.usageSummary(days))
+}
+
+func (s *uiServer) identityApproveH(w http.ResponseWriter, r *http.Request) {
+	id, err := s.m.identityApprove(r.PathValue("id"))
+	if err != nil {
+		uiError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	uiJSON(w, http.StatusOK, id)
 }

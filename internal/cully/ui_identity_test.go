@@ -9,7 +9,7 @@ import (
 )
 
 func uiIdentityInputFor(repo string) uiIdentityInput {
-	return uiIdentityInput{Name: "Release watcher", Role: "Checks open pull requests each morning and reports what needs a person.", Instructions: "Never merge. Report only.", Folder: repo, Schedule: "daily", Enabled: true}
+	return uiIdentityInput{Name: "Release watcher", Role: "Checks open pull requests each morning and reports what needs a person.", Instructions: "Never merge. Report only.", Folder: repo, Schedule: "daily", Enabled: true, Approve: true}
 }
 
 func TestAgentsAreCreatedValidatedAndKeptOnDisk(t *testing.T) {
@@ -30,8 +30,8 @@ func TestAgentsAreCreatedValidatedAndKeptOnDisk(t *testing.T) {
 	if _, err := m.identityCreate(uiIdentityInputFor(repo)); err == nil {
 		t.Fatal("a second agent with the same name was accepted")
 	}
-	if st, err := os.Stat(filepath.Join(cullyDir(), "identities.json")); err != nil || st.Mode().Perm() != 0o600 {
-		t.Fatalf("file: %v %v", st, err)
+	if files, _ := filepath.Glob(filepath.Join(cullyDir(), "agents", "*", "agent.json")); len(files) != 1 {
+		t.Fatalf("agent files = %v", files)
 	}
 	if l := newUIManager(m.cfg).identityList(); len(l) != 1 || l[0].Name != "Release watcher" {
 		t.Fatalf("not kept: %+v", l)
@@ -151,7 +151,7 @@ func TestAgentEndpoints(t *testing.T) {
 
 func TestAgentsPageAndGoodSessionCardExist(t *testing.T) {
 	b, _ := uiStaticFS.ReadFile("ui_static/app.js")
-	for _, want := range []string{"function renderTeam", "function openAgentForm", "What an agent is and how it works", "Forget its notes", "function optimalCard", "What a good session looks like", "coachCard(again, true)"} {
+	for _, want := range []string{"function renderTeam", "function openAgentForm", "What an agent is and how it works", "Forget its notes", "Approve as agent", "function optimalCard", "What a good session looks like", "coachCard(again, true)"} {
 		if !strings.Contains(string(b), want) {
 			t.Errorf("app.js lacks %q", want)
 		}
@@ -159,5 +159,107 @@ func TestAgentsPageAndGoodSessionCardExist(t *testing.T) {
 	idx, _ := uiStaticFS.ReadFile("ui_static/index.html")
 	if !strings.Contains(string(idx), `href="#/agents"`) || !strings.Contains(string(idx), `id="view-team"`) {
 		t.Error("index.html has no Agents page")
+	}
+}
+
+func TestDraftAgentsCannotRunUntilApproved(t *testing.T) {
+	m, repo, _ := uiTestManager(t, uiWriteScript(t, fakeClaude), "tok-aaa1")
+	in := uiIdentityInputFor(repo)
+	in.Approve = false
+	a, err := m.identityCreate(in)
+	if err != nil || a.Approved || a.Enabled {
+		t.Fatalf("draft = %+v, err = %v", a, err)
+	}
+	if _, err := m.identityRun(a.ID); err == nil {
+		t.Fatal("a draft ran")
+	}
+	m.identitiesDue()
+	if len(m.identityList()[0].Runs) != 0 {
+		t.Fatal("a draft was scheduled")
+	}
+	b, err := m.identityApprove(a.ID)
+	if err != nil || !b.Approved {
+		t.Fatalf("approve: %+v %v", b, err)
+	}
+	if _, err := m.identityRun(a.ID); err != nil {
+		t.Fatalf("an approved agent did not run: %v", err)
+	}
+}
+
+func TestAgentsDoNotNeedGitAndGlobalOnesBelongToNoFolder(t *testing.T) {
+	m, _, out := uiTestManager(t, uiWriteScript(t, fakeClaude), "tok-aaa1")
+	plain := t.TempDir()
+	in := uiIdentityInputFor(plain)
+	in.Name = "Plain folder agent"
+	a, err := m.identityCreate(in)
+	if err != nil {
+		t.Fatalf("a folder with no git was refused: %v", err)
+	}
+	if _, err := m.identityRun(a.ID); err != nil {
+		t.Fatal(err)
+	}
+	uiWaitFor(t, "the run", func() bool { l := m.identityList(); return len(l) == 1 && l[0].Runs[0].Status == "done" })
+	g, err := m.identityCreate(uiIdentityInput{Name: "Dev workflow", Role: "Keeps my dev workflow rules.", Scope: "global", Folder: "/ignored", Approve: true})
+	if err != nil || g.Scope != "global" || g.Folder != "" {
+		t.Fatalf("global = %+v, err = %v", g, err)
+	}
+	if _, err := m.identityRun(g.ID); err != nil {
+		t.Fatalf("global agent did not run: %v", err)
+	}
+	uiWaitFor(t, "the global run", func() bool {
+		for _, x := range m.identityList() {
+			if x.ID == g.ID {
+				return x.Runs[0].Status == "done"
+			}
+		}
+		return false
+	})
+	if _, err := os.Stat(filepath.Join(cullyDir(), "agents")); err != nil {
+		t.Fatal(err)
+	}
+	_ = out
+	if err := m.identityDelete(g.ID); err != nil {
+		t.Fatal(err)
+	}
+	ws, _ := filepath.Glob(filepath.Join(cullyDir(), "agents", "dev-workflow-*", "workspace"))
+	if len(ws) != 1 {
+		t.Fatalf("deleting an agent removed its workspace: %v", ws)
+	}
+}
+
+func TestAgentsAreKeptInTheirOwnFoldersAndOldFilesAreMigrated(t *testing.T) {
+	m, repo, _ := uiTestManager(t, uiWriteScript(t, fakeClaude), "tok-aaa1")
+	a, _ := m.identityCreate(uiIdentityInputFor(repo))
+	uiIdentityMu.Lock()
+	m.loadIdentitiesLocked()[0].Memory = "- PR 12 waits on CI"
+	m.saveIdentitiesLocked()
+	uiIdentityMu.Unlock()
+	dir := filepath.Join(cullyDir(), "agents", "release-watcher-"+a.ID)
+	for _, f := range []string{"agent.json", "notes.md", "runs.json"} {
+		if st, err := os.Stat(filepath.Join(dir, f)); err != nil || st.Mode().Perm() != 0o600 {
+			t.Fatalf("%s: %v %v", f, st, err)
+		}
+	}
+	notes, _ := os.ReadFile(filepath.Join(dir, "notes.md"))
+	if string(notes) != "# Release watcher: notes\n\n- PR 12 waits on CI\n" {
+		t.Fatalf("notes = %q", notes)
+	}
+	def, _ := os.ReadFile(filepath.Join(dir, "agent.json"))
+	if strings.Contains(string(def), "PR 12") {
+		t.Fatal("notes are also inside the definition")
+	}
+	if l := newUIManager(m.cfg).identityList(); len(l) != 1 || l[0].Memory != "- PR 12 waits on CI" || !l[0].Approved {
+		t.Fatalf("reloaded = %+v", l)
+	}
+	// an older install kept everything in one file
+	_ = os.RemoveAll(filepath.Join(cullyDir(), "agents"))
+	legacy := `[{"id":"abc12345","name":"Old agent","role":"r","instructions":"","folder":"` + repo + `","groups":{"read":true},"mode":"edit","schedule":"","enabled":false,"memory":"- old note","created":"2026-11-01T00:00:00Z","runs":[]}]`
+	_ = os.WriteFile(filepath.Join(cullyDir(), "identities.json"), []byte(legacy), 0o600)
+	l := newUIManager(m.cfg).identityList()
+	if len(l) != 1 || l[0].Name != "Old agent" || l[0].Memory != "- old note" || !l[0].Approved || l[0].Scope != "project" {
+		t.Fatalf("migrated = %+v", l)
+	}
+	if _, err := os.Stat(filepath.Join(cullyDir(), "identities.json.migrated")); err != nil {
+		t.Fatal("the old file was not set aside")
 	}
 }

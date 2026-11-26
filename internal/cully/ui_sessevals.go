@@ -66,11 +66,8 @@ func (m *uiManager) createEval(id string) (uiEvalCase, error) {
 	c := uiEvalCase{Schema: uiEvalSchema, ID: id, Created: time.Now().UTC(), Folder: cp.Name, Cwd: cp.Cwd, Branch: cp.Branch, Task: cp.Task,
 		Criteria: append([]string{}, cp.Criteria...), Notes: cp.Description,
 		Observed: uiEvalObserved{Completed: cp.Completed, Edits: cp.Edits, Checks: cp.Checks, Errors: cp.Errors, Tools: cp.Tools, ActiveSec: cp.ActiveSec}}
-	for _, f := range uiHistoryFiles("claude") {
-		if strings.TrimSuffix(filepath.Base(f.path), ".jsonl") != id {
-			continue
-		}
-		if _, dg, ok := scanTranscript(f.path, true); ok {
+	if cp.File != "" {
+		if _, dg, ok := uiScanAgent(cp.Agent, cp.File, true); ok {
 			for _, p := range dg.Files {
 				if r, err := filepath.Rel(cp.Cwd, p); err == nil && !strings.HasPrefix(r, "..") {
 					p = r

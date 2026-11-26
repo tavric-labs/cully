@@ -47,6 +47,7 @@ func uiWriteScript(t *testing.T, body string) string {
 func uiNewTestRepo(t *testing.T) string {
 	t.Helper()
 	t.Setenv("CLAUDE_CONFIG_DIR", t.TempDir())
+	t.Setenv("CODEX_HOME", t.TempDir()) // never read the real machine's Codex sessions
 	t.Setenv("GIT_AUTHOR_NAME", "t")
 	t.Setenv("GIT_AUTHOR_EMAIL", "t@example.com")
 	t.Setenv("GIT_COMMITTER_NAME", "t")
@@ -128,8 +129,11 @@ func TestAgentGetsTokenEnvAndRoundRobin(t *testing.T) {
 	a2, _ := m.start(uiStartRequest{Repo: repo, Prompt: "two"})
 	uiWaitState(t, a1, "waiting")
 	uiWaitState(t, a2, "waiting")
-	if a1.snapshot().Token != 1 || a2.snapshot().Token != 2 {
-		t.Fatalf("token indexes = %d, %d", a1.snapshot().Token, a2.snapshot().Token)
+	// The two tasks start on separate goroutines, so which one asks first is not fixed;
+	// what matters is that they were given different tokens, one each.
+	i1, i2 := a1.snapshot().Token, a2.snapshot().Token
+	if i1+i2 != 3 || i1 == i2 {
+		t.Fatalf("token indexes = %d, %d", i1, i2)
 	}
 	log, _ := os.ReadFile(filepath.Join(out, "token.log"))
 	if !strings.Contains(string(log), "1") || !strings.Contains(string(log), "2") {
@@ -380,5 +384,52 @@ done
 	u := a.snapshot().Usage
 	if u.CachedShare != 90 || u.Saved != 1620 || u.Fresh != 200 || u.Output != 20 {
 		t.Fatalf("usage = %+v", u)
+	}
+}
+
+func TestEveryTaskRecordsHowItsHarnessWasSetUp(t *testing.T) {
+	m, repo, _ := uiTestManager(t, uiWriteScript(t, fakeClaude), "tok-aaa1")
+	a, err := m.start(uiStartRequest{Repo: repo, Prompt: "go", Context: true, Loop: true, DoneWhen: "it works", MaxRounds: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	uiWaitState(t, a, "waiting")
+	r := a.snapshot().Run
+	if r == nil || r.Harness != "Claude Code" || r.Permission != "acceptEdits" || r.Isolation != "worktree" || r.McpMode != "all" {
+		t.Fatalf("run = %+v", r)
+	}
+	has := func(l []string, want string) bool {
+		for _, x := range l {
+			if x == want {
+				return true
+			}
+		}
+		return false
+	}
+	if !has(r.Allowed, "Read") || !has(r.Blocked, "Bash(git push:*)") || !has(r.Groups, "Read files") || !has(r.Brief, "The project's journal and git state") {
+		t.Fatalf("run = %+v", r)
+	}
+	if !r.Loop || !r.DoneWhen || r.MaxRounds != 2 || r.ToolBudget != uiHarnessToolBudget || len(r.LoopChecks) < 4 {
+		t.Fatalf("loop = %+v", r)
+	}
+	p, _ := m.start(uiStartRequest{Repo: repo, Prompt: "plan it", Mode: "plan"})
+	uiWaitState(t, p, "waiting")
+	if r := p.snapshot().Run; r.Permission != "plan" || r.Loop || has(r.Groups, "Cully memory: save summaries") || len(r.Brief) != 1 || r.Brief[0] != "Only your task" {
+		t.Fatalf("plan run = %+v", r)
+	}
+	if err := m.setToolPolicy(uiPolicyInput{McpOnly: []string{"cully"}}); err != nil {
+		t.Fatal(err)
+	}
+	_ = os.WriteFile(filepath.Join(ConfigDir(), ".claude.json"), []byte(`{"mcpServers":{"cully":{"type":"http","url":"https://x"},"gitlab":{"type":"http","url":"https://g"}}}`), 0o600)
+	a.stop()
+	p.stop()
+	uiWaitFor(t, "room for another task", func() bool { return m.hasRoom() && a.snapshot().State == uiStopped && p.snapshot().State == uiStopped })
+	c, err := m.start(uiStartRequest{Repo: repo, Prompt: "lean"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	uiWaitState(t, c, "waiting")
+	if r := c.snapshot().Run; r.McpMode != "chosen" || len(r.McpChosen) != 1 || r.McpChosen[0] != "cully" {
+		t.Fatalf("lean run = %+v", r)
 	}
 }

@@ -1,9 +1,11 @@
 package cully
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestOnlyWellFormedAgentProposalsAreKept(t *testing.T) {
@@ -31,8 +33,12 @@ func TestOnlyWellFormedAgentProposalsAreKept(t *testing.T) {
 func TestCullyProposesAgentsFromNamedSessionsAndTheUserApproves(t *testing.T) {
 	m, repo, _ := uiIndexManager(t)
 	dir := filepath.Join(ConfigDir(), "projects", "enc")
-	for _, id := range []string{uiTestSessA, uiTestSessB, uiTestSessC} {
+	for i, id := range []string{uiTestSessA, uiTestSessB, uiTestSessC} {
 		uiWriteRichTranscript(t, dir, id, repo)
+		// spread over two days so the same kind of task counts as repeating
+		p := filepath.Join(dir, id+".jsonl")
+		mt := time.Now().Add(-time.Duration(2+i*30) * time.Hour)
+		_ = os.Chtimes(p, mt, mt)
 	}
 	name := filepath.Base(repo)
 	m.cfg.Advisor = func(_ string, _ string, _ bool, prompt string) (string, error) {
@@ -98,9 +104,68 @@ func TestAgentSuggestionEndpoints(t *testing.T) {
 
 func TestAgentsPageShowsProposalsForApproval(t *testing.T) {
 	b, _ := uiStaticFS.ReadFile("ui_static/app.js")
-	for _, want := range []string{"Suggested for you", "Review and create", "/api/agent-suggestions", "fromSuggestion", "Ask Cully for ideas"} {
+	for _, want := range []string{"Suggested for you", "Review and approve", "/api/agent-suggestions", "fromSuggestion", "Ask Cully for ideas"} {
 		if !strings.Contains(string(b), want) {
 			t.Errorf("app.js lacks %q", want)
 		}
+	}
+}
+
+func TestRepeatedWorkNeedsTheSameGoalThreeTimesOnTwoDays(t *testing.T) {
+	now := time.Now()
+	mk := func(task string, daysAgo int, unverified bool) uiIndexed {
+		return uiIndexed{Source: "ai", Task: task, Cwd: "/p/x", Name: "x", Updated: now.AddDate(0, 0, -daysAgo), uiSessionFacts: uiSessionFacts{Unverified: unverified}}
+	}
+	same := []uiIndexed{mk("Check open pull requests and report status", 0, false), mk("Report the status of open pull requests", 1, false), mk("check the open pull requests status", 3, false)}
+	if r := uiRepeatedWork(same); len(r) != 1 || r[0].Kind != "goal" || r[0].Count != 3 || r[0].Days != 3 {
+		t.Fatalf("repeats = %+v", r)
+	}
+	oneDay := []uiIndexed{mk("Check open pull requests and report status", 0, false), mk("Report the status of open pull requests", 0, false), mk("check the open pull requests status", 0, false)}
+	if r := uiRepeatedWork(oneDay); len(r) != 0 {
+		t.Fatalf("three in one day counted as repeating: %+v", r)
+	}
+	twice := same[:2]
+	if r := uiRepeatedWork(twice); len(r) != 0 {
+		t.Fatalf("two is not enough: %+v", r)
+	}
+	different := []uiIndexed{mk("Fix the login bug", 0, false), mk("Add a billing report page", 1, false), mk("Upgrade the database driver", 2, false)}
+	if r := uiRepeatedWork(different); len(r) != 0 {
+		t.Fatalf("unrelated tasks counted: %+v", r)
+	}
+	untested := []uiIndexed{mk("a one", 0, true), mk("b two", 1, true), mk("c three", 2, true)}
+	if r := uiRepeatedWork(untested); len(r) != 1 || r[0].Kind != "untested" {
+		t.Fatalf("untested = %+v", r)
+	}
+}
+
+func TestNoAgentIsProposedWhenNothingRepeats(t *testing.T) {
+	m, repo, _ := uiIndexManager(t)
+	dir := filepath.Join(ConfigDir(), "projects", "enc")
+	tasks := []string{"Fix the login bug", "Add a billing page", "Upgrade the driver"}
+	for i, id := range []string{uiTestSessA, uiTestSessB, uiTestSessC} {
+		uiWriteRichTranscript(t, dir, id, repo)
+		_ = tasks[i]
+	}
+	asked := 0
+	n := 0
+	m.cfg.Advisor = func(_ string, _ string, _ bool, prompt string) (string, error) {
+		if strings.Contains(prompt, "propose named agents") {
+			asked++
+			return "", nil
+		}
+		n++
+		return "TITLE: T\nSUMMARY: S\nDIFFERENTLY: D\nCOMPLETED: yes\nON_TASK: yes\nDRIFT: None.\nTASK: " + tasks[(n-1)%3] + "\nCHECKS: y", nil
+	}
+	m.indexSessions(10)
+	m.setAnalysis(true)
+	for i := 0; i < 3; i++ {
+		m.analyzeNext()
+	}
+	if added, err := m.agentSuggestRun(); err != nil || added != 0 || asked != 0 {
+		t.Fatalf("added %d, asked %d, err %v: the advisor was asked with nothing repeating", added, asked, err)
+	}
+	m.agentSuggestIfDue()
+	if asked != 0 {
+		t.Fatal("asked")
 	}
 }

@@ -794,13 +794,19 @@
     const card = (a) => {
       const last = a.runs[0]; const groups = tools.presets.filter((p) => a.groups[p.id]).map((p) => p.label);
       return h('section', { class: 'lib-card agentcard' },
-        h('div', { class: 'row' }, h('b', { class: 'an' }, a.name), a.enabled ? h('span', { class: 'chip ok' }, 'Runs ' + a.schedule) : h('span', { class: 'chip' }, a.schedule ? 'Schedule paused' : 'On demand'), h('span', { class: 'chip' }, icon('folder'), a.folder.split('/').pop()), h('span', { class: 'chip' }, a.mode === 'plan' ? 'Read only' : 'Can edit'),
+        h('div', { class: 'row' }, h('b', { class: 'an' }, a.name), a.approved ? h('span', { class: 'chip ok' }, 'Approved') : h('span', { class: 'chip warn' }, 'Draft'),
+          h('span', { class: 'chip' }, a.scope === 'global' ? 'All projects' : 'Project'),
+          a.approved ? (a.enabled ? h('span', { class: 'chip ok' }, 'Runs ' + a.schedule) : h('span', { class: 'chip' }, a.schedule ? 'Schedule paused' : 'On demand')) : null,
+          h('span', { class: 'chip' }, icon('folder'), a.folder ? a.folder.split('/').pop() : 'Its own workspace'), h('span', { class: 'chip' }, a.mode === 'plan' ? 'Read only' : 'Can edit'),
           h('span', { class: 'sp row' },
-            h('button', { class: 'btn small', disabled: !!(last && last.status === 'running'), onclick: async () => { try { await api('/api/identities/' + a.id + '/run', { method: 'POST' }); toast(a.name + ' is running. See it on the Tasks tab.'); again(); } catch (e) { toast(e.message, true); } } }, icon('send'), last && last.status === 'running' ? 'Running' : 'Run now'),
+            a.approved
+              ? h('button', { class: 'btn small', title: 'Start one run of this agent now', disabled: !!(last && last.status === 'running'), onclick: async () => { try { await api('/api/identities/' + a.id + '/run', { method: 'POST' }); toast(a.name + ' is running. See it on the Tasks tab.'); again(); } catch (e) { toast(e.message, true); } } }, icon('send'), last && last.status === 'running' ? 'Running' : 'Run once')
+              : h('button', { class: 'btn small', title: 'Make this part of your agents, so it can run and be scheduled', onclick: async () => { try { await api('/api/identities/' + a.id + '/approve', { method: 'POST' }); toast(a.name + ' is now one of your agents'); again(); } catch (e) { toast(e.message, true); } } }, icon('check'), 'Approve as agent'),
             h('button', { class: 'btn ghost small', onclick: () => openAgentForm(a, tools, again) }, 'Edit'),
             h('button', { class: 'btn ghost small', onclick: () => confirmDialog({ title: 'Remove ' + a.name + '?', body: ['Its notes and run history are deleted. Tasks it already ran stay on the Tasks tab.'], confirmLabel: 'Remove', onConfirm: async () => { await api('/api/identities/' + a.id, { method: 'DELETE' }); again(); } }) }, icon('x'), 'Remove'))),
         h('p', { class: 'hdesc' }, a.role),
         h('div', { class: 'row' }, ...groups.map((g) => h('span', { class: 'chip' }, g))),
+        !a.approved ? h('p', { class: 'faint small' }, 'A draft does not run and is not scheduled. Approve it to make it one of your agents.') : null,
         last ? h('div', { class: 'agentlast' }, h('div', { class: 'row' }, h('span', { class: 'chip run-' + (last.status === 'done' ? 'pass' : last.status === 'failed' ? 'fail' : 'running') }, last.status === 'done' ? 'Last run finished' : last.status === 'failed' ? 'Last run failed' : 'Running now'), h('span', { class: 'faint small' }, ago(last.started)), last.seconds ? h('span', { class: 'faint small' }, dur(last.seconds)) : null, last.taskId ? h('a', { class: 'linkbtn', href: '#/agent/' + last.taskId }, 'Open the task') : null),
           last.summary ? h('div', { class: 'quote' }, markdown(last.summary)) : null) : h('p', { class: 'faint small' }, 'Has not run yet.'),
         a.memory ? h('details', { class: 'rl' }, h('summary', {}, h('span', { class: 'rq' }, 'Its notes'), h('span', { class: 'faint small' }, a.memory.length + ' of 2200 characters')), h('div', { class: 'rbody' }, markdown(a.memory))) : null,
@@ -814,7 +820,7 @@
         h('p', { class: 'hdesc' }, p.role), h('p', { class: 'faint small' }, h('b', {}, 'Why: '), p.why),
         h('div', { class: 'row' }, ...tools.presets.filter((g) => p.groups[g.id]).map((g) => h('span', { class: 'chip' }, g.label)))),
       h('div', { class: 'row hact' },
-        h('button', { class: 'btn small', title: 'Review it, change anything, and create the agent', onclick: () => openAgentForm({ ...p, id: null, enabled: !!p.schedule, mode: 'edit', fromSuggestion: p.id }, tools, again) }, icon('check'), 'Review and create'),
+        h('button', { class: 'btn small', title: 'Review it, change anything, and create the agent', onclick: () => openAgentForm({ ...p, id: null, enabled: !!p.schedule, mode: 'edit', scope: 'project', fromSuggestion: p.id }, tools, again) }, icon('check'), 'Review and approve'),
         h('button', { class: 'btn ghost small', onclick: async () => { try { await api('/api/agent-suggestions/' + p.id + '/dismissed', { method: 'POST' }); again(); } catch (e) { toast(e.message, true); } } }, 'Dismiss')));
     box.replaceChildren(
       toolbar('Agents', 'Named workers with a role of their own. Each keeps notes between runs and can run on a schedule.', h('button', { class: 'btn', onclick: () => openAgentForm(null, tools, again) }, icon('plus'), 'New agent')),
@@ -833,13 +839,18 @@
   }
   const uiShort = (t, n) => (t.length > n ? t.slice(0, n) + '…' : t);
   function openAgentForm(a, tools, again) {
-    const f = a || { name: '', role: '', instructions: '', folder: S.opts.repo || (S.info && S.info.repos[0]) || '', groups: Object.fromEntries(tools.presets.map((p) => [p.id, p.on])), mode: 'edit', schedule: '', enabled: false };
+    const f = a || { name: '', role: '', instructions: '', scope: 'project', folder: S.opts.repo || (S.info && S.info.repos[0]) || '', groups: Object.fromEntries(tools.presets.map((p) => [p.id, p.on])), mode: 'edit', schedule: '', enabled: false };
     const val = { ...f, groups: { ...f.groups } };
     const err = h('div', { class: 'err', hidden: true });
     const text = (key, label, hint, rows) => { const el = rows ? h('textarea', { rows: String(rows), 'aria-label': label }) : h('input', { type: 'text', 'aria-label': label, autocomplete: 'off' }); el.value = val[key] || ''; el.addEventListener('input', () => { val[key] = el.value; }); return h('label', { class: 'field' }, h('span', { class: 'opt-label' }, label), el, hint ? h('span', { class: 'faint small' }, hint) : null); };
     const folders = [...new Set([val.folder, ...((S.info && S.info.repos) || [])].filter(Boolean))];
-    const folderSel = h('select', { 'aria-label': 'Folder' }, ...folders.map((p) => h('option', Object.assign({ value: p }, p === val.folder ? { selected: true } : {}), p)));
+    const folderSel = h('select', { 'aria-label': 'Folder' }, h('option', Object.assign({ value: '' }, !val.folder ? { selected: true } : {}), 'No folder: its own workspace'), ...folders.map((p) => h('option', Object.assign({ value: p }, p === val.folder ? { selected: true } : {}), p)));
     folderSel.addEventListener('change', () => { val.folder = folderSel.value; });
+    const folderField = h('label', { class: 'field' }, h('span', { class: 'opt-label' }, 'Folder it works in'), folderSel, h('span', { class: 'faint small' }, 'Any folder you can write in. It does not need git; inside a git repository the agent works on a copy of it.'));
+    const scopeSel = h('select', { 'aria-label': 'Kind of agent' }, h('option', Object.assign({ value: 'project' }, val.scope !== 'global' ? { selected: true } : {}), 'For one project or folder'), h('option', Object.assign({ value: 'global' }, val.scope === 'global' ? { selected: true } : {}), 'Global: for all my projects'));
+    const syncScope = () => { folderField.hidden = val.scope === 'global'; };
+    scopeSel.addEventListener('change', () => { val.scope = scopeSel.value; syncScope(); });
+    syncScope();
     const roleField = text('role', 'What it does', 'One sentence.'); const instrField = text('instructions', 'How it works', 'Its identity: how it should behave, what it must never do. Added to every run.', 6); const nameField = text('name', 'Name');
     const tpl = a ? null : h('div', { class: 'row' }, h('span', { class: 'opt-label' }, 'Start from'), ...AGENT_TEMPLATES.map(([n, r, i, g]) => h('button', { type: 'button', class: 'chip', onclick: () => { val.name = n; val.role = r; val.instructions = i; for (const p of tools.presets) val.groups[p.id] = !!g[p.id]; val.mode = 'plan' === val.mode ? 'plan' : val.mode; closeMCP(); openAgentForm({ ...val, id: null }, tools, again); } }, n)));
     const groups = h('div', { class: 'toolgroups' }, ...tools.presets.map((p) => { const cb = h('input', Object.assign({ type: 'checkbox', id: 'ag-' + p.id, onchange: (e) => { val.groups[p.id] = e.target.checked; } }, val.groups[p.id] ? { checked: true } : {})); return h('label', { class: 'toolgroup', for: 'ag-' + p.id }, cb, h('span', {}, h('b', {}, p.label), h('small', {}, p.description))); }));
@@ -848,22 +859,26 @@
     const sched = h('select', { 'aria-label': 'Schedule' }, ...[['', 'Only when I run it'], ['hourly', 'Every hour'], ['daily', 'Every day']].map(([v, l]) => h('option', Object.assign({ value: v }, val.schedule === v ? { selected: true } : {}), l)));
     sched.addEventListener('change', () => { val.schedule = sched.value; val.enabled = !!sched.value; });
     const clear = a && a.memory ? h('label', { class: 'check' }, h('input', { type: 'checkbox', onchange: (e) => { val.clearMemory = e.target.checked; } }), 'Forget its notes') : null;
-    const save = h('button', { class: 'btn', onclick: async () => {
-      err.hidden = true; save.disabled = true;
+    const doSave = async (approve, btn) => {
+      err.hidden = true; btn.disabled = true;
       try {
-        const body = { name: val.name, role: val.role, instructions: val.instructions, folder: val.folder, groups: val.groups, mode: val.mode, schedule: val.schedule, enabled: !!val.schedule, clearMemory: !!val.clearMemory };
+        const body = { name: val.name, role: val.role, instructions: val.instructions, scope: val.scope || 'project', folder: val.scope === 'global' ? '' : val.folder, groups: val.groups, mode: val.mode, schedule: val.schedule, enabled: !!val.schedule, approve, clearMemory: !!val.clearMemory };
         if (a && a.id) await api('/api/identities/' + a.id, { method: 'PUT', body: JSON.stringify(body) }); else await api('/api/identities', { method: 'POST', body: JSON.stringify(body) });
         if (a && a.fromSuggestion) await api('/api/agent-suggestions/' + a.fromSuggestion + '/accepted', { method: 'POST' }).catch(() => {});
-        closeMCP(); toast('Saved ' + val.name); again();
-      } catch (e) { err.textContent = e.message; err.hidden = false; save.disabled = false; }
-    } }, icon('check'), a && a.id ? 'Save' : 'Create agent');
+        closeMCP(); toast(approve ? val.name + ' is now one of your agents' : 'Saved ' + val.name + ' as a draft'); again();
+      } catch (e) { err.textContent = e.message; err.hidden = false; btn.disabled = false; }
+    };
+    const draftBtn = h('button', { class: 'btn ghost' }, a && a.approved ? 'Save' : 'Save as draft');
+    draftBtn.addEventListener('click', () => doSave(false, draftBtn));
+    const approveBtn = h('button', { class: 'btn' }, icon('check'), a && a.approved ? 'Save and keep approved' : 'Approve as agent');
+    approveBtn.addEventListener('click', () => doSave(true, approveBtn));
     const modal = h('div', { class: 'modal wide', role: 'dialog', 'aria-modal': 'true', 'aria-label': a && a.id ? 'Edit agent' : 'New agent' },
       h('header', {}, h('h2', {}, a && a.id ? 'Edit ' + f.name : 'New agent'), h('button', { class: 'btn ghost small sp', onclick: closeMCP }, 'Cancel')),
       h('div', { class: 'mbody' }, tpl, nameField, roleField, instrField,
-        h('label', { class: 'field' }, h('span', { class: 'opt-label' }, 'Folder it works in'), folderSel),
+        h('label', { class: 'field' }, h('span', { class: 'opt-label' }, 'Kind of agent'), scopeSel), folderField,
         h('div', {}, h('span', { class: 'opt-label' }, 'Tools it may use'), groups),
         h('div', { class: 'row' }, h('label', { class: 'field' }, h('span', { class: 'opt-label' }, 'Mode'), mode), h('label', { class: 'field' }, h('span', { class: 'opt-label' }, 'Schedule'), sched)),
-        clear, err, h('div', { class: 'row' }, save)));
+        clear, err, h('div', { class: 'row' }, approveBtn, draftBtn)));
     const bg = h('div', { class: 'modal-bg', onclick: (e) => { if (e.target === bg) closeMCP(); } }, modal);
     $('modal-root').replaceChildren(bg);
     S.modal = { agent: 'agentform' };

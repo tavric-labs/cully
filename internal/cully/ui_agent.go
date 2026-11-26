@@ -86,6 +86,9 @@ type uiStartRequest struct {
 	Loop         bool            `json:"loop"`     // keep going until the agent has checked its work
 	DoneWhen     string          `json:"doneWhen"` // checks that say the task is done, one per line
 	MaxRounds    int             `json:"maxRounds"`
+	identityName string          // the named agent this run is for
+	inPlaceDir   string          // a folder with no git: the task works in it directly
+	helperNames  []string        // named agents the loop asks for a review
 	groups       map[string]bool // tool groups of a named agent; nil means the global switches
 	appendSystem string          // identity text added to the system prompt
 	resumeID     string          // continue this Claude session instead of starting a new one
@@ -120,6 +123,7 @@ type uiAgentView struct {
 	Updated  time.Time      `json:"updated"` // when the latest activity happened
 	Harness  *uiHarnessView `json:"harness,omitempty"`
 	Usage    *uiUsageView   `json:"usage,omitempty"`
+	Run      *uiRunInfo     `json:"run,omitempty"`    // how the harness underneath was set up for this task
 	Group    string         `json:"group,omitempty"`  // fan-out: options of one task share it
 	Option   string         `json:"option,omitempty"` // fan-out: "A", "B", ...
 }
@@ -295,12 +299,18 @@ func (m *uiManager) start(req uiStartRequest) (*uiAgent, error) {
 	if req.Model != "" && !uiModelName.MatchString(req.Model) {
 		return nil, errors.New("invalid model name")
 	}
-	repo, err := m.resolveRepo(req.Repo)
-	if err != nil {
-		return nil, err
-	}
-	if out, err := exec.Command("git", "-C", repo, "rev-parse", "--git-dir").CombinedOutput(); err != nil {
-		return nil, fmt.Errorf("repo is not a git repository: %s", strings.TrimSpace(string(out)))
+	var repo string
+	if req.inPlaceDir != "" { // an agent's own folder: no git, no worktree
+		repo = req.inPlaceDir
+	} else {
+		var err error
+		repo, err = m.resolveRepo(req.Repo)
+		if err != nil {
+			return nil, err
+		}
+		if out, err := exec.Command("git", "-C", repo, "rev-parse", "--git-dir").CombinedOutput(); err != nil {
+			return nil, fmt.Errorf("repo is not a git repository: %s", strings.TrimSpace(string(out)))
+		}
 	}
 	title := strings.TrimSpace(req.Title)
 	if title == "" {
@@ -320,6 +330,9 @@ func (m *uiManager) start(req uiStartRequest) (*uiAgent, error) {
 	if req.resumeDir != "" { // a resumed session runs where it started, on the branch that is checked out
 		worktree = req.resumeDir
 		branch = uiCurrentBranch(req.resumeDir)
+	}
+	if req.inPlaceDir != "" {
+		worktree, branch = req.inPlaceDir, "no git"
 	}
 	a := &uiAgent{
 		id: id, title: title, repo: repo, req: req, created: time.Now().UTC(),
@@ -406,6 +419,7 @@ type uiAgent struct {
 	stopped       bool
 	pending       int // turns sent and not yet answered by a result
 	harness       *uiHarness
+	runInfo       *uiRunInfo
 	usage         uiTokens
 	turns         int // turns that reported usage
 	usageRecorded bool
@@ -430,7 +444,7 @@ func (a *uiAgent) snapshot() uiAgentView {
 	return uiAgentView{
 		ID: a.id, Title: a.title, Repo: a.repo, Branch: a.branch, Worktree: a.worktree,
 		Token: a.token, State: a.state, Created: a.created,
-		Stages: a.stagesCopyLocked(), Events: len(a.events), Files: a.sortedFilesLocked(), Last: a.last, Updated: a.updated, Group: a.req.group, Option: a.req.option, Harness: a.harnessView(), Usage: usageOf(a.usage), MCP: append([]uiMCPServer(nil), a.mcp...),
+		Stages: a.stagesCopyLocked(), Events: len(a.events), Files: a.sortedFilesLocked(), Last: a.last, Updated: a.updated, Group: a.req.group, Option: a.req.option, Harness: a.harnessView(), Usage: usageOf(a.usage), Run: a.runInfo, MCP: append([]uiMCPServer(nil), a.mcp...),
 	}
 }
 
@@ -564,7 +578,7 @@ func (a *uiAgent) isStopped() bool {
 func (a *uiAgent) run(m *uiManager) {
 	defer close(a.done)
 	var prompt string
-	if a.req.resumeID != "" {
+	if a.req.resumeID != "" || a.req.inPlaceDir != "" {
 		prompt = a.req.Prompt
 		for _, st := range []string{"context", "recall", "scout"} {
 			a.setStage(st, "skipped", "")
@@ -601,6 +615,9 @@ func (a *uiAgent) run(m *uiManager) {
 		a.mcpFiltered = true
 		a.mu.Unlock()
 	}
+	a.mu.Lock()
+	a.runInfo = m.describeRun(a, permission, allowed, denied, mcpArgs)
+	a.mu.Unlock()
 	if a.req.appendSystem != "" {
 		args = append(args, "--append-system-prompt", a.req.appendSystem)
 	}
