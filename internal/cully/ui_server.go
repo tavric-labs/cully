@@ -154,6 +154,7 @@ func newUIServer(m *uiManager, token string, loopback bool) http.Handler {
 	mux.Handle("GET /api/research", s.api(s.researchGet))
 	mux.Handle("GET /api/feed", s.api(s.feedGet))
 	mux.Handle("GET /api/suggestions", s.api(s.suggestionsGet))
+	mux.Handle("GET /api/job-suggestions", s.api(s.jobSuggestionsGet))
 	mux.Handle("POST /api/job-suggestions/run", s.api(s.jobSuggestRunH))
 	mux.Handle("POST /api/job-suggestions/{id}/accept", s.api(s.jobSuggestAcceptH))
 	mux.Handle("POST /api/job-suggestions/{id}/dismiss", s.api(s.jobSuggestDismissH))

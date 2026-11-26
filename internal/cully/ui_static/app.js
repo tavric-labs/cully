@@ -1507,25 +1507,39 @@
     try { list = await api('/api/suggestions'); } catch (_) { return null; }
     const ask = async (btn) => { btn.disabled = true; try { const r = await api('/api/job-suggestions/run', { method: 'POST' }); toast(r.added ? r.added + ' background job ' + (r.added === 1 ? 'proposal' : 'proposals') : 'Nothing repeats enough to need a background job yet.'); again(); } catch (e) { toast(e.message, true); btn.disabled = false; } };
     const card = (x) => {
-      const time = x.kind === 'job' ? h('input', { type: 'time', value: x.after || '02:00', 'aria-label': 'Time of day', class: 'timein' }) : null;
       const acts = [];
-      if (x.kind === 'job') {
-        acts.push(h('button', { class: 'btn small', onclick: async (e) => { e.target.disabled = true; try { await api('/api/job-suggestions/' + x.id + '/accept', { method: 'POST', body: JSON.stringify({ after: time.value }) }); toast('Added. It runs after ' + time.value + ' while Cully is running.'); again(); } catch (err) { toast(err.message, true); e.target.disabled = false; } } }, icon('check'), 'Approve'));
-        acts.push(h('button', { class: 'btn ghost small', onclick: async () => { try { await api('/api/job-suggestions/' + x.id + '/dismiss', { method: 'POST' }); again(); } catch (err) { toast(err.message, true); } } }, 'Reject'));
-      } else if (x.kind === 'agent') {
-        acts.push(h('a', { class: 'btn small', href: x.href }, icon('check'), 'Review and approve'));
-        acts.push(h('button', { class: 'btn ghost small', onclick: async () => { try { await api('/api/agent-suggestions/' + x.id + '/dismissed', { method: 'POST' }); again(); } catch (err) { toast(err.message, true); } } }, 'Reject'));
-      } else if (x.href) acts.push(h('a', { class: 'btn ghost small', href: x.href }, 'Open'));
+      if (x.kind === 'job' || x.kind === 'agent') acts.push(h('a', { class: 'btn small', href: x.href }, icon('check'), x.kind === 'job' ? 'Review in Background jobs' : 'Review in Agents'));
+      else if (x.href) acts.push(h('a', { class: 'btn ghost small', href: x.href }, 'Open'));
       return h('li', { class: 'hrow' }, h('div', { class: 'hmain' }, h('div', { class: 'ht' }, h('span', { class: 'chip' }, SUG_LABEL[x.kind] || x.kind), ' ' + x.title),
         x.why ? h('p', { class: 'hdesc' }, x.why) : null,
         x.detail ? h('p', { class: 'faint small' }, x.detail) : null,
-        x.command ? h('p', { class: 'small' }, h('span', { class: 'faint' }, 'It will run: '), h('code', {}, x.command)) : null,
-        time ? h('div', { class: 'row' }, h('span', { class: 'faint small' }, 'Run after'), time) : null),
+        x.command ? h('p', { class: 'small' }, h('span', { class: 'faint' }, 'It will run: '), h('code', {}, x.command)) : null),
         h('div', { class: 'row hact' }, ...acts));
     };
     return h('section', { class: 'lib-card' }, h('div', { class: 'row' }, h('b', {}, 'Suggestions'), h('span', { class: 'faint small' }, list.length ? list.length + ' waiting for you' : 'Nothing waiting'),
       h('button', { class: 'btn ghost small sp', title: 'Ask the advisor whether a chore you repeat should be a background job', onclick: (e) => ask(e.target) }, icon('spark'), 'Look for background jobs')),
-      h('p', { class: 'faint small' }, 'The Advisor makes every suggestion, from your analysed sessions and what you ask Claude to do again and again. A background job is one fixed command that runs by itself at a time you choose, with no model and no tokens, for chores like running the tests overnight. An agent is for work that needs reading and judgement. Nothing starts until you approve it.'),
+      h('p', { class: 'faint small' }, 'The Advisor makes every suggestion, from your analysed sessions and what you ask Claude to do again and again, and sends each to where it belongs: agents to Agents, background jobs to Background jobs, rules to Workflow rules. A background job is one fixed command that runs by itself at a time you choose, with no model and no tokens, for chores like running the tests overnight. An agent is for work that needs reading and judgement. Nothing starts until you approve it.'),
+      list.length ? h('ul', { class: 'hrows' }, ...list.map(card)) : null);
+  }
+  // Background job proposals, shown on the Background jobs page where they are approved. Each shows
+  // the exact command, and the time can be changed before approving.
+  async function jobProposals(again) {
+    let list = [];
+    try { list = await api('/api/job-suggestions'); } catch (_) { return null; }
+    const ask = async (btn) => { btn.disabled = true; try { const r = await api('/api/job-suggestions/run', { method: 'POST' }); toast(r.added ? r.added + ' background job ' + (r.added === 1 ? 'proposal' : 'proposals') : 'Nothing repeats enough to need a background job yet.'); again(); } catch (e) { toast(e.message, true); btn.disabled = false; } };
+    const card = (x) => {
+      const time = h('input', { type: 'time', value: x.after || '02:00', 'aria-label': 'Time of day', class: 'timein' });
+      return h('li', { class: 'hrow' }, h('div', { class: 'hmain' }, h('div', { class: 'ht' }, x.name),
+        h('p', { class: 'hdesc' }, x.why),
+        h('p', { class: 'small' }, h('span', { class: 'faint' }, 'It will run: '), h('code', {}, x.display)),
+        h('div', { class: 'row' }, h('span', { class: 'faint small' }, 'Run after'), time, h('span', { class: 'faint small' }, 'while Cully is running'))),
+        h('div', { class: 'row hact' },
+          h('button', { class: 'btn small', onclick: async (e) => { e.target.disabled = true; try { await api('/api/job-suggestions/' + x.id + '/accept', { method: 'POST', body: JSON.stringify({ after: time.value }) }); toast('Added. It runs after ' + time.value + '.'); again(); } catch (err) { toast(err.message, true); e.target.disabled = false; } } }, icon('check'), 'Approve'),
+          h('button', { class: 'btn ghost small', onclick: async () => { try { await api('/api/job-suggestions/' + x.id + '/dismiss', { method: 'POST' }); again(); } catch (err) { toast(err.message, true); } } }, 'Reject')));
+    };
+    return h('section', { class: 'lib-card' }, h('div', { class: 'row' }, h('b', {}, 'Proposed by the Advisor'), h('span', { class: 'faint small' }, list.length ? list.length + ' waiting for you' : 'Nothing waiting'),
+      h('button', { class: 'btn ghost small sp', onclick: (e) => ask(e.target) }, icon('spark'), 'Look for background jobs')),
+      h('p', { class: 'faint small' }, 'A background job is one fixed command that runs by itself at a time you choose, with no model and no tokens. The Advisor proposes one for a chore you repeat that a single command can do. Nothing is added until you approve it.'),
       list.length ? h('ul', { class: 'hrows' }, ...list.map(card)) : null);
   }
   function renderAdvisor(list) {
@@ -1946,14 +1960,15 @@
       if (name === 'jobs') {
         const jobs = await api('/api/jobs').catch(() => []);
         if (jobs.length) {
-          if (live()) out.replaceChildren(head(refreshBtn(again)), h('div', { class: 'groups' }, ...jobs.map((j) => h('section', { class: 'group' },
+          const props = await jobProposals(again);
+          if (live()) out.replaceChildren(head(refreshBtn(again)), props, h('div', { class: 'groups' }, ...jobs.map((j) => h('section', { class: 'group' },
             h('header', {}, h('span', { class: 'gt' }, j.name), j.running ? h('span', { class: 'pill working' }, 'Running') : null, h('span', { class: 'faint small' }, 'runs after ' + j.after + ' each day, with ' + j.program),
               h('button', { class: 'btn small sp', disabled: j.running, onclick: async () => { try { await api('/api/jobs/' + encodeURIComponent(j.name) + '/run', { method: 'POST' }); toast('Started ' + j.name); setTimeout(again, 1500); } catch (e) { toast(e.message, true); } } }, icon('refresh'), 'Run now'))))));
           return;
         }
       }
       const text = await api('/api/panel/' + name + '?repo=' + encodeURIComponent(S.opts.repo || ''));
-      if (live()) out.replaceChildren(head(refreshBtn(again), copyBtn('Copy', () => text)), renderText(name, text));
+      if (live()) out.replaceChildren(head(refreshBtn(again), copyBtn('Copy', () => text)), name === 'jobs' ? await jobProposals(again) : null, renderText(name, text));
     } catch (e) {
       if (live()) out.replaceChildren(head(), h('div', { class: 'emptycard' }, h('h3', {}, 'Could not load this'), h('p', {}, e.message), h('button', { class: 'btn small', onclick: again }, icon('refresh'), 'Try again')));
     }

@@ -1,7 +1,9 @@
 package cully
 
 import (
+	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -34,6 +36,14 @@ func TestJobProposalsAreCheckedStrictly(t *testing.T) {
 	}
 	if uiJobCommandOK([]string{"make", "-C", "/usr", "test"}, "/tmp") == nil || uiJobCommandOK([]string{"pytest", "-q", "/usr"}, "/tmp") == nil {
 		t.Fatal("a command named a folder other than the proposal's")
+	}
+	for _, c := range [][]string{{"pytest", "-q"}, {"pytest", "-q", "/tmp", "/tmp"}} {
+		if uiJobCommandOK(c, "/tmp") == nil {
+			t.Fatalf("%v was accepted", c)
+		}
+	}
+	if _, err := exec.LookPath("pytest"); err == nil && uiJobCommandOK([]string{"pytest", "-q", "/tmp"}, "/tmp") != nil {
+		t.Fatal("pytest on the proposal's folder was refused")
 	}
 	if got := uiParseJobSuggestions(out, folders, map[string]bool{"nightly-tests": true}); len(got) != 0 {
 		t.Fatal("proposed a job whose name is taken")
@@ -98,5 +108,17 @@ func TestJobProposalsCanBeDismissedAndShowInTheSuggestionInbox(t *testing.T) {
 	}
 	if _, err := m.jobSuggestionAccept("j2", ""); err == nil {
 		t.Fatal("accepted a dismissed proposal")
+	}
+}
+
+func TestProposalsAreListedForTheBackgroundJobsPageWithTheExactCommand(t *testing.T) {
+	m, repo, _ := uiIndexManager(t)
+	uiDB().put("jobsuggest", "j3", uiJobSuggestion{ID: "j3", Name: "vet-all", Command: []string{"go", "-C", repo, "vet", "./..."}, After: "01:30", Folder: repo, Why: "You run vet by hand", State: "new"})
+	s := &uiServer{m: m}
+	rec := httptest.NewRecorder()
+	s.jobSuggestionsGet(rec, httptest.NewRequest("GET", "/api/job-suggestions", nil))
+	body := rec.Body.String()
+	if rec.Code != 200 || !strings.Contains(body, `"display":"go -C `+repo+` vet ./..."`) || !strings.Contains(body, `"name":"vet-all"`) {
+		t.Fatalf("%d %s", rec.Code, body)
 	}
 }

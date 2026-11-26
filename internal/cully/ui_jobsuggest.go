@@ -3,6 +3,7 @@ package cully
 import (
 	"encoding/json"
 	"errors"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -131,13 +132,20 @@ func uiJobCommandOK(cmd []string, folder string) error {
 		}
 		rest = rest[1:]
 	}
+	pathArgs := 0
 	for _, a := range rest {
+		if cmd[0] == "pytest" && uiJobFolderOK(a, folder) {
+			pathArgs++
+		}
 		switch {
 		case rule.flags[a]:
 		case rule.arg != nil && rule.arg.MatchString(a) && (cmd[0] != "pytest" || uiJobFolderOK(a, folder)):
 		default:
 			return errors.New(a + " is not allowed in a proposed job")
 		}
+	}
+	if cmd[0] == "pytest" && pathArgs != 1 { // with no folder it would run in the home directory
+		return errors.New("pytest must name the proposal's folder exactly once")
 	}
 	return nil
 }
@@ -374,4 +382,18 @@ func uiAppendJob(j scheduledJob) error {
 		return err
 	}
 	return os.Rename(tmp.Name(), path)
+}
+
+// uiJobSuggestionView is a proposal as the Background jobs page shows it.
+type uiJobSuggestionView struct {
+	uiJobSuggestion
+	Display string `json:"display"` // the exact command, quoted
+}
+
+func (s *uiServer) jobSuggestionsGet(w http.ResponseWriter, r *http.Request) {
+	out := []uiJobSuggestionView{}
+	for _, x := range s.m.jobSuggestionsList() {
+		out = append(out, uiJobSuggestionView{x, uiShowArgv(x.Command)})
+	}
+	uiJSON(w, http.StatusOK, out)
 }
