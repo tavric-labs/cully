@@ -76,6 +76,8 @@ Keep MCP Runtime's OAuth gateway **off for this Cully route** in the current int
 
 After deployment, check that the Cully Deployment's updated and ready replicas match its desired replicas and that its pod runs the new image tag. The CLI can report Ready while an older pod serves traffic during a failed rollout ([Runtime issue #636](https://github.com/tavric-labs/mcp-runtime/issues/636)).
 
+When the data API is outside the cluster, declare its hostname and TCP port in the server metadata's `egress` block. The maintainer's manifest declares `workspace.mcpruntime.org` on port `443`. Use an MCP Runtime CLI and operator that support `egress`, then have a platform administrator run `mcp-runtime server egress approve cully --namespace mcp-servers-org --use-kube` for the hosted deployment. Confirm the `ExternalEgressReady` condition reports `Applied` and check data API connectivity from the Cully pod. A healthy pod alone does not prove that memory requests can reach the API. The current operator permits approved ports to public addresses generally; declared hostnames are recorded for review, not enforced by name. See the [external egress guide](https://docs.mcpruntime.org/publish-mcp-server/#external-egress-for-mcp-servers).
+
 <div class="related-product">
   <p class="related-product__eyebrow">Another product from the Cully maintainer</p>
   <h3>MCP Runtime</h3>

@@ -9,6 +9,10 @@ servers:
       ingressHost: mcp.mcpruntime.org
       port: 8080
       replicas: 1
+      egress:
+        hosts:
+          - workspace.mcpruntime.org
+        ports: [443]
       envVars:
         - name: CULLY_DATA_API_URL
           value: https://workspace.mcpruntime.org/cully-data
