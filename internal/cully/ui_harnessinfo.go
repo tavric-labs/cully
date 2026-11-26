@@ -22,10 +22,12 @@ import (
 // place, so each has its own reader.
 
 type uiInfoServer struct {
-	Name   string `json:"name"`
-	Kind   string `json:"kind"`   // http, stdio, ...
-	Target string `json:"target"` // address without credentials, or the program's name
-	Status string `json:"status,omitempty"`
+	Name    string `json:"name"`
+	Kind    string `json:"kind"`   // http, stdio, ...
+	Target  string `json:"target"` // address without credentials, or the program's name
+	Status  string `json:"status,omitempty"`
+	Tools   int    `json:"tools,omitempty"`   // tools it offered the last time a task started
+	Prompts int    `json:"prompts,omitempty"` // prompts (slash commands) it offered
 }
 
 type uiInfoSkill struct {
@@ -330,6 +332,21 @@ func (m *uiManager) harnessInfo(agent string) uiHarnessInfo {
 		for i := range info.MCP {
 			if st, ok := last[info.MCP[i].Name]; ok {
 				info.MCP[i].Status = st
+			}
+		}
+		if n := m.initKnown(); n != nil {
+			for i := range info.MCP {
+				prefix := "mcp__" + info.MCP[i].Name + "__"
+				for _, t := range n.Tools {
+					if strings.HasPrefix(t, prefix) {
+						info.MCP[i].Tools++
+					}
+				}
+				for _, c := range n.Commands {
+					if strings.HasPrefix(strings.TrimPrefix(c, "/"), prefix) {
+						info.MCP[i].Prompts++
+					}
+				}
 			}
 		}
 		if len(last) == 0 {

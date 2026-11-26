@@ -134,7 +134,8 @@ type uiAgentView struct {
 }
 
 type uiManager struct {
-	voice     uiVoice // speech to text for the page's microphone button
+	bg        sync.WaitGroup // background work that writes to the database after a task ends
+	voice     uiVoice        // speech to text for the page's microphone button
 	cfg       uiConfig
 	repos     []string
 	mcp       *uiMCP

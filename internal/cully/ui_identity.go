@@ -429,7 +429,11 @@ func (m *uiManager) identityRunWith(id string, o uiRunOpts) (uiIdentityRun, *uiA
 	cur.LastRun = run.Started
 	m.saveIdentitiesLocked()
 	uiIdentityMu.Unlock()
-	go m.finishIdentityRun(id, run.ID, a, !o.NoMemory)
+	m.bg.Add(1)
+	go func() {
+		defer m.bg.Done()
+		m.finishIdentityRun(id, run.ID, a, !o.NoMemory)
+	}()
 	return run, a, nil
 }
 

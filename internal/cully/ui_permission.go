@@ -3,6 +3,8 @@ package cully
 import (
 	"bufio"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"net"
@@ -35,6 +37,8 @@ const (
 	uiPermServer  = "cullyperm"
 	uiPermTimeout = 10 * time.Minute
 	uiPermKeep    = 30
+	// What is asked about must be shown in full. An input longer than this is refused, not clipped.
+	uiPermShowMax = 20000
 )
 
 var uiPermWait = uiPermTimeout // a variable so tests need not wait
@@ -46,6 +50,7 @@ type uiPermission struct {
 	Summary string          `json:"summary"` // one line a person can read: the command, the path, the query
 	At      time.Time       `json:"at"`
 	Status  string          `json:"status"` // pending, allowed, allowed-always, denied or expired
+	Hash    string          `json:"-"`      // of the exact input shown; an allow must name it
 	decide  chan string
 }
 
@@ -56,6 +61,7 @@ type uiPermView struct {
 	Summary string    `json:"summary"`
 	At      time.Time `json:"at"`
 	Status  string    `json:"status"`
+	Hash    string    `json:"hash"` // the answer must quote this, so it is about exactly what was shown
 }
 
 type uiPermState struct {
@@ -105,7 +111,9 @@ func uiPermSummary(tool string, input json.RawMessage) string {
 }
 
 func (a *uiAgent) permView(p *uiPermission) uiPermView {
-	return uiPermView{ID: p.ID, Tool: p.Tool, Input: uiClip(a.tokens.redact(prettyJSON(p.Input)), 4000), Summary: uiClip(a.tokens.redact(p.Summary), 600), At: p.At, Status: p.Status}
+	// The whole input is shown, never a clipped or chosen part of it: a request too long to show, or
+	// one that holds a secret the page would have to hide, is refused before it gets here.
+	return uiPermView{ID: p.ID, Tool: p.Tool, Input: prettyJSON(p.Input), Summary: p.Summary, At: p.At, Status: p.Status, Hash: p.Hash}
 }
 
 func prettyJSON(raw json.RawMessage) string {
@@ -238,14 +246,26 @@ func (a *uiAgent) answerPermission(c net.Conn) {
 		}
 		_ = json.NewEncoder(c).Encode(map[string]string{"behavior": "deny", "message": msg})
 	}
+	shown := prettyJSON(ask.Input)
+	if len(shown) > uiPermShowMax {
+		a.add(uiEvent{Kind: "note", Text: "Refused " + ask.ToolName + ": the request is too long to show you in full."})
+		_ = json.NewEncoder(c).Encode(map[string]string{"behavior": "deny", "message": "The request was too large for the user to review, so it was refused."})
+		return
+	}
+	if a.tokens.redact(shown) != shown {
+		a.add(uiEvent{Kind: "note", Text: "Refused " + ask.ToolName + ": the request contains a secret that cannot be shown."})
+		_ = json.NewEncoder(c).Encode(map[string]string{"behavior": "deny", "message": "The request contained a secret, so it was refused."})
+		return
+	}
 	key := uiPermKey(ask.ToolName, ask.Input)
+	sum := sha256.Sum256([]byte(key))
 	a.perm.mu.Lock()
 	if a.perm.always[key] {
 		a.perm.mu.Unlock()
 		reply("allow")
 		return
 	}
-	p := &uiPermission{ID: uiNewID(), Tool: ask.ToolName, Input: ask.Input, Summary: uiPermSummary(ask.ToolName, ask.Input), At: time.Now().UTC(), Status: "pending", decide: make(chan string, 1)}
+	p := &uiPermission{ID: uiNewID(), Tool: ask.ToolName, Input: ask.Input, Summary: uiPermSummary(ask.ToolName, ask.Input), At: time.Now().UTC(), Status: "pending", Hash: hex.EncodeToString(sum[:]), decide: make(chan string, 1)}
 	a.perm.list = append(a.perm.list, p)
 	if len(a.perm.list) > uiPermKeep {
 		a.perm.list = a.perm.list[len(a.perm.list)-uiPermKeep:]
@@ -284,7 +304,7 @@ func (a *uiAgent) pingPermission() {
 }
 
 // decidePermission records the user's answer to a waiting question.
-func (a *uiAgent) decidePermission(id, decision string) error {
+func (a *uiAgent) decidePermission(id, decision, hash string) error {
 	if decision != "allow" && decision != "allow_always" && decision != "deny" {
 		return errors.New(`decision must be "allow", "allow_always" or "deny"`)
 	}
@@ -294,6 +314,9 @@ func (a *uiAgent) decidePermission(id, decision string) error {
 		if p.ID == id {
 			if p.Status != "pending" {
 				return errors.New("that question was already answered")
+			}
+			if decision != "deny" && hash != p.Hash {
+				return errors.New("what you were shown does not match what the task asked; reload and look again")
 			}
 			select {
 			case p.decide <- decision:
@@ -312,11 +335,12 @@ func (s *uiServer) permissionDecide(w http.ResponseWriter, r *http.Request) {
 	}
 	var body struct {
 		Decision string `json:"decision"`
+		Hash     string `json:"hash"`
 	}
 	if !uiDecode(w, r, &body) {
 		return
 	}
-	if err := a.decidePermission(r.PathValue("pid"), body.Decision); err != nil {
+	if err := a.decidePermission(r.PathValue("pid"), body.Decision, body.Hash); err != nil {
 		uiError(w, http.StatusBadRequest, err.Error())
 		return
 	}

@@ -832,3 +832,14 @@ dl.meta { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; 
 .permcard { border: 1px solid var(--peach-ink, #b4690e); border-left-width: 4px; background: var(--peach); border-radius: 10px; padding: 10px 14px; margin: 8px 0; display: flex; flex-direction: column; gap: 8px; }
 .permcard .row { gap: 8px; align-items: center; flex-wrap: wrap; }
 .permcmd { margin: 0; padding: 8px 10px; background: var(--code-bg); border-radius: 8px; font: 12.5px/1.45 var(--mono, monospace); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 200px; overflow: auto; }
+
+/* harness servers */
+.scard { border-left: 4px solid var(--line); }
+.scard.st-ok { border-left-color: var(--add-ink); } .scard.st-auth { border-left-color: var(--peach-ink, #b4690e); } .scard.st-bad { border-left-color: var(--red); } .scard.st-unchecked { border-left-color: var(--line); }
+.sc-target .chip { margin-right: 4px; } .sc-fix { margin: 4px 0 0; color: var(--soft); }
+.chip.tk-read { background: var(--add-bg); color: var(--add-ink); } .chip.tk-change { background: var(--peach); color: var(--peach-ink); } .chip.tk-delete { background: var(--red-bg); color: var(--red); } .chip.tk-other { background: var(--surface2); color: var(--soft); }
+.tgroup { border: 1px solid var(--line); border-radius: 10px; margin: 8px 0; background: var(--raised); } .tgroup > summary { cursor: pointer; padding: 8px 12px; display: flex; gap: 10px; align-items: baseline; } .tgroup > .tool, .tgroup > div { margin: 0 8px 4px; }
+.srvaddr { overflow-wrap: anywhere; }
+
+table.cmp th.on, table.cmp td.on { background: var(--surface2); }
+table.cmp td, table.cmp th { padding: 6px 10px; text-align: left; vertical-align: top; }

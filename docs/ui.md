@@ -145,7 +145,7 @@ Turn on **Keep going until checked** when you start an agent and, after each tur
 
 ## Asking you before a task uses a tool
 
-A task runs without a person at a keyboard, so it used to refuse any tool use outside its allowed list. Now Cully asks you. When a task wants to use something it is not allowed to yet (a command such as `ssh`, a file outside its folder, a web fetch), the task window shows a card with the tool and exactly what it wants to do, and the task waits. **Allow once** lets that call through; **Allow for this task** lets the same exact call through again without asking, for the rest of that task; **Deny** refuses it and the task carries on without it. Nothing is allowed unless you click: an unanswered question is refused after ten minutes, and stopping the task refuses it at once. Tools on the Harness permissions always-blocked list never reach you; they are refused first. Behind the card, Claude is started with `--permission-prompt-tool` pointing at a small helper that talks to the Cully server over a private socket (mode 0600, in a private temporary folder) that exists only while the task runs.
+A task runs without a person at a keyboard, so it used to refuse any tool use outside its allowed list. Now Cully asks you. When a task wants to use something it is not allowed to yet (a command such as `ssh`, a file outside its folder, a web fetch), the task window shows a card with the tool and exactly what it wants to do, and the task waits. **Allow once** lets that call through; **Allow for this task** lets the same exact call through again without asking, for the rest of that task; **Deny** refuses it and the task carries on without it. The card shows everything the task sent, in full, and your answer is tied to a hash of exactly that, so you can only allow what you were shown. A request too long to show (over 20,000 characters) or one that contains one of your tokens is refused instead of shown clipped or hidden. Nothing is allowed unless you click: an unanswered question is refused after ten minutes, and stopping the task refuses it at once. Tools on the Harness permissions always-blocked list never reach you; they are refused first. Behind the card, Claude is started with `--permission-prompt-tool` pointing at a small helper that talks to the Cully server over a private socket (mode 0600, in a private temporary folder) that exists only while the task runs.
 
 ## Any folder, with or without git
 
@@ -214,6 +214,14 @@ An eval is a small test: a task, a few checks in plain words and a judge that sa
 ## Activity
 
 Activity opens on a feed of cards, newest first and grouped by day: tasks that finished, failed or need an answer, runs of your agents, eval verdicts, and what the scout and advisor found. A strip of counts for the last 24 hours sits on top, and anything that needs a look is pulled to the front. Each card shows what it was, how it went, a preview and its folder; click it to see the full text (as formatted Markdown, with the links) and the facts behind it, with a button to the page where it lives. Filter by Tasks, Agents, Evals, Scout or Advice. The **This folder** tab keeps the file and command timeline of the current folder.
+
+## The Harness page
+
+**Overview** opens with **What to look at**: servers that need you to sign in or failed to connect, a warning when tasks load many tools (each tool description is sent every turn), servers not checked yet, and a missing instruction file, each with a button to the place to fix it. Under it the three harnesses sit side by side (model, permission mode, servers connected, skills, hooks, plugins, instruction files).
+
+**Connected servers** shows each server as a card with a coloured edge for its state (connected, needs sign-in, failed, not checked), whether it is a web address or a program, how many tools and prompts it offers, and what to do when it is not connected. Ones that need you come first; filter by state or search by name. The switch on a card decides whether tasks load that server, and the line above the cards counts the tools tasks will carry.
+
+Opening a server shows its state and address, then its tools. A long list is grouped by service (for example `jira` and `confluence`) or, when there is no such prefix, by what the tools do. Each tool is marked **Reads**, **Changes things** or **Deletes**, a guess from its name that is there to help you scan a list of ninety; filter by it, search by name or description, and **Copy tool name** gives the `mcp__server__tool` name to use on the Permissions page. **Load descriptions and parameters** asks your Claude once to read the definitions.
 
 ## Servers, tools and prompts
 

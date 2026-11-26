@@ -65,7 +65,7 @@ func TestATaskAsksBeforeUsingATool_AllowGoesBackUnchangedAndDenyRefuses(t *testi
 		t.Fatalf("answered before the user did: %v", v)
 	case <-time.After(150 * time.Millisecond):
 	}
-	if err := a.decidePermission(pend[0].ID, "allow"); err != nil {
+	if err := a.decidePermission(pend[0].ID, "allow", pend[0].Hash); err != nil {
 		t.Fatal(err)
 	}
 	v := <-ans
@@ -73,18 +73,18 @@ func TestATaskAsksBeforeUsingATool_AllowGoesBackUnchangedAndDenyRefuses(t *testi
 	if v["behavior"] != "allow" || in["command"] == nil || !strings.Contains(in["command"].(string), "hostname") {
 		t.Fatalf("allow reply = %v", v)
 	}
-	if err := a.decidePermission(pend[0].ID, "allow"); err == nil {
+	if err := a.decidePermission(pend[0].ID, "allow", pend[0].Hash); err == nil {
 		t.Fatal("a question was answered twice")
 	}
 	ans = uiAskSocket(t, sock, "Bash", `{"command":"rm -rf x"}`)
 	pend = uiWaitPending(t, a, 1)
-	if err := a.decidePermission(pend[0].ID, "deny"); err != nil {
+	if err := a.decidePermission(pend[0].ID, "deny", ""); err != nil {
 		t.Fatal(err)
 	}
 	if v := <-ans; v["behavior"] != "deny" || !strings.Contains(v["message"].(string), "declined") {
 		t.Fatalf("deny reply = %v", v)
 	}
-	if err := a.decidePermission("nope", "allow"); err == nil || a.decidePermission(pend[0].ID, "maybe") == nil {
+	if err := a.decidePermission("nope", "allow", "x"); err == nil || a.decidePermission(pend[0].ID, "maybe", "") == nil {
 		t.Fatal("bad answers were accepted")
 	}
 }
@@ -93,7 +93,7 @@ func TestAllowForTheRestOfTheTaskCoversOnlyTheExactCall(t *testing.T) {
 	a, sock := uiPermAgent(t)
 	ans := uiAskSocket(t, sock, "Bash", `{"command":"go test ./...","description":"d"}`)
 	pend := uiWaitPending(t, a, 1)
-	_ = a.decidePermission(pend[0].ID, "allow_always")
+	_ = a.decidePermission(pend[0].ID, "allow_always", pend[0].Hash)
 	if v := <-ans; v["behavior"] != "allow" {
 		t.Fatalf("reply = %v", v)
 	}
@@ -152,7 +152,7 @@ func TestThePermissionHelperAsAnMCPToolPassesTheAnswerOn(t *testing.T) {
 		res <- r.Content[0].(*sdk.TextContent).Text
 	}()
 	pend := uiWaitPending(t, a, 1)
-	_ = a.decidePermission(pend[0].ID, "allow")
+	_ = a.decidePermission(pend[0].ID, "allow", pend[0].Hash)
 	if got := <-res; !strings.Contains(got, `"behavior":"allow"`) || !strings.Contains(got, "uptime") {
 		t.Fatalf("tool result = %s", got)
 	}
@@ -168,5 +168,35 @@ func TestATaskIsStartedWithThePermissionHelper(t *testing.T) {
 	args, _ := os.ReadFile(filepath.Join(out, "args.log"))
 	if !strings.Contains(string(args), "--permission-prompt-tool mcp__cullyperm__approve") || !strings.Contains(string(args), "--mcp-config") {
 		t.Fatalf("args = %s", args)
+	}
+}
+
+func TestAnAnswerMustBeAboutExactlyWhatWasShown(t *testing.T) {
+	a, sock := uiPermAgent(t)
+	ans := uiAskSocket(t, sock, "Bash", `{"command":"ls"}`)
+	pend := uiWaitPending(t, a, 1)
+	if err := a.decidePermission(pend[0].ID, "allow", "not-the-hash"); err == nil {
+		t.Fatal("an allow with the wrong hash was accepted")
+	}
+	if err := a.decidePermission(pend[0].ID, "allow", ""); err == nil {
+		t.Fatal("an allow with no hash was accepted")
+	}
+	if pend[0].Input == "" || !strings.Contains(pend[0].Input, "ls") {
+		t.Fatalf("the page was not given the whole input: %q", pend[0].Input)
+	}
+	_ = a.decidePermission(pend[0].ID, "allow", pend[0].Hash)
+	if v := <-ans; v["behavior"] != "allow" {
+		t.Fatalf("reply = %v", v)
+	}
+}
+
+func TestARequestTooLongToShowOrHoldingASecretIsRefusedNotClipped(t *testing.T) {
+	a, sock := uiPermAgent(t)
+	long := `{"command":"echo ` + strings.Repeat("a", uiPermShowMax+10) + `"}`
+	if v := <-uiAskSocket(t, sock, "Bash", long); v["behavior"] != "deny" || !strings.Contains(v["message"].(string), "too large") || len(a.pendingPermissions()) != 0 {
+		t.Fatalf("a long request was not refused: %v", v)
+	}
+	if v := <-uiAskSocket(t, sock, "Bash", `{"command":"curl -H tok-aaa1 x"}`); v["behavior"] != "deny" || !strings.Contains(v["message"].(string), "secret") {
+		t.Fatalf("a request holding a token was not refused: %v", v)
 	}
 }

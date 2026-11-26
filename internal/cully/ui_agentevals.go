@@ -269,7 +269,9 @@ func (m *uiManager) agentEvalRun(id string) (string, error) {
 	e.Runs = append([]uiAgentEvalRun{run}, e.Runs...)
 	writeAgentEvals(path, e)
 	uiAgentEvalMu.Unlock()
+	m.bg.Add(1)
 	go func() {
+		defer m.bg.Done()
 		for _, c := range cases {
 			res := m.runAgentEvalCase(id, c)
 			uiAgentEvalMu.Lock()

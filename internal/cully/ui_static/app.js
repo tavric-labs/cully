@@ -569,11 +569,12 @@
     const sig = list.map((p) => p.id).join(',');
     if (box.dataset.sig === sig) return;
     box.dataset.sig = sig;
-    const answer = async (p, decision) => { try { await api('/api/agents/' + a.id + '/permissions/' + p.id, { method: 'POST', body: JSON.stringify({ decision }) }); await refresh(); } catch (e) { toast(e.message, true); } };
+    const answer = async (p, decision) => { try { await api('/api/agents/' + a.id + '/permissions/' + p.id, { method: 'POST', body: JSON.stringify({ decision, hash: p.hash }) }); await refresh(); } catch (e) { toast(e.message, true); } };
     box.replaceChildren(...list.map((p) => h('section', { class: 'permcard', role: 'alertdialog', 'aria-label': 'The task asks to use ' + p.tool },
       h('div', { class: 'row' }, icon('lock'), h('b', {}, 'The task asks to use ' + p.tool), h('span', { class: 'faint small' }, 'waiting for you since ' + clockTime(p.at))),
-      h('pre', { class: 'permcmd' }, p.summary || p.input),
-      p.input && p.input !== p.summary ? h('details', { class: 'rl' }, h('summary', {}, h('span', { class: 'rq' }, 'Everything it sent')), h('div', { class: 'rbody' }, h('pre', {}, p.input))) : null,
+      p.summary ? h('pre', { class: 'permcmd' }, p.summary) : null,
+      h('p', { class: 'faint small' }, 'Everything it sent, in full. What you allow is exactly this:'),
+      h('pre', { class: 'permcmd' }, p.input),
       h('div', { class: 'row' },
         h('button', { class: 'btn small', onclick: () => answer(p, 'allow') }, icon('check'), 'Allow once'),
         h('button', { class: 'btn ghost small', title: 'Allow this exact call again without asking, for the rest of this task', onclick: () => answer(p, 'allow_always') }, 'Allow for this task'),
@@ -1392,6 +1393,44 @@
   }
 
   // ---------- the harness page: everything about the program that runs the model ----------
+  // What a server's state means, in words, and what to do about it.
+  const SRV_WORD = { ok: 'Connected', auth: 'Needs sign-in', bad: 'Failed to connect', unchecked: 'Not checked yet' };
+  const srvState = (st) => (!st ? 'unchecked' : /^connected/i.test(st) ? 'ok' : st === 'needs-auth' ? 'auth' : 'bad');
+  const SRV_FIX = { auth: 'Sign in from Claude Code: run /mcp and choose this server. Cully cannot sign in to it for you.', bad: 'Claude could not reach it. Check the address or that the program starts, then check again.' };
+  function srvHost(m) {
+    if (m.kind === 'http') { try { const u = new URL(m.target); return u.host + (u.pathname.length > 1 ? u.pathname.replace(/\/$/, '') : ''); } catch (_) { /* show it as it is */ } }
+    return m.target || '';
+  }
+  // Whether a tool only reads, changes something, or deletes, from the words in its name. A guess to help
+  // you scan a long list: the server's own description is the truth.
+  const TOOL_DEL = new Set(['delete', 'remove', 'erase', 'drop', 'destroy', 'stop', 'cancel', 'purge', 'clean', 'unshare', 'uncertify', 'revoke']);
+  const TOOL_CHG = new Set(['create', 'add', 'update', 'edit', 'move', 'transition', 'assign', 'upload', 'send', 'merge', 'play', 'retry', 'trigger', 'promote', 'resolve', 'approve', 'set', 'link', 'copy', 'publish', 'run', 'write', 'save', 'log', 'start', 'push', 'rebase', 'submit', 'commit', 'reply', 'complete', 'authenticate', 'share', 'certify', 'take', 'checkout', 'mirror', 'migrate', 'clone', 'upload']);
+  const TOOL_READ = new Set(['get', 'list', 'search', 'read', 'describe', 'find', 'check', 'download', 'whoami', 'health', 'help', 'show', 'view', 'query', 'sample', 'validate', 'discover', 'wait', 'my', 'lookup', 'parse', 'collect', 'branchdiff', 'recall', 'recent', 'context', 'projects', 'readonly']);
+  function toolKind(t) {
+    if (t.readOnly) return 'read';
+    const parts = t.name.toLowerCase().split(/[_\-.]/);
+    if (parts.includes('readonly')) return 'read';
+    for (const w of parts) { if (TOOL_DEL.has(w)) return 'delete'; if (TOOL_CHG.has(w)) return 'change'; if (TOOL_READ.has(w)) return 'read'; }
+    return 'other';
+  }
+  const TOOL_KIND_WORD = { read: 'Reads', change: 'Changes things', delete: 'Deletes', other: 'Other' };
+  // Group a long tool list by its service prefix (jira_, confluence_) when it has one, otherwise by what the tools do.
+  function groupTools(tools) {
+    if (tools.length <= 12) return [{ name: '', tools }];
+    const first = {};
+    for (const t of tools) { const w = t.name.split(/[_\-]/)[0]; first[w] = (first[w] || 0) + 1; }
+    const verbs = (w) => TOOL_DEL.has(w) || TOOL_CHG.has(w) || TOOL_READ.has(w);
+    const prefixes = Object.keys(first).filter((w) => first[w] >= 3 && !verbs(w));
+    const groups = new Map();
+    for (const t of tools) {
+      const w = t.name.split(/[_\-]/)[0];
+      const key = prefixes.includes(w) ? w : (prefixes.length ? 'other' : TOOL_KIND_WORD[toolKind(t)]);
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(t);
+    }
+    return [...groups.entries()].map(([name, ts]) => ({ name, tools: ts })).sort((a, b) => b.tools.length - a.tools.length);
+  }
+
   const HARNESS_SECTIONS = [['overview', 'Overview'], ['permissions', 'Permissions'], ['servers', 'Connected servers'], ['skills', 'Skills'], ['hooks', 'Hooks'], ['more', 'Plugins and commands']];
   async function renderHarness() {
     const box = $('harness');
@@ -1417,6 +1456,25 @@
     const card = (title, sub, ...kids) => h('section', { class: 'lib-card' }, h('div', { class: 'hc-title' }, h('h3', {}, title), sub ? h('p', { class: 'faint small' }, sub) : null), ...kids);
     const tile = (n, l) => h('div', { class: 'btile' }, h('b', {}, n), h('span', {}, l));
     if (section === 'overview') {
+      // What to look at first: things the page can see are wrong or wasteful, each with where to fix it.
+      const finds = [];
+      const need = info.mcp.filter((m) => srvState(m.status) === 'auth'); const bad = info.mcp.filter((m) => srvState(m.status) === 'bad');
+      const link = (t) => (e) => { e.preventDefault(); go(agent, t); };
+      if (!info.installed) finds.push(['alert', info.name + ' was not found on this machine.', null]);
+      if (need.length) finds.push(['lock', need.length + (need.length === 1 ? ' server needs' : ' servers need') + ' you to sign in: ' + need.map((m) => m.name).join(', ') + '.', 'servers']);
+      if (bad.length) finds.push(['alert', bad.length + (bad.length === 1 ? ' server' : ' servers') + ' failed to connect: ' + bad.map((m) => m.name).join(', ') + '.', 'servers']);
+      const toolTotal = info.mcp.reduce((n, m) => n + (m.tools || 0), 0);
+      if (info.tasksUseIt && toolTotal > 150) finds.push(['spark', 'Tasks load ' + info.mcp.length + ' servers with ' + toolTotal + ' tools. Each tool description is sent every turn, so choosing only the servers you need saves tokens.', 'servers']);
+      if (info.mcp.length && info.mcp.every((m) => !m.status) && info.tasksUseIt) finds.push(['refresh', 'The servers have not been checked yet, so their state and tools are unknown.', 'servers']);
+      if (!info.instructions.length) finds.push(['pencil', 'No instruction file (such as CLAUDE.md) was found for ' + info.name + '.', 'more']);
+      body.append(card('What to look at', finds.length ? null : 'Nothing needs attention.',
+        finds.length ? h('ul', { class: 'hrows' }, ...finds.map(([ic, text, sec]) => h('li', { class: 'hrow' }, h('div', { class: 'hmain row' }, icon(ic), h('span', {}, text)), sec ? h('div', { class: 'row hact' }, h('a', { class: 'btn ghost small', href: '#/harness/' + sec, onclick: link(sec) }, 'Open')) : null))) : null));
+      // The three harnesses side by side.
+      const cell = (a, f) => { try { return f(infos[a]); } catch (_) { return ''; } };
+      const rows = [['Model', (i) => i.model || 'Default'], ['Permission mode', (i) => i.mode || 'Not set'], ['Servers connected', (i) => i.mcp.filter((m) => srvState(m.status) === 'ok').length + ' of ' + i.mcp.length], ['Skills', (i) => String(i.skills.length)], ['Hook events', (i) => String(i.hooks.length)], ['Plugins', (i) => String(i.plugins.length)], ['Instruction files', (i) => i.instructions.join(', ') || 'None']];
+      body.append(card('The three harnesses side by side', 'Tasks run in ' + AGENT_LABEL[tasksAgent] + '. Sessions, the library and the advisor cover all three.',
+        h('table', { class: 'ptable cmp' }, h('thead', {}, h('tr', {}, h('th', {}, ''), ...['claude', 'codex', 'cursor'].map((a) => h('th', { class: a === agent ? 'on' : '' }, AGENT_LABEL[a], infos[a].installed ? '' : ' (not found)')))),
+          h('tbody', {}, ...rows.map(([label, f]) => h('tr', {}, h('td', { class: 'faint' }, label), ...['claude', 'codex', 'cursor'].map((a) => h('td', { class: a === agent ? 'on' : '' }, cell(a, f)))))))));
       body.append(card(info.name + (info.installed ? ' ' + info.version : ''), info.tasksUseIt ? 'Every task Cully starts runs in this harness: it carries out the work, uses the servers and skills below, and obeys the permissions.' : 'Cully reads this harness\'s setup so you can compare it with the others. Tasks started here run in ' + AGENT_LABEL[tasksAgent] + '.',
         h('div', { class: 'btiles' }, tile(info.model || 'Default', 'Model'), tile(info.mode || 'Not set', 'Its permission mode'), tile(info.allow + ' / ' + info.deny, 'Allow and deny rules'), tile(String(info.mcp.length), 'Connected servers'), tile(String(info.skills.length), 'Skills'), tile(String(info.hooks.length), 'Hook events'), tile(String(info.plugins.length), 'Plugins'), tile(String(info.commands.length), 'Commands')),
         h('div', { class: 'row' }, ...info.instructions.map((x) => h('span', { class: 'chip mono' }, x))), ...info.notes.map((n) => h('p', { class: 'faint small' }, n))));
@@ -1432,27 +1490,48 @@
         const changed = [...chosen].sort().join(',') !== initial;
         summary.textContent = info.tasksUseIt ? (chosen.size ? 'Tasks load ' + chosen.size + ' of ' + info.mcp.length + ' servers.' : 'Tasks load all ' + info.mcp.length + ' servers.') + ' Each server adds its tool descriptions to every turn, so loading fewer saves tokens.' : 'Servers this harness has set up.';
         bar.hidden = !changed;
+        if (info.tasksUseIt && toolsLoaded()) summary.textContent += ' That is ' + toolsLoaded() + ' tools in every turn.';
         for (const sw of body.querySelectorAll('[role=switch]')) sw.setAttribute('aria-checked', String(!chosen.size || chosen.has(sw.dataset.name)));
         for (const c of body.querySelectorAll('.scard')) c.classList.toggle('off', chosen.size > 0 && !chosen.has(c.dataset.name));
       };
       bar.append(h('span', {}, 'You have unsaved changes.'), h('button', { class: 'btn', onclick: async () => {
         try { await api('/api/admin/tools', { method: 'PUT', body: JSON.stringify({ presets: Object.fromEntries(tools.presets.map((p) => [p.id, p.on])), allow: tools.allow, deny: tools.deny, mcpOnly: [...chosen] }) }); toast('Saved. New tasks load ' + (chosen.size ? chosen.size + ' servers' : 'all servers') + '.'); renderHarness(); } catch (e) { toast(e.message, true); }
       } }, icon('check'), 'Save'), h('button', { class: 'btn ghost', onclick: () => renderHarness() }, 'Discard'));
-      const grid = h('div', { class: 'sgrid' }, ...info.mcp.map((m) => {
+      const order = { auth: 0, bad: 1, ok: 2, unchecked: 3 };
+      const sorted = [...info.mcp].sort((x, y) => order[srvState(x.status)] - order[srvState(y.status)] || x.name.localeCompare(y.name));
+      const grid = h('div', { class: 'sgrid' });
+      const sfilter = { q: '', st: S.srvFilter || '' };
+      const cardFor = (m) => {
         const loaded = () => !chosen.size || chosen.has(m.name);
-        const sw = info.tasksUseIt ? h('button', { type: 'button', class: 'switch', role: 'switch', 'aria-checked': String(loaded()), 'aria-label': 'Tasks load ' + m.name, 'data-name': m.name, title: 'Whether tasks load this server', onclick: (e) => { e.stopPropagation(); if (!chosen.size) for (const x of info.mcp) chosen.add(x.name); if (chosen.has(m.name)) chosen.delete(m.name); else chosen.add(m.name); if (chosen.size === info.mcp.length) chosen.clear(); syncBar(); } }, h('i', {})) : null;
+        const st = srvState(m.status);
+        const sw = info.tasksUseIt ? h('button', { type: 'button', class: 'switch', role: 'switch', 'aria-checked': String(loaded()), 'aria-label': 'Tasks load ' + m.name, 'data-name': m.name, title: 'Whether tasks load this server', onclick: (e) => { e.stopPropagation(); if (!chosen.size) for (const x of info.mcp) chosen.add(x.name); if (chosen.has(m.name)) chosen.delete(m.name); else chosen.add(m.name); if (chosen.size === info.mcp.length) chosen.clear(); syncBar(); } }, h('span', { class: 'knob' })) : null;
         const open = () => openServerModal(agent, m, info);
-        const c = h('div', { class: 'scard', role: 'button', tabindex: '0', 'data-name': m.name, 'aria-label': 'Open ' + m.name, onclick: open, onkeydown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); } } },
+        return h('div', { class: 'scard st-' + st, role: 'button', tabindex: '0', 'data-name': m.name, 'aria-label': 'Open ' + m.name, onclick: open, onkeydown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); } } },
           h('div', { class: 'sc-top' }, h('b', { class: 'sc-name' }, m.name), sw),
-          h('div', { class: 'sc-target faint small' }, (m.kind === 'http' ? 'Web address ' : 'Program ') + (m.target || '')),
-          h('div', { class: 'row' }, m.status ? h('span', { class: 'chip ' + (/^connected/i.test(m.status) ? 'ok' : 'warn') }, h('span', { class: 'dot ' + (/^connected/i.test(m.status) ? 'working' : 'waiting') }), m.status === 'needs-auth' ? 'Needs sign-in' : m.status === 'failed' ? 'Failed to connect' : m.status) : h('span', { class: 'chip' }, 'Not checked yet'), h('span', { class: 'sc-open faint small' }, 'Tools and prompts ›')));
-        return c;
-      }));
+          h('div', { class: 'sc-target faint small', title: m.target || '' }, h('span', { class: 'chip' }, m.kind === 'http' ? 'Web' : 'Program'), ' ' + srvHost(m)),
+          h('div', { class: 'row' }, h('span', { class: 'chip fs-' + (st === 'ok' ? 'good' : st === 'bad' ? 'bad' : st === 'auth' ? 'wait' : 'info') }, SRV_WORD[st]),
+            m.tools ? h('span', { class: 'chip' }, m.tools + (m.tools === 1 ? ' tool' : ' tools')) : null, m.prompts ? h('span', { class: 'chip' }, m.prompts + (m.prompts === 1 ? ' prompt' : ' prompts')) : null),
+          SRV_FIX[st] ? h('p', { class: 'sc-fix small' }, SRV_FIX[st]) : null,
+          h('span', { class: 'sc-open faint small' }, 'Open ›'));
+      };
+      const drawGrid = () => {
+        const t = sfilter.q.trim().toLowerCase();
+        const rows = sorted.filter((m) => (!sfilter.st || (sfilter.st === 'attention' ? ['auth', 'bad'].includes(srvState(m.status)) : srvState(m.status) === sfilter.st)) && (!t || (m.name + ' ' + srvHost(m)).toLowerCase().includes(t)));
+        grid.replaceChildren(...(rows.length ? rows.map(cardFor) : [h('p', { class: 'faint small' }, 'No server matches.')]));
+        syncBar();
+      };
+      const cnt = (f) => info.mcp.filter((m) => f(srvState(m.status))).length;
+      const sq = h('input', { type: 'search', class: 'bsearch', placeholder: 'Search servers', 'aria-label': 'Search servers', autocomplete: 'off' });
+      sq.addEventListener('input', () => { sfilter.q = sq.value; drawGrid(); });
+      const fchips = h('div', { class: 'row filters' });
+      const drawChips = () => fchips.replaceChildren(...[['', 'All', info.mcp.length], ['ok', 'Connected', cnt((x) => x === 'ok')], ['attention', 'Need a look', cnt((x) => x === 'auth' || x === 'bad')], ['unchecked', 'Not checked', cnt((x) => x === 'unchecked')]].filter(([k, , n]) => !k || n).map(([k, l, n]) => h('button', { type: 'button', class: 'toggle' + (sfilter.st === k ? ' on' : ''), onclick: () => { sfilter.st = k; S.srvFilter = k; drawChips(); drawGrid(); } }, l + ' ' + n)));
+      drawChips();
+      const toolsLoaded = () => info.mcp.filter((m) => !chosen.size || chosen.has(m.name)).reduce((n, m) => n + (m.tools || 0), 0);
       const unchecked = info.tasksUseIt && info.mcp.length && info.mcp.every((m) => !m.status);
       const check = unchecked ? h('div', { class: 'ctxnote' }, icon('alert'), h('div', {}, h('b', {}, 'Cully has not checked these servers yet'), h('div', { class: 'faint small' }, 'Claude reports which servers connected, and what each offers, when it starts. Cully can start it once for a moment to find out; it costs a fraction of a cent.')),
         h('button', { class: 'btn small', onclick: async (e) => { e.currentTarget.disabled = true; e.currentTarget.textContent = 'Checking…'; try { const r = await api('/api/harness/probe', { method: 'POST' }); toast('Checked ' + r.servers + ' servers'); renderHarness(); } catch (x) { toast(x.message, true); renderHarness(); } } }, 'Check now')) : null;
-      body.append(card('Connected servers', 'Click a server to see its tools, prompts and resources.', check, summary, info.mcp.length ? grid : h('p', { class: 'faint small' }, 'No servers are connected to ' + info.name + '.'), bar));
-      syncBar();
+      body.append(card('Connected servers', 'Click a server to see its tools, prompts and resources. Ones that need you come first.', check, summary, info.mcp.length ? h('div', { class: 'row' }, sq, fchips) : null, info.mcp.length ? grid : h('p', { class: 'faint small' }, 'No servers are connected to ' + info.name + '.'), bar));
+      drawGrid();
     } else if (section === 'skills') {
       const q = h('input', { type: 'search', class: 'bsearch', placeholder: 'Search skills', 'aria-label': 'Search skills', autocomplete: 'off' });
       const list = h('div', { class: 'kgrid' });
@@ -1469,40 +1548,56 @@
     box.replaceChildren(h('div', { class: 'bhead2' }, h('div', {}, h('h2', {}, 'Harness'), h('p', { class: 'faint' }, 'The program that runs the model. Tasks run in the one this page was opened through; sessions, the library, the advisor and the scout cover all three.'))), picker, h('div', { class: 'hlayout' }, nav, body));
   }
 
-  // A connected server in detail: its tools (what each does and what it takes), its prompts and its resources.
+  // A server in detail: what state it is in and what to do about it, then its tools (grouped, searchable,
+  // marked by what they do), prompts and resources.
   async function openServerModal(agent, m, info) {
+    const st = srvState(m.status);
     const body = h('div', { class: 'mbody smodal' }, h('p', { class: 'faint' }, 'Loading…'));
     const modal = h('div', { class: 'modal wide', role: 'dialog', 'aria-modal': 'true', 'aria-label': m.name },
-      h('header', {}, h('h2', {}, m.name), m.status ? h('span', { class: 'chip ' + (/connect/i.test(m.status) ? 'ok' : 'warn') }, m.status) : null, h('button', { class: 'btn ghost small sp', onclick: closeMCP }, 'Close')), body);
+      h('header', {}, h('h2', {}, m.name), h('span', { class: 'chip fs-' + (st === 'ok' ? 'good' : st === 'bad' ? 'bad' : st === 'auth' ? 'wait' : 'info') }, SRV_WORD[st]), h('button', { class: 'btn ghost small sp', onclick: closeMCP }, 'Close')), body);
     const bg = h('div', { class: 'modal-bg', onclick: (e) => { if (e.target === bg) closeMCP(); } }, modal);
     $('modal-root').replaceChildren(bg);
     S.modal = { agent: 'server' };
     document.removeEventListener('keydown', escClose);
     document.addEventListener('keydown', escClose);
     let tab = 'tools';
+    const only = { kind: '' }; // filter by what a tool does
     async function draw(d) {
-      const q = h('input', { type: 'search', class: 'bsearch', placeholder: 'Search', 'aria-label': 'Search this server', autocomplete: 'off', value: S.srvQ || '' });
+      const q = h('input', { type: 'search', class: 'bsearch', placeholder: 'Search tools by name or what they do', 'aria-label': 'Search this server', autocomplete: 'off', value: S.srvQ || '' });
       const list = h('div', { class: 'slist', tabindex: '0', 'aria-label': 'Scrollable list' });
+      const kinds = h('div', { class: 'row filters' });
+      const toolRow = (x) => { const k = toolKind(x); return h('details', { class: 'tool' }, h('summary', {}, h('code', {}, x.name), h('span', { class: 'chip tk-' + k }, TOOL_KIND_WORD[k]), x.description ? h('span', { class: 'td faint small' }, x.description.length > 110 ? x.description.slice(0, 110) + '…' : x.description) : null),
+        x.description ? h('p', { class: 'tdesc' }, x.description) : h('p', { class: 'faint small' }, 'No description yet. Load descriptions above.'),
+        h('div', { class: 'row' }, h('button', { type: 'button', class: 'btn ghost small', title: 'The name to use in the allowed or blocked list on the Permissions page', onclick: () => copy('mcp__' + m.name + '__' + x.name, 'the tool name') }, icon('copy'), 'Copy tool name')),
+        x.params && x.params.length ? h('table', { class: 'ptable' }, h('thead', {}, h('tr', {}, ...['Parameter', 'Type', 'Needed', 'What it is'].map((c) => h('th', {}, c)))), h('tbody', {}, ...x.params.map((p) => h('tr', {}, h('td', {}, h('code', {}, p.name)), h('td', { class: 'faint' }, p.type || ''), h('td', {}, p.required ? 'Required' : 'Optional'), h('td', { class: 'faint' }, p.description || ''))))) : null); };
       const fill2 = () => {
         const t = q.value.trim().toLowerCase(); S.srvQ = q.value;
         if (tab === 'tools') {
-          const rows = d.tools.filter((x) => !t || (x.name + ' ' + (x.description || '')).toLowerCase().includes(t));
-          list.replaceChildren(...(rows.length ? rows.map((x) => h('details', { class: 'tool' }, h('summary', {}, h('code', {}, x.name), x.readOnly ? h('span', { class: 'chip' }, 'Read only') : null, x.description ? h('span', { class: 'td faint small' }, x.description.length > 110 ? x.description.slice(0, 110) + '…' : x.description) : null),
-            x.description ? h('p', { class: 'tdesc' }, x.description) : h('p', { class: 'faint small' }, 'No description yet.'),
-            x.params && x.params.length ? h('table', { class: 'ptable' }, h('thead', {}, h('tr', {}, ...['Parameter', 'Type', 'Needed', 'What it is'].map((c) => h('th', {}, c)))), h('tbody', {}, ...x.params.map((p) => h('tr', {}, h('td', {}, h('code', {}, p.name)), h('td', { class: 'faint' }, p.type || ''), h('td', {}, p.required ? 'Required' : 'Optional'), h('td', { class: 'faint' }, p.description || ''))))) : (d.detailsFrom ? h('p', { class: 'faint small' }, 'Takes no parameters.') : null))) : [h('p', { class: 'faint small' }, d.known ? 'No tools match.' : 'Start any task, then come back: Claude reports each server\'s tools when it starts.')]));
+          const rows = d.tools.filter((x) => (!only.kind || toolKind(x) === only.kind) && (!t || (x.name + ' ' + (x.description || '')).toLowerCase().includes(t)));
+          if (!rows.length) { list.replaceChildren(h('p', { class: 'faint small' }, d.known ? 'No tool matches.' : 'Tool names appear after a task has started. Check the servers from the Connected servers page, or start a task.')); return; }
+          const groups = groupTools(rows);
+          list.replaceChildren(...groups.map((g) => g.name ? h('details', { class: 'tgroup', ...(groups.length === 1 || t ? { open: true } : {}) }, h('summary', {}, h('b', {}, g.name), h('span', { class: 'faint small' }, g.tools.length + (g.tools.length === 1 ? ' tool' : ' tools'))), ...g.tools.map(toolRow)) : h('div', {}, ...g.tools.map(toolRow))));
         } else if (tab === 'prompts') {
           const rows = d.prompts.filter((x) => !t || x.toLowerCase().includes(t));
           list.replaceChildren(...(rows.length ? rows.map((x) => h('div', { class: 'kcard' }, h('code', {}, '/' + x))) : [h('p', { class: 'faint small' }, d.known ? 'This server offers no prompts.' : 'Shown after a task has started.')]));
         } else list.replaceChildren(h('p', { class: 'faint small' }, d.note || 'Resources are not listed.'), h('p', { class: 'faint small' }, 'Resources are files or records a server can hand to the harness. Claude Code does not report them, so Cully cannot show them here.'));
       };
+      const drawKinds = () => {
+        const counts = {}; for (const x of d.tools) counts[toolKind(x)] = (counts[toolKind(x)] || 0) + 1;
+        kinds.replaceChildren(...[['', 'All'], ['read', 'Reads'], ['change', 'Changes things'], ['delete', 'Deletes']].filter(([k]) => !k || counts[k]).map(([k, l]) => h('button', { type: 'button', class: 'toggle' + (only.kind === k ? ' on' : ''), onclick: () => { only.kind = k; drawKinds(); fill2(); } }, l + (k ? ' ' + counts[k] : ' ' + d.tools.length))));
+      };
       q.addEventListener('input', fill2);
       const tabs = h('div', { class: 'seg tabs-seg', role: 'tablist' }, ...[['tools', 'Tools ' + d.tools.length], ['prompts', 'Prompts ' + d.prompts.length], ['resources', 'Resources']].map(([k, l]) => h('button', { type: 'button', role: 'tab', class: k === tab ? 'on' : '', 'aria-selected': String(k === tab), onclick: () => { tab = k; draw(d); } }, l)));
       const loadBtn = d.canLoad && !d.detailsFrom ? h('button', { class: 'btn small' }, icon('spark'), 'Load descriptions and parameters') : null;
       if (loadBtn) loadBtn.addEventListener('click', async () => { loadBtn.disabled = true; loadBtn.textContent = 'Reading the server…'; try { draw(await api('/api/harness/server/details', { method: 'POST', body: JSON.stringify({ agent, name: m.name }) })); } catch (e) { toast(e.message, true); loadBtn.disabled = false; loadBtn.textContent = 'Load descriptions and parameters'; } });
-      body.replaceChildren(h('div', { class: 'faint small' }, (d.kind === 'http' ? 'Web address ' : 'Program ') + (d.target || '')),
-        tabs, tab !== 'resources' ? h('div', { class: 'row' }, q, loadBtn) : null,
+      const checkBtn = st === 'unchecked' || st === 'bad' ? h('button', { class: 'btn small', onclick: async (e) => { e.currentTarget.disabled = true; e.currentTarget.textContent = 'Checking…'; try { await api('/api/harness/probe', { method: 'POST' }); closeMCP(); renderHarness(); toast('Checked the servers'); } catch (x) { toast(x.message, true); } } }, icon('refresh'), 'Check now') : null;
+      body.replaceChildren(
+        h('div', { class: 'row' }, h('span', { class: 'chip' }, d.kind === 'http' ? 'Web address' : 'Program'), h('code', { class: 'srvaddr' }, d.target || ''), d.target ? copyBtn('Copy', () => d.target) : null),
+        SRV_FIX[st] ? h('div', { class: 'ctxnote' }, icon('alert'), h('div', {}, h('b', {}, SRV_WORD[st]), h('div', { class: 'faint small' }, SRV_FIX[st])), checkBtn) : (checkBtn ? h('div', { class: 'ctxnote' }, icon('alert'), h('div', {}, h('b', {}, 'Not checked yet'), h('div', { class: 'faint small' }, 'Claude reports a server\'s state when it starts. Cully can start it once to find out.')), checkBtn) : null),
+        tabs, tab === 'tools' ? kinds : null, tab !== 'resources' ? h('div', { class: 'row' }, q, loadBtn) : null,
         loadBtn ? h('p', { class: 'faint small' }, 'Claude Code lists a server\'s tool names but not what they do. Loading asks your Claude once, for this server only, to read the tool definitions; it uses a few thousand tokens.') : null,
-        d.detailsFrom ? h('p', { class: 'faint small' }, 'Descriptions: ' + d.detailsFrom + '.') : null, list);
+        d.detailsFrom ? h('p', { class: 'faint small' }, 'Descriptions: ' + d.detailsFrom + '. "Reads", "Changes things" and "Deletes" are guessed from the tool\'s name to help you scan; read the description to be sure.') : (d.tools.length ? h('p', { class: 'faint small' }, '"Reads", "Changes things" and "Deletes" are guessed from the tool\'s name to help you scan.') : null), list);
+      if (tab === 'tools') drawKinds();
       fill2();
     }
     try { draw(await api('/api/harness/server?agent=' + agent + '&name=' + encodeURIComponent(m.name))); } catch (e) { body.replaceChildren(h('div', { class: 'err' }, e.message)); }

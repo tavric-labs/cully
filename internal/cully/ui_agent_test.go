@@ -97,6 +97,7 @@ func uiTestManager(t *testing.T, bin string, tokens ...string) (*uiManager, stri
 			case <-time.After(10 * time.Second):
 			}
 		}
+		m.bg.Wait() // and the bookkeeping that follows a run, which writes to the database
 	})
 	return m, repo, out
 }
