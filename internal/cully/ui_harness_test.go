@@ -142,3 +142,105 @@ func TestAdvisorPageCanApplySuggestionsAndShowsWhereSessionsStarted(t *testing.T
 		}
 	}
 }
+
+// A fake that behaves as a reviewer when it is started with an identity (it gets --append-system-prompt)
+// and as the working agent otherwise.
+func uiHelperFake(verdict string) string {
+	return `#!/bin/bash
+echo "$@" >> "$FAKE_OUT/args.log"
+case "$*" in *--append-system-prompt*) ROLE=reviewer;; *) ROLE=worker;; esac
+echo "$ROLE" >> "$FAKE_OUT/roles.log"
+echo '{"type":"system","subtype":"init"}'
+while IFS= read -r line; do
+  echo "$ROLE: $line" >> "$FAKE_OUT/stdin.log"
+  if [ "$ROLE" = reviewer ]; then
+    echo '{"type":"assistant","message":{"content":[{"type":"text","text":"Reviewed. ` + verdict + `"}]}}'
+  else
+    echo '{"type":"assistant","message":{"content":[{"type":"tool_use","id":"e'$RANDOM'","name":"Edit","input":{"file_path":"'"$PWD"'/a.txt"}}]}}'
+    echo '{"type":"assistant","message":{"content":[{"type":"tool_use","id":"b'$RANDOM'","name":"Bash","input":{"command":"go test ./..."}}]}}'
+  fi
+  echo '{"type":"result","subtype":"success","is_error":false,"result":"turn done"}'
+done
+`
+}
+
+func TestAHelperAgentReviewsTheFinishedWorkAndItsConcernsGoBackToTheTask(t *testing.T) {
+	m, repo, out := uiTestManager(t, uiWriteScript(t, uiHelperFake("VERDICT: concerns")), "tok-aaa1")
+	in := uiIdentityInputFor(repo)
+	in.Name, in.Schedule, in.Enabled = "Reviewer", "", false
+	rev, err := m.identityCreate(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.start(uiStartRequest{Repo: repo, Prompt: "x", Loop: true, Helpers: []string{"nope"}}); err == nil {
+		t.Fatal("an unknown helper was accepted")
+	}
+	a, err := m.start(uiStartRequest{Repo: repo, Prompt: "add the export", Loop: true, MaxRounds: 3, Helpers: []string{rev.ID}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	uiWaitFor(t, "the run info", func() bool { return a.snapshot().Run != nil })
+	if r := a.snapshot().Run; len(r.HelperNames) != 1 || r.HelperNames[0] != "Reviewer" {
+		t.Fatalf("run info = %+v", a.snapshot().Run)
+	}
+	uiWaitFor(t, "the reviewer's concerns to reach the task", func() bool { return strings.Contains(uiHNotes(a), "raised concerns") })
+	uiWaitFor(t, "the concerns to be sent", func() bool {
+		b, _ := os.ReadFile(filepath.Join(out, "stdin.log"))
+		return strings.Contains(string(b), "worker: ") && strings.Contains(string(b), "A reviewer (Reviewer) checked your work and raised concerns")
+	})
+	roles, _ := os.ReadFile(filepath.Join(out, "roles.log"))
+	if !strings.Contains(string(roles), "reviewer") || !strings.Contains(string(roles), "worker") {
+		t.Fatalf("roles = %s", roles)
+	}
+	args, _ := os.ReadFile(filepath.Join(out, "args.log"))
+	if !strings.Contains(string(args), "--permission-mode plan") {
+		t.Fatalf("the reviewer was not read only: %s", args)
+	}
+}
+
+func TestAReviewerThatFindsNothingLetsTheTaskFinish(t *testing.T) {
+	m, repo, out := uiTestManager(t, uiWriteScript(t, uiHelperFake("VERDICT: ok")), "tok-aaa1")
+	in := uiIdentityInputFor(repo)
+	in.Name, in.Schedule, in.Enabled = "Reviewer", "", false
+	rev, _ := m.identityCreate(in)
+	a, err := m.start(uiStartRequest{Repo: repo, Prompt: "add the export", Loop: true, Helpers: []string{rev.ID}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	uiWaitFor(t, "the task to finish", func() bool {
+		return strings.Contains(uiHNotes(a), "found nothing to fix") && strings.Contains(uiHNotes(a), "finished and ran its checks")
+	})
+	b, _ := os.ReadFile(filepath.Join(out, "stdin.log"))
+	if strings.Count(string(b), "worker: ") != 1 {
+		t.Fatalf("the task was sent more than its first request: %s", b)
+	}
+	if v := a.snapshot(); v.Harness.Status != "done" {
+		t.Fatalf("harness = %+v", v.Harness)
+	}
+}
+
+func TestDraftAgentsAndTooManyCannotBeHelpers(t *testing.T) {
+	m, repo, _ := uiTestManager(t, uiWriteScript(t, fakeClaude), "tok-aaa1")
+	in := uiIdentityInputFor(repo)
+	in.Approve = false
+	in.Name = "Draft"
+	d, _ := m.identityCreate(in)
+	if _, err := m.resolveHelpers([]string{d.ID}); err == nil {
+		t.Fatal("a draft agent was accepted as a reviewer")
+	}
+	if _, err := m.resolveHelpers([]string{"a", "b", "c"}); err == nil {
+		t.Fatal("three reviewers accepted")
+	}
+}
+
+func TestComposerOffersApprovedAgentsAsReviewersAndNoLongerNagsAboutContext(t *testing.T) {
+	b, _ := uiStaticFS.ReadFile("ui_static/app.js")
+	for _, want := range []string{"Ask these agents to review the finished work", "helpers: S.opts.loop", "The harness compacts the history by itself before this fills", "Start clean from a handoff"} {
+		if !strings.Contains(string(b), want) {
+			t.Errorf("app.js lacks %q", want)
+		}
+	}
+	if strings.Contains(string(b), "Hand off to a new task") || strings.Contains(string(b), "has used ' + x.context.percent") {
+		t.Error("the page still nags about a full context window")
+	}
+}

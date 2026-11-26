@@ -221,7 +221,7 @@ func TestCodexCommandFailuresAreCountedFromTheirExitCode(t *testing.T) {
 
 func TestPagesShowContextHarnessInfoOverviewAndSessionActions(t *testing.T) {
 	b, _ := uiStaticFS.ReadFile("ui_static/app.js")
-	for _, want := range []string{"Start a new task with a handoff", "function openRunInfo", "How this task runs", "attachSessionActions", "Start a new task from its handoff", "Right now", "Worth a look", "Your agents", "Sessions by harness, 7 days", "% of its context"} {
+	for _, want := range []string{"Start clean from a handoff", "function openRunInfo", "How this task runs", "attachSessionActions", "Start a new task from its handoff", "Right now", "Worth a look", "Your agents", "Sessions by harness, 7 days", "Context window"} {
 		if !strings.Contains(string(b), want) {
 			t.Errorf("app.js lacks %q", want)
 		}

@@ -99,6 +99,8 @@ type uiIndexFile struct {
 	// When Cully last looked for repeated work, and how many named sessions it had then.
 	LastAgentCheck  time.Time             `json:"lastAgentCheck,omitempty"`
 	AgentCheckBased int                   `json:"agentCheckBased,omitempty"`
+	LastRulesCheck  time.Time             `json:"lastRulesCheck,omitempty"`
+	RulesBased      int                   `json:"rulesBased,omitempty"`
 	Sessions        map[string]*uiIndexed `json:"sessions"`
 }
 
@@ -636,6 +638,7 @@ func (m *uiManager) runIndexer(ctx context.Context) {
 		m.scoutIfDue()
 		m.identitiesDue()
 		m.agentSuggestIfDue()
+		m.rulesIfDue()
 	}
 	tick()
 	t := time.NewTicker(uiIndexTick)

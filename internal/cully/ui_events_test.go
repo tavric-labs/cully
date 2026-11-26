@@ -114,14 +114,14 @@ func TestTheModelAndContextSizeAreReadFromTheStream(t *testing.T) {
 	if p.Context != 155010 {
 		t.Fatalf("context = %d", p.Context)
 	}
-	c := contextOf("claude-sonnet-5-5", 170000, 0)
-	if c.Window != 200000 || c.Percent != 85 || c.Left != 30000 || !c.Near {
+	c := contextOf("claude-sonnet-5-5", 190000, 0, 0)
+	if c.Window != 200000 || c.Percent != 95 || c.Left != 10000 || !c.Near {
 		t.Fatalf("context = %+v", c)
 	}
-	if c := contextOf("claude-opus-5-5[1m]", 170000, 0); c.Window != 1000000 || c.Near {
+	if c := contextOf("claude-opus-5-5[1m]", 170000, 0, 0); c.Window != 1000000 || c.Near {
 		t.Fatalf("1m context = %+v", c)
 	}
-	if contextOf("x", 0, 0) != nil {
+	if contextOf("x", 0, 0, 0) != nil {
 		t.Fatal("a context was invented")
 	}
 }
@@ -136,7 +136,7 @@ func TestATaskShowsHowFullItsContextIs(t *testing.T) {
 	}
 	uiWaitState(t, a, "waiting")
 	c := a.snapshot().Context
-	if c == nil || c.Used != 171000 || c.Percent != 85 || !c.Near || c.Model != "claude-sonnet-5-5" {
+	if c == nil || c.Used != 171000 || c.Percent != 85 || c.Near || c.Model != "claude-sonnet-5-5" {
 		t.Fatalf("context = %+v", c)
 	}
 }
@@ -150,7 +150,20 @@ func TestLimitsWindowAndCostAreReadFromTheStream(t *testing.T) {
 	if r.Window != 1000000 || r.Cost != 0.0031 {
 		t.Fatalf("window = %d cost = %v", r.Window, r.Cost)
 	}
-	if c := contextOf("claude-sonnet-5-5", 170000, 1000000); c.Window != 1000000 || c.Percent != 17 || c.Near {
+	if c := contextOf("claude-sonnet-5-5", 170000, 1000000, 0); c.Window != 1000000 || c.Percent != 17 || c.Near {
 		t.Fatalf("reported window ignored: %+v", c)
+	}
+}
+
+func TestACompactionIsCountedAndAHandoffIsOnlySuggestedWhenItMatters(t *testing.T) {
+	p := parseStreamLine([]byte(`{"type":"system","subtype":"compact_boundary","compact_metadata":{"trigger":"auto"}}`))
+	if !p.Compacted || len(p.Events) == 0 {
+		t.Fatalf("parsed = %+v", p)
+	}
+	if c := contextOf("claude-sonnet-5-5", 170000, 200000, 0); c.Near {
+		t.Fatal("85 percent was called nearly full, but the harness compacts on its own")
+	}
+	if c := contextOf("claude-sonnet-5-5", 190000, 200000, 2); !c.Near || c.Compactions != 2 {
+		t.Fatalf("context = %+v", c)
 	}
 }

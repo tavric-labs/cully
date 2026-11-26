@@ -1,8 +1,10 @@
 package cully
 
 import (
+	"errors"
 	"strings"
 	"sync"
+	"time"
 )
 
 // The harness is what Cully adds around the model when an agent is started
@@ -21,21 +23,24 @@ const (
 )
 
 type uiHarness struct {
-	mu          sync.Mutex
-	round       int
-	max         int
-	criteria    string
-	status      string
-	tools       int
-	lastHash    string
-	run         int
-	steered     map[string]bool
-	ids         map[string]string
-	fails       map[string]int
-	sinceCheck  bool
-	stopWarned  bool
-	finished    bool
-	turnRunning bool
+	mu             sync.Mutex
+	round          int
+	max            int
+	criteria       string
+	status         string
+	tools          int
+	lastHash       string
+	run            int
+	steered        map[string]bool
+	ids            map[string]string
+	fails          map[string]int
+	sinceCheck     bool
+	stopWarned     bool
+	finished       bool
+	turnRunning    bool
+	helpers        []string // named agents asked to review the finished work, in order
+	helpersDone    map[string]bool
+	criteriaPassed bool
 }
 
 type uiHarnessView struct {
@@ -53,7 +58,7 @@ func newUIHarness(req uiStartRequest) *uiHarness {
 		max = uiHarnessMaxRounds
 	}
 	return &uiHarness{max: max, criteria: uiClip(strings.TrimSpace(req.DoneWhen), 1000), status: "working",
-		steered: map[string]bool{}, ids: map[string]string{}, fails: map[string]int{}}
+		steered: map[string]bool{}, ids: map[string]string{}, fails: map[string]int{}, helpersDone: map[string]bool{}, helpers: append([]string{}, req.Helpers...)}
 }
 
 func (a *uiAgent) harnessView() *uiHarnessView {
@@ -134,6 +139,7 @@ func (a *uiAgent) harnessAfterTurn() {
 	steeredFail := h.steered[failedHash]
 	needVerify := h.sinceCheck
 	round, max, criteria := h.round, h.max, h.criteria
+	passed := h.criteriaPassed
 	h.mu.Unlock()
 
 	say := func(msg string) {
@@ -186,12 +192,15 @@ func (a *uiAgent) harnessAfterTurn() {
 		say("The agent changed files and ran no checks. Asking it to verify.")
 		send("You changed files but did not run any checks afterwards. Run the project's tests (or the most relevant check), report the result, and fix anything that fails.")
 		return
-	case criteria != "":
+	case criteria != "" && !passed:
 		a.harnessSet("judging")
 		status, reason := a.harnessJudge(criteria)
 		if status == "pass" {
-			finish("done", "Checks met: "+reason)
-			return
+			h.mu.Lock()
+			h.criteriaPassed = true
+			h.mu.Unlock()
+			a.harnessNote("Checks met: " + reason)
+			break // on to the reviewers, if there are any
 		}
 		if status == "error" {
 			finish("stopped", "Could not judge the work against your checks. Look at it yourself.")
@@ -201,6 +210,39 @@ func (a *uiAgent) harnessAfterTurn() {
 		say("Not there yet (" + status + "): " + reason)
 		send("A reviewer compared your work with the checks and found it " + status + ": " + reason + "\nChecks: " + criteria + "\nFix what is missing, then say what you did.")
 		return
+	}
+	// Reviewers: named agents asked to look at the finished work, one after another.
+	for {
+		h.mu.Lock()
+		next := ""
+		for _, id := range h.helpers {
+			if !h.helpersDone[id] {
+				next = id
+				break
+			}
+		}
+		if next != "" {
+			h.helpersDone[next] = true
+		}
+		rounds := h.round
+		h.mu.Unlock()
+		if next == "" {
+			break
+		}
+		a.harnessSet("reviewing")
+		name, report, concerns, err := a.mgr.runHelper(next, a)
+		switch {
+		case err != nil:
+			a.harnessNote("The reviewer could not look at the work: " + err.Error())
+		case concerns && rounds < max:
+			say(name + " reviewed the work and raised concerns. Passing them to the agent.")
+			send("A reviewer (" + name + ") checked your work and raised concerns:\n" + uiClip(report, 3000) + "\nAddress them, then say what you changed.")
+			return
+		case concerns:
+			a.harnessNote(name + " raised concerns but there are no rounds left: " + uiClip(report, 400))
+		default:
+			a.harnessNote(name + " reviewed the work and found nothing to fix.")
+		}
 	}
 	finish("done", "The agent finished and ran its checks.")
 }
@@ -222,4 +264,48 @@ func (a *uiAgent) harnessJudge(criteria string) (string, string) {
 		return "error", ""
 	}
 	return uiParseJudge(out)
+}
+
+const uiHelperPrompt = `You are reviewing another agent's finished work. You are read only: do not edit files. Look at the goal, the files changed and the change below, and read the files in its worktree where you need to. Report concrete problems, each with the file and what is wrong: bugs, missing or weak tests, risky or unrelated changes, and security issues. If the work is sound, say so briefly. End with exactly one line: "VERDICT: ok" if there is nothing to fix, or "VERDICT: concerns" if something should be fixed.
+
+`
+
+// runHelper asks a named agent to review a task's work and waits for its report.
+func (m *uiManager) runHelper(identID string, a *uiAgent) (name, report string, concerns bool, err error) {
+	var ident uiIdentity
+	found := false
+	for _, x := range m.identityList() {
+		if x.ID == identID {
+			ident, found = x, true
+		}
+	}
+	if !found || !ident.Approved {
+		return "", "", false, errors.New("that agent is not available")
+	}
+	diff := a.diff()
+	v := a.snapshot()
+	prompt := uiHelperPrompt + "Goal the author was given:\n" + uiClip(a.req.Prompt, 2000) + "\n\nFiles changed: " + strings.Join(v.Files, ", ") + "\nThe author's worktree is " + a.worktree + ".\n\nChange:\n" + uiClip(diff, uiReviewDiff)
+	run, _, err := m.identityRunWith(identID, uiRunOpts{Prompt: prompt, ReadOnly: true, AddDirs: []string{a.worktree}, Rules: uiReviewRules, Title: "Review of " + uiClipWords(a.title, 40)})
+	if err != nil {
+		return ident.Name, "", false, err
+	}
+	deadline := time.Now().Add(uiIdentityRunLimit)
+	for time.Now().Before(deadline) {
+		for _, x := range m.identityList() {
+			if x.ID != identID {
+				continue
+			}
+			for _, r := range x.Runs {
+				if r.ID == run.ID && r.Status != "running" {
+					if r.Status == "failed" || strings.TrimSpace(r.Summary) == "" {
+						return ident.Name, "", false, errors.New("it did not produce a report")
+					}
+					low := strings.ToLower(r.Summary)
+					return ident.Name, strings.TrimSpace(r.Summary), strings.Contains(low, "verdict: concerns"), nil
+				}
+			}
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	return ident.Name, "", false, errors.New("it took too long")
 }

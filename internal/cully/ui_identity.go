@@ -382,7 +382,23 @@ func uiMergeMemory(old, reply string) string {
 	return merged
 }
 
+// uiRunOpts changes how one run of an agent is set up. A helper run reviews
+// someone else's work, so it gets a different request, is read only, and may
+// look at the worktree of the task it reviews.
+type uiRunOpts struct {
+	Prompt   string
+	ReadOnly bool
+	AddDirs  []string
+	Rules    string
+	Title    string
+}
+
 func (m *uiManager) identityRun(id string) (uiIdentityRun, error) {
+	run, _, err := m.identityRunWith(id, uiRunOpts{})
+	return run, err
+}
+
+func (m *uiManager) identityRunWith(id string, o uiRunOpts) (uiIdentityRun, *uiAgent, error) {
 	uiIdentityMu.Lock()
 	var cur *uiIdentity
 	for _, x := range m.loadIdentitiesLocked() {
@@ -392,23 +408,33 @@ func (m *uiManager) identityRun(id string) (uiIdentityRun, error) {
 	}
 	if cur == nil || (cur.Folder != "" && uiHidden(cur.Folder, m.cfg.HideSessionsIn)) {
 		uiIdentityMu.Unlock()
-		return uiIdentityRun{}, errors.New("no such agent")
+		return uiIdentityRun{}, nil, errors.New("no such agent")
 	}
 	if !cur.Approved {
 		uiIdentityMu.Unlock()
-		return uiIdentityRun{}, errors.New("approve this agent first; until then it is a draft")
+		return uiIdentityRun{}, nil, errors.New("approve this agent first; until then it is a draft")
 	}
 	for _, r := range cur.Runs {
 		if r.Status == "running" {
 			uiIdentityMu.Unlock()
-			return uiIdentityRun{}, errors.New("this agent is already running")
+			return uiIdentityRun{}, nil, errors.New("this agent is already running")
 		}
 	}
 	snap := cur.clone()
 	uiIdentityMu.Unlock()
 
-	req := uiStartRequest{Title: snap.Name, Prompt: "Do your work now, following how you work. Report what you did and anything that needs a person.",
-		Mode: snap.Mode, groups: snap.Groups, appendSystem: uiIdentityPrompt(snap), identityName: snap.Name}
+	prompt := "Do your work now, following how you work. Report what you did and anything that needs a person."
+	if o.Prompt != "" {
+		prompt = o.Prompt
+	}
+	title := snap.Name
+	if o.Title != "" {
+		title = o.Title
+	}
+	req := uiStartRequest{Title: title, Prompt: prompt, Mode: snap.Mode, groups: snap.Groups, appendSystem: uiIdentityPrompt(snap), identityName: snap.Name, addDirs: o.AddDirs, rules: o.Rules}
+	if o.ReadOnly {
+		req.Mode = "plan"
+	}
 	switch {
 	case snap.Scope == "global" || snap.Folder == "": // independent: its own workspace, no git
 		_ = os.MkdirAll(snap.workspace(), 0o700)
@@ -422,7 +448,7 @@ func (m *uiManager) identityRun(id string) (uiIdentityRun, error) {
 	}
 	a, err := m.start(req)
 	if err != nil {
-		return uiIdentityRun{}, err
+		return uiIdentityRun{}, nil, err
 	}
 	run := uiIdentityRun{ID: uiNewID(), Started: time.Now().UTC(), Status: "running", TaskID: a.id}
 	uiIdentityMu.Lock()
@@ -434,7 +460,7 @@ func (m *uiManager) identityRun(id string) (uiIdentityRun, error) {
 	m.saveIdentitiesLocked()
 	uiIdentityMu.Unlock()
 	go m.finishIdentityRun(id, run.ID, a)
-	return run, nil
+	return run, a, nil
 }
 
 func (m *uiManager) finishIdentityRun(identID, runID string, a *uiAgent) {

@@ -86,6 +86,7 @@ type uiStartRequest struct {
 	Loop         bool            `json:"loop"`     // keep going until the agent has checked its work
 	DoneWhen     string          `json:"doneWhen"` // checks that say the task is done, one per line
 	MaxRounds    int             `json:"maxRounds"`
+	Helpers      []string        `json:"helpers"` // named agents the loop asks to review the finished work
 	identityName string          // the named agent this run is for
 	inPlaceDir   string          // a folder with no git: the task works in it directly
 	helperNames  []string        // named agents the loop asks for a review
@@ -147,7 +148,12 @@ type uiManager struct {
 		at   time.Time
 		info uiHarnessInfo
 	}
-	lastMCP       map[string]string
+	lastMCP   map[string]string
+	snapMu    sync.Mutex
+	snapCache map[string]struct {
+		at   time.Time
+		snap uiSnapshot
+	}
 	limitMu       sync.Mutex
 	accountLimits map[int]uiLimits
 	identities    []*uiIdentity
@@ -331,6 +337,13 @@ func (m *uiManager) start(req uiStartRequest) (*uiAgent, error) {
 	if r := []rune(title); len(r) > 60 {
 		title = string(r[:60]) + "…"
 	}
+	if req.Loop && len(req.Helpers) > 0 {
+		names, err := m.resolveHelpers(req.Helpers)
+		if err != nil {
+			return nil, err
+		}
+		req.helperNames = names
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.liveCount() >= m.cfg.MaxAgents {
@@ -434,6 +447,7 @@ type uiAgent struct {
 	runInfo       *uiRunInfo
 	model         string  // reported by the agent when it starts
 	window        int     // the model's context window, as reported
+	compactions   int     // times the harness compacted this task's history
 	cost          float64 // what the session has cost at list price, as reported
 	limits        *uiLimits
 	ctx           int // tokens in its context after its latest call
@@ -461,7 +475,7 @@ func (a *uiAgent) snapshot() uiAgentView {
 	return uiAgentView{
 		ID: a.id, Title: a.title, Repo: a.repo, Branch: a.branch, Worktree: a.worktree,
 		Token: a.token, State: a.state, Created: a.created,
-		Stages: a.stagesCopyLocked(), Events: len(a.events), Files: a.sortedFilesLocked(), Last: a.last, Updated: a.updated, Group: a.req.group, Option: a.req.option, Harness: a.harnessView(), Usage: usageOf(a.usage), Run: a.runInfo, Context: contextOf(a.model, a.ctx, a.window), Cost: a.cost, Limits: a.limitsView(), MCP: append([]uiMCPServer(nil), a.mcp...),
+		Stages: a.stagesCopyLocked(), Events: len(a.events), Files: a.sortedFilesLocked(), Last: a.last, Updated: a.updated, Group: a.req.group, Option: a.req.option, Harness: a.harnessView(), Usage: usageOf(a.usage), Run: a.runInfo, Context: contextOf(a.model, a.ctx, a.window, a.compactions), Cost: a.cost, Limits: a.limitsView(), MCP: append([]uiMCPServer(nil), a.mcp...),
 	}
 }
 
@@ -741,6 +755,11 @@ func (a *uiAgent) handleLine(line []byte) {
 		}
 		a.harnessResult(r.ID, r.Failed)
 	}
+	if p.Compacted {
+		a.mu.Lock()
+		a.compactions++
+		a.mu.Unlock()
+	}
 	if p.Window > 0 || p.Cost > 0 || p.Limits != nil {
 		a.mu.Lock()
 		if p.Window > 0 {
@@ -1014,7 +1033,9 @@ type uiContextView struct {
 	Window  int    `json:"window"`
 	Left    int    `json:"left"`
 	Percent int    `json:"percent"`
-	Near    bool   `json:"near"` // 80 percent or more: time to hand off to a fresh task
+	Near    bool   `json:"near"` // the window is nearly full; the harness is about to compact it
+	// Compactions is how many times the harness has summarised this task's history to make room.
+	Compactions int `json:"compactions"`
 }
 
 func uiContextWindow(model string, reported int) int {
@@ -1028,7 +1049,7 @@ func uiContextWindow(model string, reported int) int {
 	return 200_000
 }
 
-func contextOf(model string, used, reported int) *uiContextView {
+func contextOf(model string, used, reported, compactions int) *uiContextView {
 	if used <= 0 {
 		return nil
 	}
@@ -1041,7 +1062,7 @@ func contextOf(model string, used, reported int) *uiContextView {
 	if p > 100 {
 		p = 100
 	}
-	return &uiContextView{Model: model, Used: used, Window: w, Left: left, Percent: p, Near: p >= 80}
+	return &uiContextView{Model: model, Used: used, Window: w, Left: left, Percent: p, Near: p >= uiNearFull, Compactions: compactions}
 }
 
 // limitsView is the latest limits heard on this task, or on any task that used the same account.
@@ -1074,3 +1095,34 @@ func (m *uiManager) limitsFor(token int) (uiLimits, bool) {
 	l, ok := m.accountLimits[token]
 	return l, ok
 }
+
+const uiHelpersMax = 2
+
+// resolveHelpers checks that every helper is one of the user's approved agents.
+func (m *uiManager) resolveHelpers(ids []string) ([]string, error) {
+	if len(ids) > uiHelpersMax {
+		return nil, errors.New("ask at most two agents to review a task")
+	}
+	have := map[string]uiIdentity{}
+	for _, x := range m.identityList() {
+		have[x.ID] = x
+	}
+	var names []string
+	for _, id := range ids {
+		x, ok := have[id]
+		if !ok || !x.Approved {
+			return nil, errors.New("a reviewer is not one of your approved agents")
+		}
+		names = append(names, x.Name)
+	}
+	return names, nil
+}
+
+// uiNearFull is where a context window counts as nearly full. Claude Code
+// compacts its own history before the window fills, so this is only the point
+// where that is about to happen, not a reason to start over.
+const uiNearFull = 92
+
+// uiCompactedOften is how many compactions make a task worth restarting from a handoff:
+// each one loses detail from early on.
+const uiCompactedOften = 3

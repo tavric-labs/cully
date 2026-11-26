@@ -48,7 +48,7 @@ func uiSnapContextOf(used, window int, estimated bool) *uiSnapContext {
 	if left < 0 {
 		left = 0
 	}
-	return &uiSnapContext{Used: used, Window: window, Left: left, Percent: p, Near: p >= 80, Estimated: estimated}
+	return &uiSnapContext{Used: used, Window: window, Left: left, Percent: p, Near: p >= uiNearFull, Estimated: estimated}
 }
 
 // uiHarnessSnapshot reads the end of a session file of any harness.
@@ -176,6 +176,32 @@ func (m *uiManager) snapshotFor(agent, cwd string) *uiSnapshot {
 	if uiHidden(cwd, m.cfg.HideSessionsIn) {
 		return nil
 	}
+	// The page asks every few seconds; reading session files that often is wasted work.
+	key := agent + "|" + cwd
+	m.snapMu.Lock()
+	if c, ok := m.snapCache[key]; ok && time.Since(c.at) < 15*time.Second {
+		m.snapMu.Unlock()
+		s := c.snap
+		return &s
+	}
+	m.snapMu.Unlock()
+	s := m.snapshotUncached(agent, cwd)
+	m.snapMu.Lock()
+	if m.snapCache == nil {
+		m.snapCache = map[string]struct {
+			at   time.Time
+			snap uiSnapshot
+		}{}
+	}
+	m.snapCache[key] = struct {
+		at   time.Time
+		snap uiSnapshot
+	}{time.Now(), *s}
+	m.snapMu.Unlock()
+	return s
+}
+
+func (m *uiManager) snapshotUncached(agent, cwd string) *uiSnapshot {
 	if agent == "cursor" {
 		s := uiHarnessSnapshot("cursor", "")
 		return &s

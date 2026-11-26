@@ -258,6 +258,14 @@
     const loopBox = h('div', { class: 'loopbox', hidden: !S.opts.loop },
       h('span', { class: 'opt-label' }, 'Done when'), doneIn,
       h('p', { class: 'faint small' }, 'After each turn Cully makes sure the agent ran tests, steers it if it repeats the same call, and checks its work against these lines. It stops after 3 rounds.'));
+    const helperBox = h('div', { class: 'helperbox' });
+    S.opts.helpers = S.opts.helpers || [];
+    api('/api/identities').then((list) => {
+      const ok = list.filter((x) => x.approved);
+      if (!ok.length) { helperBox.replaceChildren(h('p', { class: 'faint small' }, 'Approved agents can review the finished work. Create one on the Agents page.')); return; }
+      helperBox.replaceChildren(h('span', { class: 'opt-label' }, 'Ask these agents to review the finished work'), h('div', { class: 'row' }, ...ok.slice(0, 8).map((x) => { const cb = h('input', Object.assign({ type: 'checkbox', id: 'hp-' + x.id, onchange: (e) => { S.opts.helpers = e.target.checked ? [...S.opts.helpers, x.id].slice(0, 2) : S.opts.helpers.filter((i) => i !== x.id); } }, S.opts.helpers.includes(x.id) ? { checked: true } : {})); return h('label', { class: 'toggle' }, cb, h('span', { class: 'tick' }, icon('check')), x.name); })), h('p', { class: 'faint small' }, 'Up to two. A reviewer is read only; its concerns go back to the task.'));
+    }).catch(() => {});
+    loopBox.append(helperBox);
     const loopToggle = toggle('loop', 'Keep going until checked', 'Cully verifies the work, steers the agent when it loops, and judges it against your checks');
     loopToggle.querySelector('input').addEventListener('change', () => { loopBox.hidden = !S.opts.loop; });
     const form = h('form', { class: 'composer-card' }, ta, loopBox,
@@ -278,7 +286,7 @@
       e.preventDefault();
       err.hidden = true; start.disabled = true;
       try {
-        const body = { prompt: ta.value, repo: S.opts.repo || (repo ? repo.value : ''), mode: S.opts.mode, context: S.opts.context, recall: S.opts.recall, scout: S.opts.scout, loop: !!S.opts.loop, doneWhen: S.opts.loop ? (S.opts.doneWhen || '') : '' };
+        const body = { prompt: ta.value, repo: S.opts.repo || (repo ? repo.value : ''), mode: S.opts.mode, context: S.opts.context, recall: S.opts.recall, scout: S.opts.scout, loop: !!S.opts.loop, doneWhen: S.opts.loop ? (S.opts.doneWhen || '') : '', helpers: S.opts.loop ? (S.opts.helpers || []) : [] };
         const view = await api('/api/agents', { method: 'POST', body: JSON.stringify(body) });
         S.draft = '';
         await refresh();
@@ -391,7 +399,8 @@
         a.harness ? h('div', { class: 'chip ' + (a.harness.status === 'done' ? 'ok' : a.harness.status === 'stopped' ? 'warn' : '') }, icon('check'), 'Checking: round ' + a.harness.round + ' of ' + a.harness.max + ', ' + a.harness.status) : null),
       sec('Context window', c ? h('div', { class: 'tp-gauge' }, gauge(c.percent, 68, 'Context'), h('div', {}, kv('Used', fmtTokens(c.used)), kv('Left', fmtTokens(c.left)), kv('Window', fmtTokens(c.window)))) : h('p', { class: 'faint small' }, 'Shows after its first reply.'),
         c && c.model ? h('div', { class: 'faint small' }, c.model) : null,
-        c && c.near ? h('button', { class: 'btn small', onclick: () => startFromHandoff(a) }, icon('plus'), 'Hand off to a new task') : null),
+        c ? h('div', { class: 'faint small' }, c.compactions ? 'Compacted ' + c.compactions + (c.compactions === 1 ? ' time' : ' times') + ' by the harness.' : 'The harness compacts the history by itself before this fills.') : null,
+        c && c.compactions >= 3 ? h('button', { class: 'btn small', onclick: () => startFromHandoff(a) }, icon('plus'), 'Start clean from a handoff') : null),
       sec('Usage limits', lim ? [limitBar('Last 5 hours', lim.fiveHour), limitBar('Last 7 days', lim.sevenDay), h('small', { class: 'faint' }, 'Account: ' + (a.token ? 'token ' + a.token : 'ambient login') + (lim.status && lim.status !== 'allowed' ? '. ' + lim.status.replace(/_/g, ' ') : ''))] : h('p', { class: 'faint small' }, 'The harness reports these after its first reply.')),
       sec('Tokens', u ? [kv('This task', fmtTokens(u.tokens)), kv('From cache', u.cachedShare + '%'), kv('Saved by cache', '~' + fmtTokens(u.saved))] : h('p', { class: 'faint small' }, 'Counted after each turn.'),
         d.day ? kv('Tasks today', fmtTokens(d.day.tokens)) : null, d.week ? kv('Tasks this week', fmtTokens(d.week.tokens)) : null, a.cost ? kv('List price so far', '$' + a.cost.toFixed(a.cost < 1 ? 3 : 2)) : null),
@@ -412,8 +421,9 @@
     const box = $('ctxnote');
     if (!box) return;
     const c = a.context;
-    if (!c || !c.near || ['done', 'failed', 'stopped'].includes(a.state) && c.percent < 95) { box.replaceChildren(); return; }
-    box.replaceChildren(h('div', { class: 'ctxnote' }, icon('alert'), h('div', {}, h('b', {}, 'This task has used ' + c.percent + '% of its context'), h('div', { class: 'faint small' }, 'About ' + fmtTokens(c.left) + ' tokens are left. A new task can pick up from a handoff of what this one did, with a clean window.')),
+    // The harness compacts its own history before the window fills, so only repeated compaction is worth a note.
+    if (!c || c.compactions < 3 || ['done', 'failed', 'stopped'].includes(a.state)) { box.replaceChildren(); return; }
+    box.replaceChildren(h('div', { class: 'ctxnote' }, icon('alert'), h('div', {}, h('b', {}, 'This task has been compacted ' + c.compactions + ' times'), h('div', { class: 'faint small' }, 'Each time the harness summarises the history to make room, detail from early on is lost. A new task can start clean from a handoff of what this one did.')),
       h('button', { class: 'btn small', onclick: () => startFromHandoff(a) }, icon('plus'), 'Start a new task with a handoff')));
   }
   async function startFromHandoff(a) {
@@ -471,7 +481,7 @@
       a.token ? h('span', { class: 'chip' }, 'token ' + a.token) : h('span', { class: 'chip' }, 'ambient login'),
       h('span', { class: 'chip' }, 'started ' + ago(a.created)), h('span', { class: 'chip' }, 'active ' + ago(a.updated || a.created)),
       a.run ? h('button', { class: 'chip', title: 'How the harness underneath this task is set up', onclick: () => openRunInfo(a) }, icon('term'), a.run.harness + ', ' + (a.run.permission === 'plan' ? 'read only' : 'can edit') + ', ' + (a.run.mcpMode === 'chosen' ? a.run.mcpChosen.length + ' servers' : 'all servers')) : null,
-      a.context ? h('span', { class: 'chip ctx ' + (a.context.near ? 'warn' : ''), title: 'Context window: ' + fmtTokens(a.context.used) + ' of about ' + fmtTokens(a.context.window) + ' tokens used, about ' + fmtTokens(a.context.left) + ' left' + (a.context.model ? '. Model: ' + a.context.model : '') }, 'Context ' + a.context.percent + '%, ' + fmtTokens(a.context.left) + ' left') : null,
+      a.context ? h('span', { class: 'chip ctx ' + (a.context.near ? 'warn' : ''), title: 'Context window: ' + fmtTokens(a.context.used) + ' of about ' + fmtTokens(a.context.window) + ' tokens used, about ' + fmtTokens(a.context.left) + ' left' + (a.context.model ? '. Model: ' + a.context.model : '') }, 'Context ' + a.context.percent + '%, ' + fmtTokens(a.context.left) + ' left' + (a.context.compactions ? ', compacted ' + a.context.compactions + '×' : '')) : null,
       a.usage ? h('span', { class: 'chip', title: 'Tokens this task has handled. Input served from the prompt cache costs about a tenth of fresh input, so a high share means tokens saved. About ' + fmtTokens(a.usage.saved) + ' tokens of cost saved so far.' }, icon('spark'), fmtTokens(a.usage.tokens) + ' tokens, ' + a.usage.cachedShare + '% from cache') : null,
       a.harness ? h('span', { class: 'chip ' + (a.harness.status === 'done' ? 'ok' : a.harness.status === 'stopped' ? 'warn' : ''), title: 'Cully is checking this task\'s work' }, icon('check'), 'Checking: round ' + a.harness.round + ' of ' + a.harness.max + ', ' + ({ working: 'working', verifying: 'asking it to verify', steering: 'steering it', judging: 'judging the work', done: 'checks done', stopped: 'stopped' }[a.harness.status] || a.harness.status)) : null,
       a.files && a.files.length ? h('span', { class: 'chip' }, a.files.length + (a.files.length === 1 ? ' file changed' : ' files changed')) : null,
@@ -1036,6 +1046,31 @@
     document.addEventListener('keydown', escClose);
   }
 
+  // ---------- workflow rules ----------
+  async function renderRules(out, head) {
+    const v = await api('/api/rules');
+    const again = () => renderRules(out, head);
+    S.rules = v; S.rulesAt = Date.now();
+    const p = v.proposal;
+    const ask = async (btn) => { btn.disabled = true; try { const r = await api('/api/rules/propose', { method: 'POST' }); toast(r.added ? 'A draft is ready for your review' : 'Nothing to change right now'); again(); } catch (e) { toast(e.message, true); btn.disabled = false; } };
+    const askBtn = h('button', { class: 'btn small sp' }, icon('spark'), v.exists ? 'Look for changes' : 'Draft it from my sessions');
+    askBtn.addEventListener('click', () => ask(askBtn));
+    const proposal = p ? h('section', { class: 'lib-card coach' }, h('div', { class: 'row' }, h('b', {}, v.exists ? 'Proposed update' : 'First draft'), h('span', { class: 'faint small' }, 'written from ' + p.based + ' named sessions, ' + ago(p.created))),
+      h('ul', { class: 'how' }, ...p.changes.map((c) => h('li', {}, c))),
+      h('div', { class: 'difflist', role: 'region', 'aria-label': 'What would change' }, ...v.diff.map((d) => h('div', { class: 'dline ' + (d.op === '+' ? 'add' : d.op === '-' ? 'del' : '') }, h('span', { class: 'dop' }, d.op === ' ' ? '' : d.op), d.text || ' '))),
+      h('p', { class: 'faint small' }, 'Approving writes it to: ' + v.targets.map((t) => AGENT_LABEL[t.agent]).join(', ') + '. The file it replaces is kept beside it as SKILL.md.prev.'),
+      h('div', { class: 'row' },
+        h('button', { class: 'btn', onclick: async () => { try { await api('/api/rules/' + p.id + '/approve', { method: 'POST' }); toast('Saved. Your harnesses will read it from now on.'); S.rulesAt = 0; again(); } catch (e) { toast(e.message, true); } } }, icon('check'), 'Approve and save'),
+        h('button', { class: 'btn ghost', onclick: async () => { try { await api('/api/rules/' + p.id + '/dismiss', { method: 'POST' }); S.rulesAt = 0; again(); } catch (e) { toast(e.message, true); } } }, 'Dismiss'))) : null;
+    out.replaceChildren(head(refreshBtn(again)),
+      h('p', { class: 'faint' }, 'One skill, dev-workflow-rules, that tells every harness how you work: the projects you are on, the harnesses you use, habits that help and things to avoid. Cully drafts it from your sessions and keeps it up to date, but never saves anything until you approve it. It looks about once a day, and a notification asks you to review.'),
+      h('section', { class: 'lib-card' }, h('div', { class: 'row' }, h('b', {}, 'Where it lives'), askBtn),
+        h('ul', { class: 'rules' }, ...v.targets.map((t) => h('li', {}, harnessChip(t.agent), h('code', {}, t.path), h('span', { class: 'chip ' + (t.exists ? 'ok' : '') }, t.exists ? 'Saved' : 'Not created yet')))),
+        v.named < v.needed ? h('p', { class: 'faint small' }, 'Cully needs ' + v.needed + ' named sessions to write it; ' + v.named + ' so far. Start naming sessions on the Session library page.') : null),
+      proposal,
+      v.exists ? h('section', { class: 'lib-card' }, h('b', {}, 'Your current rules'), h('div', { class: 'quote' }, markdown(v.current))) : null);
+  }
+
   // ---------- session health ----------
   const DONE_LABEL = { yes: 'Completed', partly: 'Partly done', no: 'Not completed', unclear: 'Unclear' };
   async function renderHealth(out, head) {
@@ -1440,7 +1475,7 @@
   // ----- structure -----
   const DASH = [
     [null, [['overview', 'Overview', 'What needs you']]],
-    ['Work', [['advisor', 'Advisor', 'Advice for your tasks'], ['library', 'Session library', 'Every past session, named'], ['health', 'Session health', 'Did sessions finish the job?'], ['evals', 'Evals', 'Test cases and their runs'], ['scout', 'Scout', 'Live searches and findings'], ['activity', 'Activity', 'What was done, step by step']]],
+    ['Work', [['advisor', 'Advisor', 'Advice for your tasks'], ['library', 'Session library', 'Every past session, named'], ['rules', 'Workflow rules', 'How you work, for every harness'], ['health', 'Session health', 'Did sessions finish the job?'], ['evals', 'Evals', 'Test cases and their runs'], ['scout', 'Scout', 'Live searches and findings'], ['activity', 'Activity', 'What was done, step by step']]],
     ['Health', [['setup', 'Setup', 'Is everything connected?'], ['savings', 'Savings', 'What Cully saved and cost']]],
     ['More', [['jobs', 'Background jobs', 'Runs on a schedule']]],
   ];
@@ -1493,11 +1528,14 @@
     S.overview = { impact, setup, activity };
     // Things that need a decision, beyond tasks waiting for a reply.
     const extra = [];
+    try { S.rules = await api('/api/rules'); S.rulesAt = Date.now(); } catch (_) { /* optional */ }
+    if (S.rules && S.rules.proposal) extra.push({ icon: 'spark', text: 'Cully drafted an update to your workflow rules and is waiting for your approval', label: 'Review', href: '#/dashboard/rules' });
     const drafts = agents.filter((x) => !x.approved);
     if (drafts.length) extra.push({ icon: 'check', text: drafts.length + (drafts.length === 1 ? ' agent is a draft waiting for your approval' : ' agents are drafts waiting for your approval'), label: 'Review', href: '#/agents' });
     if (proposals.length) extra.push({ icon: 'spark', text: 'Cully noticed work you repeat and proposed ' + proposals.length + (proposals.length === 1 ? ' agent' : ' agents'), label: 'Look', href: '#/agents' });
-    const tight = S.agents.filter((x) => x.context && x.context.near && ['working', 'waiting'].includes(x.state));
-    for (const x of tight) extra.push({ icon: 'alert', text: '"' + x.title + '" has used ' + x.context.percent + '% of its context', label: 'Hand off', href: '#/task/' + x.id });
+    // The harness compacts its own history near the limit, so a full window is not a problem. Many compactions are: detail from early on is gone.
+    const worn = S.agents.filter((x) => x.context && x.context.compactions >= 3 && ['working', 'waiting'].includes(x.state));
+    for (const x of worn) extra.push({ icon: 'alert', text: '"' + x.title + '" has been compacted ' + x.context.compactions + ' times, so early details may be lost', label: 'Look', href: '#/task/' + x.id });
     S.extraNeeds = extra;
     const sessions = lib ? lib.sessions : [];
     const dayAgo = (n) => Date.now() - n * 864e5;
@@ -1697,6 +1735,7 @@
       if (name === 'overview') { await renderOverview(out, head); return; }
       if (name === 'setup') { const data = await api('/api/setup'); if (live()) out.replaceChildren(head(refreshBtn(again)), renderSetup(data)); return; }
       if (name === 'evals') { if (live()) await renderEvals(out, head); return; }
+      if (name === 'rules') { if (live()) await renderRules(out, head); return; }
       if (name === 'health') { if (live()) await renderHealth(out, head); return; }
       if (name === 'library') { if (live()) await renderLibrary(out, head); return; }
       if (name === 'permissions') { if (live()) await renderPermissions(out, head); return; }
@@ -2250,6 +2289,7 @@
     for (const a of S.agents.filter((x) => x.state === 'waiting')) keys.set('wait:' + a.id, [a.title + ' needs you', '', '#/task/' + a.id]);
     for (const g of S.advice || []) for (const x of g.advice) if (!x.applied && !x.dismissed) keys.set('adv:' + x.id, ['New advice for ' + g.agentTitle, x.text, '#/dashboard/advisor']);
     if (memoryMode() === 'mcp') for (const m of mcpNeeding()) keys.set('auth:' + m.agent, ['Cully MCP needs sign-in', 'for ' + AGENT_NAMES[m.agent], '#/dashboard/setup']);
+    if (S.rules && S.rules.proposal) keys.set('rules:' + S.rules.proposal.id, ['Review your workflow rules', 'Cully drafted an update to dev-workflow-rules from your recent sessions. Nothing is saved until you approve it.', '#/dashboard/rules']);
     return keys;
   }
   function checkAttention() {
@@ -2444,11 +2484,12 @@
     try { S.agents = await api('/api/agents'); } catch (_) { return; }
     try { S.advice = await api('/api/advice'); } catch (_) { /* older server */ }
     try { S.sessions = await api('/api/sessions'); } catch (_) { /* older server */ }
+    if (!S.rulesAt || Date.now() - S.rulesAt > 60000) { S.rulesAt = Date.now(); try { S.rules = await api('/api/rules'); } catch (_) { /* older server */ } }
     const mineLive = (S.sessions || []).filter((x) => !x.detached).length;
     $('sbadge').hidden = mineLive === 0;
     $('sbadge').textContent = mineLive;
     if (S.route.name === 'sessions') renderSessions();
-    const unread = (S.advice || []).reduce((n, g) => n + g.advice.filter((x) => !x.applied && !x.dismissed).length, 0);
+    const unread = (S.advice || []).reduce((n, g) => n + g.advice.filter((x) => !x.applied && !x.dismissed).length, 0) + (S.rules && S.rules.proposal ? 1 : 0);
     $('dbadge').hidden = unread === 0;
     $('dbadge').textContent = unread;
     renderRail();

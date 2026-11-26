@@ -743,3 +743,9 @@ a.rt { color: var(--ink); font-weight: 600; text-decoration: none; }
 .lim .fbar i { display: block; height: 100%; background: var(--forest-hi); }
 .lim .fbar.mid i { background: var(--peach-ink); } .lim .fbar.hot i { background: var(--red); }
 .lim-acct { display: grid; gap: 6px; margin: 8px 0; }
+
+/* workflow rules diff */
+.difflist { max-height: 340px; overflow: auto; border: 1px solid var(--line); border-radius: 10px; margin: 10px 0; font: 12.5px/1.5 var(--mono); }
+.dline { display: flex; gap: 8px; padding: 0 10px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.dline.add { background: var(--add-bg); color: var(--add-ink); } .dline.del { background: var(--red-bg); color: var(--red); }
+.dline .dop { width: 10px; flex: none; }

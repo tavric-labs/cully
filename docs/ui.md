@@ -169,6 +169,14 @@ The **Harness** page is about the program that runs the model (Claude Code, Code
 
 Each task has a panel down the left side: what it is doing, how full its context window is and how many tokens are left, the harness's own 5-hour and 7-day usage limits with their reset times (as the harness reports them), tokens used by the task, today and this week, how much came from the prompt cache, the list price so far, and a link to how the harness underneath was set up. When the context passes 80 percent the panel and the task header offer a new task that starts from a handoff. Sessions of every harness show a context percentage where the harness records one (Claude estimates the window from the model name; Codex records the real one; Cursor records none).
 
+## Workflow rules and reviewing agents
+
+**Workflow rules** keeps one skill, `dev-workflow-rules`, that tells every harness how you work: the projects you are on, the harnesses you use, habits that help and things to avoid. About once a day, when several new sessions have been named, Cully drafts an update from your sessions and shows exactly what would change as a diff. Nothing is written until you press **Approve and save**; then it is written to the skills folder of each harness that has one (Claude, Codex, and Cursor if it has a skills folder), and the file it replaces is kept beside it as `SKILL.md.prev`. A draft with a secret in it, or without a proper skill header, is refused. While a draft waits, the Dashboard badge, the Overview and a browser notification ask you to review it. The page can only notify while it is open.
+
+**Reviewing agents.** When you start a task with *Keep going until checked*, you can ask up to two of your approved agents to review the finished work. A reviewer is read only, sees the task's goal and change and may read the task's worktree, and ends with `VERDICT: ok` or `VERDICT: concerns`. Concerns are sent back into the task as a message and count as a round; if there are none the task finishes.
+
+Claude Code compacts its own history before the context window fills, so a full window is not treated as a problem. The task panel shows how many times it has been compacted, and offers a fresh task from a handoff only after three or more compactions, when detail from early on is likely gone.
+
 ## Security model
 
 - Every API call needs the token (cookie or bearer); changes also need the `X-Cully-UI` header; loopback binds reject other `Host` names.

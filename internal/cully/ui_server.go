@@ -128,6 +128,10 @@ func newUIServer(m *uiManager, token string, loopback bool) http.Handler {
 	mux.Handle("GET /api/coach", s.api(s.coachGetH))
 	mux.Handle("GET /api/running", s.api(s.runningGet))
 	mux.Handle("GET /api/limits", s.api(s.limitsGet))
+	mux.Handle("GET /api/rules", s.api(s.rulesGet))
+	mux.Handle("POST /api/rules/propose", s.api(s.rulesProposeH))
+	mux.Handle("POST /api/rules/{id}/approve", s.api(s.rulesApproveH))
+	mux.Handle("POST /api/rules/{id}/dismiss", s.api(s.rulesDismissH))
 	mux.Handle("GET /api/harness", s.api(s.harnessGet))
 	mux.Handle("GET /api/usage", s.api(s.usageGet))
 	mux.Handle("GET /api/agent-suggestions", s.api(s.agentSuggestListH))
@@ -1123,4 +1127,34 @@ func (s *uiServer) harnessGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	uiJSON(w, http.StatusOK, s.m.harnessInfo(agent))
+}
+
+func (s *uiServer) rulesGet(w http.ResponseWriter, r *http.Request) {
+	uiJSON(w, http.StatusOK, s.m.rulesView())
+}
+
+func (s *uiServer) rulesProposeH(w http.ResponseWriter, r *http.Request) {
+	added, err := s.m.rulesPropose()
+	if err != nil {
+		uiError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	uiJSON(w, http.StatusOK, map[string]bool{"added": added})
+}
+
+func (s *uiServer) rulesApproveH(w http.ResponseWriter, r *http.Request) {
+	t, err := s.m.rulesApprove(r.PathValue("id"))
+	if err != nil {
+		uiError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	uiJSON(w, http.StatusOK, t)
+}
+
+func (s *uiServer) rulesDismissH(w http.ResponseWriter, r *http.Request) {
+	if err := s.m.rulesDismiss(r.PathValue("id")); err != nil {
+		uiError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }

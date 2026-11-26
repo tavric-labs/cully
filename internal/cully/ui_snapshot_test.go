@@ -34,7 +34,7 @@ func TestEachHarnessSaysWhatItRecordsAboutContext(t *testing.T) {
 	xf := filepath.Join(xp, "rollout-x-"+uiTestSessB+".jsonl")
 	_ = os.WriteFile(xf, []byte(cdx), 0o600)
 	c := uiHarnessSnapshot("codex", xf)
-	if !c.Available || c.Context == nil || c.Context.Window != 475000 || c.Context.Percent != 80 || !c.Context.Near || c.Context.Estimated || c.Tokens != 900000 {
+	if !c.Available || c.Context == nil || c.Context.Window != 475000 || c.Context.Percent != 80 || c.Context.Near || c.Context.Estimated || c.Tokens != 900000 {
 		t.Fatalf("codex = %+v %+v", c, c.Context)
 	}
 	if c.Limits == nil || c.Limits.FiveHour.Used != 42 || c.Limits.SevenDay.Used != 12 {
@@ -59,7 +59,7 @@ func TestOpenSessionsCarryTheirSnapshotAndLimitsAreGatheredAcrossHarnesses(t *te
 	uiFakeProcs(t, []uiProc{{Interactive: true, PID: 1, PPID: 9, Cmd: []string{"claude"}, Cwd: repo, Started: time.Now()}})
 	var list []uiSession
 	uiReadJSON(t, uiDo(t, "GET", srv.URL+"/api/sessions", nil, uiAuthed), &list)
-	if len(list) != 1 || list[0].Snapshot == nil || list[0].Snapshot.Context == nil || list[0].Snapshot.Context.Percent != 85 || !list[0].Snapshot.Context.Near {
+	if len(list) != 1 || list[0].Snapshot == nil || list[0].Snapshot.Context == nil || list[0].Snapshot.Context.Percent != 85 || list[0].Snapshot.Context.Near {
 		b, _ := json.Marshal(list)
 		t.Fatalf("sessions = %s", b)
 	}
