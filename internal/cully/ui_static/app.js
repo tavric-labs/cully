@@ -1044,13 +1044,13 @@
     const askNow = async (btn) => { btn.disabled = true; try { const r = await api('/api/agent-suggestions/run', { method: 'POST' }); toast(r.added ? r.added + ' new ' + (r.added === 1 ? 'proposal' : 'proposals') : 'Nothing new to propose right now'); again(); } catch (e) { toast(e.message, true); btn.disabled = false; } };
     const askBtn = h('button', { class: 'btn ghost small sp' }, icon('spark'), proposals.length ? 'Look again' : 'Ask Cully for ideas');
     askBtn.addEventListener('click', () => askNow(askBtn));
-    const proposalCard = (p) => h('li', { class: 'hrow' },
-      h('div', { class: 'hmain' }, h('div', { class: 'ht' }, p.name, p.schedule ? h('span', { class: 'chip' }, 'Runs ' + p.schedule) : h('span', { class: 'chip' }, 'On demand'), h('span', { class: 'chip' }, icon('folder'), p.folder.split('/').pop())),
+    const proposalCard = (p) => { const cur = p.replaces ? list.find((x) => x.id === p.replaces) : null; return h('li', { class: 'hrow' },
+      h('div', { class: 'hmain' }, h('div', { class: 'ht' }, p.name, cur ? h('span', { class: 'chip run-partial' }, 'Updates an agent you have') : h('span', { class: 'chip' }, 'New'), p.schedule ? h('span', { class: 'chip' }, 'Runs ' + p.schedule) : h('span', { class: 'chip' }, 'On demand'), h('span', { class: 'chip' }, icon('folder'), p.folder.split('/').pop())),
         h('p', { class: 'hdesc' }, p.role), h('p', { class: 'faint small' }, h('b', {}, 'Why: '), p.why),
         h('div', { class: 'row' }, ...tools.presets.filter((g) => p.groups[g.id]).map((g) => h('span', { class: 'chip' }, g.label)))),
       h('div', { class: 'row hact' },
-        h('button', { class: 'btn small', title: 'Review it, change anything, and create the agent', onclick: () => openAgentForm({ ...p, id: null, enabled: !!p.schedule, mode: 'edit', scope: 'project', fromSuggestion: p.id }, tools, again) }, icon('check'), 'Review and approve'),
-        h('button', { class: 'btn ghost small', onclick: async () => { try { await api('/api/agent-suggestions/' + p.id + '/dismissed', { method: 'POST' }); again(); } catch (e) { toast(e.message, true); } } }, 'Dismiss')));
+        h('button', { class: 'btn small', title: cur ? 'Review the changes to ' + cur.name + ' and save them' : 'Review it, change anything, and create the agent', onclick: () => openAgentForm(cur ? { ...cur, role: p.role, instructions: p.instructions, groups: p.groups, schedule: p.schedule, enabled: !!p.schedule, fromSuggestion: p.id } : { ...p, id: null, enabled: !!p.schedule, mode: 'edit', scope: 'project', fromSuggestion: p.id }, tools, again) }, icon('check'), cur ? 'Review the update' : 'Review and approve'),
+        h('button', { class: 'btn ghost small', onclick: async () => { try { await api('/api/agent-suggestions/' + p.id + '/dismissed', { method: 'POST' }); again(); } catch (e) { toast(e.message, true); } } }, 'Dismiss'))); };
     box.replaceChildren(
       toolbar('Agents', 'Named workers with a role of their own. Each keeps notes between runs and can run on a schedule.', h('button', { class: 'btn', onclick: () => openAgentForm(null, tools, again) }, icon('plus'), 'New agent')),
       h('details', { class: 'lib-card', ...(list.length ? {} : { open: true }) }, h('summary', {}, h('b', {}, 'What an agent is and how it works')),
@@ -1529,12 +1529,13 @@
     const ask = async (btn) => { btn.disabled = true; try { const r = await api('/api/job-suggestions/run', { method: 'POST' }); toast(r.added ? r.added + ' background job ' + (r.added === 1 ? 'proposal' : 'proposals') : 'Nothing repeats enough to need a background job yet.'); again(); } catch (e) { toast(e.message, true); btn.disabled = false; } };
     const card = (x) => {
       const time = h('input', { type: 'time', value: x.after || '02:00', 'aria-label': 'Time of day', class: 'timein' });
-      return h('li', { class: 'hrow' }, h('div', { class: 'hmain' }, h('div', { class: 'ht' }, x.name),
+      return h('li', { class: 'hrow' }, h('div', { class: 'hmain' }, h('div', { class: 'ht' }, x.name, x.updates ? h('span', { class: 'chip run-partial' }, 'Updates a job you have') : h('span', { class: 'chip' }, 'New')),
         h('p', { class: 'hdesc' }, x.why),
-        h('p', { class: 'small' }, h('span', { class: 'faint' }, 'It will run: '), h('code', {}, x.display)),
+        x.updates && x.current ? h('p', { class: 'small' }, h('span', { class: 'faint' }, 'Now: '), h('code', {}, x.current)) : null,
+        h('p', { class: 'small' }, h('span', { class: 'faint' }, x.updates ? 'Would become: ' : 'It will run: '), h('code', {}, x.display)),
         h('div', { class: 'row' }, h('span', { class: 'faint small' }, 'Run after'), time, h('span', { class: 'faint small' }, 'while Cully is running'))),
         h('div', { class: 'row hact' },
-          h('button', { class: 'btn small', onclick: async (e) => { e.target.disabled = true; try { await api('/api/job-suggestions/' + x.id + '/accept', { method: 'POST', body: JSON.stringify({ after: time.value }) }); toast('Added. It runs after ' + time.value + '.'); again(); } catch (err) { toast(err.message, true); e.target.disabled = false; } } }, icon('check'), 'Approve'),
+          h('button', { class: 'btn small', onclick: async (e) => { e.target.disabled = true; try { await api('/api/job-suggestions/' + x.id + '/accept', { method: 'POST', body: JSON.stringify({ after: time.value }) }); toast((x.updates ? 'Updated. It runs after ' : 'Added. It runs after ') + time.value + '.'); again(); } catch (err) { toast(err.message, true); e.target.disabled = false; } } }, icon('check'), 'Approve'),
           h('button', { class: 'btn ghost small', onclick: async () => { try { await api('/api/job-suggestions/' + x.id + '/dismiss', { method: 'POST' }); again(); } catch (err) { toast(err.message, true); } } }, 'Reject')));
     };
     return h('section', { class: 'lib-card' }, h('div', { class: 'row' }, h('b', {}, 'Proposed by the Advisor'), h('span', { class: 'faint small' }, list.length ? list.length + ' waiting for you' : 'Nothing waiting'),
@@ -1967,8 +1968,9 @@
           return;
         }
       }
+      if (name === 'jobs') { const props = await jobProposals(again); if (live()) out.replaceChildren(head(refreshBtn(again)), props, emptyCard(EMPTY_TEXT.jobs[0], EMPTY_TEXT.jobs[1], null, null)); return; }
       const text = await api('/api/panel/' + name + '?repo=' + encodeURIComponent(S.opts.repo || ''));
-      if (live()) out.replaceChildren(head(refreshBtn(again), copyBtn('Copy', () => text)), name === 'jobs' ? await jobProposals(again) : null, renderText(name, text));
+      if (live()) out.replaceChildren(head(refreshBtn(again), copyBtn('Copy', () => text)), renderText(name, text));
     } catch (e) {
       if (live()) out.replaceChildren(head(), h('div', { class: 'emptycard' }, h('h3', {}, 'Could not load this'), h('p', {}, e.message), h('button', { class: 'btn small', onclick: again }, icon('refresh'), 'Try again')));
     }

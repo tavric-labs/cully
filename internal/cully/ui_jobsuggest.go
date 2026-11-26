@@ -44,7 +44,8 @@ type uiJobSuggestion struct {
 	Folder  string    `json:"folder"`
 	Why     string    `json:"why"`
 	Created time.Time `json:"created"`
-	State   string    `json:"state"` // new, accepted or dismissed
+	State   string    `json:"state"`             // new, accepted or dismissed
+	Updates string    `json:"updates,omitempty"` // the existing job this would change instead of adding a new one
 }
 
 var uiJobSuggestMu sync.Mutex
@@ -156,8 +157,46 @@ JOB|<name: lowercase letters, digits and dashes>|<folder NAME from FOLDERS>|<com
 DATA:
 `
 
-func uiParseJobSuggestions(out string, folders map[string]string, taken map[string]bool) []uiJobSuggestion {
+// uiJobFolderArg is the folder a command works on, or "" when it names none.
+func uiJobFolderArg(cmd []string) string {
+	if len(cmd) == 0 {
+		return ""
+	}
+	if r, ok := uiJobRules[cmd[0]]; ok && r.dirFlag != "" && len(cmd) > 2 {
+		return filepath.Clean(cmd[2])
+	}
+	if cmd[0] == "pytest" && len(cmd) > 1 {
+		return filepath.Clean(cmd[len(cmd)-1])
+	}
+	return ""
+}
+
+func uiSameArgv(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// uiParseJobSuggestions turns the advisor's reply into proposals. existing are
+// the jobs already set up and prior every proposal made before, whatever its
+// state. A proposal for a command that already exists, was already proposed or
+// was rejected is dropped. One that works on the same folder with the same
+// program as an existing job becomes an update of that job, not a second job.
+func uiParseJobSuggestions(out string, folders map[string]string, existing []scheduledJob, prior []uiJobSuggestion) []uiJobSuggestion {
 	var res []uiJobSuggestion
+	taken := map[string]bool{}
+	for _, e := range existing {
+		taken[e.Name] = true
+	}
+	for _, x := range prior {
+		taken[x.Name] = true
+	}
 	for _, line := range strings.Split(out, "\n") {
 		p := strings.Split(strings.TrimSpace(line), "|")
 		if len(p) != 6 || p[0] != "JOB" || len(res) >= uiJobSuggestMax {
@@ -165,7 +204,7 @@ func uiParseJobSuggestions(out string, folders map[string]string, taken map[stri
 		}
 		name := strings.TrimSpace(p[1])
 		path, ok := folders[strings.TrimSpace(p[2])]
-		if !ok || !jobNamePattern.MatchString(name) || taken[name] {
+		if !ok {
 			continue
 		}
 		var cmd []string
@@ -183,8 +222,33 @@ func uiParseJobSuggestions(out string, folders map[string]string, taken map[stri
 		if why == "" {
 			continue
 		}
+		dup, updates := false, ""
+		for _, e := range existing {
+			if uiSameArgv(e.Command, cmd) {
+				dup = true
+			} else if e.Command[0] == cmd[0] && uiJobFolderArg(e.Command) == uiJobFolderArg(cmd) && updates == "" {
+				updates = e.Name
+			}
+		}
+		for _, x := range res {
+			dup = dup || uiSameArgv(x.Command, cmd)
+		}
+		for _, x := range prior {
+			if uiSameArgv(x.Command, cmd) || (x.State == "new" && x.Updates == updates && x.Updates != "" && uiJobFolderArg(x.Command) == uiJobFolderArg(cmd) && x.Command[0] == cmd[0]) ||
+				(x.State == "new" && updates == "" && x.Command[0] == cmd[0] && uiJobFolderArg(x.Command) == uiJobFolderArg(cmd)) {
+				dup = true
+			}
+		}
+		if dup {
+			continue
+		}
+		if updates != "" {
+			name = updates
+		} else if !jobNamePattern.MatchString(name) || taken[name] {
+			continue
+		}
 		taken[name] = true
-		res = append(res, uiJobSuggestion{ID: uiNewID(), Name: name, Command: cmd, After: after, Folder: path, Why: why, Created: time.Now().UTC(), State: "new"})
+		res = append(res, uiJobSuggestion{ID: uiNewID(), Name: name, Command: cmd, After: after, Folder: path, Why: why, Created: time.Now().UTC(), State: "new", Updates: updates})
 	}
 	return res
 }
@@ -193,10 +257,21 @@ func (m *uiManager) jobSuggestionsList() []uiJobSuggestion {
 	uiJobSuggestMu.Lock()
 	defer uiJobSuggestMu.Unlock()
 	out := []uiJobSuggestion{}
-	for _, s := range uiReadJobSuggestions() {
-		if s.State == "new" && !uiHidden(s.Folder, m.cfg.HideSessionsIn) {
-			out = append(out, s)
+	seen := map[string]bool{}
+	for _, s := range uiReadJobSuggestions() { // oldest first
+		if s.State != "new" || uiHidden(s.Folder, m.cfg.HideSessionsIn) {
+			continue
 		}
+		// Two waiting proposals for the same program on the same folder are one idea; show the first.
+		if len(s.Command) == 0 {
+			continue
+		}
+		key := s.Updates + "|" + s.Command[0] + "|" + uiJobFolderArg(s.Command)
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		out = append(out, s)
 	}
 	return out
 }
@@ -231,27 +306,29 @@ func (m *uiManager) jobSuggestRun() (int, error) {
 			ev = append(ev, r.line())
 		}
 	}
-	taken := map[string]bool{}
-	if jobs, err := loadJobs(jobsConfigFile()); err == nil {
-		for _, j := range jobs {
-			taken[j.Name] = true
+	existing, _ := loadJobs(jobsConfigFile())
+	uiJobSuggestMu.Lock()
+	prior := uiReadJobSuggestions()
+	uiJobSuggestMu.Unlock()
+	var have []string
+	for _, e := range existing {
+		have = append(have, e.Name+" | runs after "+e.After+" | "+uiShowArgv(e.Command))
+	}
+	for _, x := range prior {
+		if x.State == "new" {
+			have = append(have, x.Name+" | proposed, waiting | "+uiShowArgv(x.Command))
 		}
 	}
-	uiJobSuggestMu.Lock()
-	for _, s := range uiReadJobSuggestions() {
-		taken[s.Name] = true
-	}
-	uiJobSuggestMu.Unlock()
 	cwd := ConfigDir()
 	if repos := m.repoList(); len(repos) > 0 {
 		cwd = repos[0].Path
 	}
-	data := "REPEATED WORK:\n" + strings.Join(ev, "\n") + "\nFOLDERS:\n" + strings.Join(fl, "\n") + "\n"
+	data := "REPEATED WORK:\n" + strings.Join(ev, "\n") + "\nFOLDERS:\n" + strings.Join(fl, "\n") + "\nEXISTING JOBS (do not repeat these; to change one, reuse its exact name with the new command or time):\n" + strings.Join(have, "\n") + "\n"
 	out, err := m.cfg.Advisor("claude", cwd, false, uiJobSuggestPrompt+m.cfg.Tokens.redact(data))
 	if err != nil {
 		return 0, errors.New("Cully could not ask the advisor right now; try again in a few minutes")
 	}
-	fresh := uiParseJobSuggestions(out, folders, taken)
+	fresh := uiParseJobSuggestions(out, folders, existing, prior)
 	if len(fresh) == 0 {
 		return 0, nil
 	}
@@ -319,7 +396,7 @@ func (m *uiManager) jobSuggestionAccept(id, after string) (string, error) {
 		if err := uiJobCommandOK(s.Command, s.Folder); err != nil {
 			return "", err
 		}
-		if err := uiAppendJob(scheduledJob{Name: s.Name, Command: s.Command, After: after}); err != nil {
+		if err := uiSaveJob(scheduledJob{Name: s.Name, Command: s.Command, After: after}, s.Updates != ""); err != nil {
 			return "", err
 		}
 		s.State, s.After = "accepted", after
@@ -329,9 +406,10 @@ func (m *uiManager) jobSuggestionAccept(id, after string) (string, error) {
 	return "", errors.New("no such suggestion")
 }
 
-// uiAppendJob adds one job to jobs.json, keeping the file private and every job
-// already in it exactly as written.
-func uiAppendJob(j scheduledJob) error {
+// uiSaveJob adds one job to jobs.json, or with update changes the command and
+// time of the job of that name. It keeps the file private and every other job,
+// and every other setting of the changed one, exactly as written.
+func uiSaveJob(j scheduledJob, update bool) error {
 	path := jobsConfigFile()
 	existing, err := loadJobs(path) // refuses a file others can write or another user owns
 	if err != nil {
@@ -340,10 +418,15 @@ func uiAppendJob(j scheduledJob) error {
 	if _, err := j.normalized(); err != nil {
 		return err
 	}
+	found := false
 	for _, e := range existing {
-		if e.Name == j.Name {
-			return errors.New("a job named " + j.Name + " already exists")
+		found = found || e.Name == j.Name
+	}
+	if update != found {
+		if update {
+			return errors.New("the job " + j.Name + " is gone, so there is nothing to update")
 		}
+		return errors.New("a job named " + j.Name + " already exists")
 	}
 	var cfg struct {
 		Jobs []json.RawMessage `json:"jobs"`
@@ -353,12 +436,29 @@ func uiAppendJob(j scheduledJob) error {
 			return err
 		}
 	}
-	entry, _ := json.Marshal(struct {
-		Name    string   `json:"name"`
-		Command []string `json:"command"`
-		After   string   `json:"after"`
-	}{j.Name, j.Command, j.After})
-	cfg.Jobs = append(cfg.Jobs, entry)
+	if update {
+		for i, r := range cfg.Jobs {
+			var m map[string]json.RawMessage
+			if json.Unmarshal(r, &m) != nil {
+				continue
+			}
+			var n string
+			_ = json.Unmarshal(m["name"], &n)
+			if n != j.Name {
+				continue
+			}
+			m["command"], _ = json.Marshal(j.Command)
+			m["after"], _ = json.Marshal(j.After)
+			cfg.Jobs[i], _ = json.Marshal(m)
+		}
+	} else {
+		entry, _ := json.Marshal(struct {
+			Name    string   `json:"name"`
+			Command []string `json:"command"`
+			After   string   `json:"after"`
+		}{j.Name, j.Command, j.After})
+		cfg.Jobs = append(cfg.Jobs, entry)
+	}
 	out, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
 		return err
@@ -387,13 +487,20 @@ func uiAppendJob(j scheduledJob) error {
 // uiJobSuggestionView is a proposal as the Background jobs page shows it.
 type uiJobSuggestionView struct {
 	uiJobSuggestion
-	Display string `json:"display"` // the exact command, quoted
+	Display string `json:"display"`           // the exact command, quoted
+	Current string `json:"current,omitempty"` // for an update: what the job runs now
 }
 
 func (s *uiServer) jobSuggestionsGet(w http.ResponseWriter, r *http.Request) {
+	cur := map[string]string{}
+	if jobs, err := loadJobs(jobsConfigFile()); err == nil {
+		for _, j := range jobs {
+			cur[j.Name] = uiShowArgv(j.Command) + ", after " + j.After
+		}
+	}
 	out := []uiJobSuggestionView{}
 	for _, x := range s.m.jobSuggestionsList() {
-		out = append(out, uiJobSuggestionView{x, uiShowArgv(x.Command)})
+		out = append(out, uiJobSuggestionView{x, uiShowArgv(x.Command), cur[x.Updates]})
 	}
 	uiJSON(w, http.StatusOK, out)
 }

@@ -3,6 +3,7 @@ package cully
 import (
 	"encoding/json"
 	"errors"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -29,7 +30,8 @@ type uiAgentSuggestion struct {
 	Folder       string          `json:"folder"`
 	Why          string          `json:"why"`
 	Created      time.Time       `json:"created"`
-	State        string          `json:"state"` // new, accepted or dismissed
+	State        string          `json:"state"`              // new, accepted or dismissed
+	Replaces     string          `json:"replaces,omitempty"` // the id of an existing agent this would change instead of adding another
 }
 
 var uiSuggestMu sync.Mutex
@@ -161,15 +163,20 @@ func (m *uiManager) agentSuggestRun() (int, error) {
 		}
 		lines = append(lines, s.Name+" | "+uiClipWords(s.Title, 70)+" | goal: "+uiClipWords(s.Task, 100)+" | finished: "+s.Completed+" | problems: "+strings.Join(s.Signals, "; "))
 	}
+	existing := m.identityList()
 	taken := map[string]bool{}
-	for _, a := range m.identityList() {
-		taken[strings.ToLower(a.Name)] = true
-	}
 	uiSuggestMu.Lock()
-	for _, s := range uiReadAgentSuggestions() {
-		taken[strings.ToLower(s.Name)] = true
-	}
+	prior := uiReadAgentSuggestions()
 	uiSuggestMu.Unlock()
+	var have []string
+	for _, a := range existing {
+		have = append(have, a.Name+" | "+uiClipWords(a.Role, 100)+" | folder "+filepath.Base(a.Folder))
+	}
+	for _, s := range prior {
+		if s.State == "new" {
+			have = append(have, s.Name+" | proposed, waiting | "+uiClipWords(s.Role, 100))
+		}
+	}
 	cwd := ConfigDir()
 	if repos := m.repoList(); len(repos) > 0 {
 		cwd = repos[0].Path
@@ -180,7 +187,7 @@ func (m *uiManager) agentSuggestRun() (int, error) {
 			ev = append(ev, r.line())
 		}
 	}
-	data := "REPEATED WORK (propose agents only for this):\n" + strings.Join(ev, "\n") + "\nFOLDERS:\n" + strings.Join(fl, "\n") + "\nSESSIONS:\n" + strings.Join(lines, "\n") + "\n"
+	data := "REPEATED WORK (propose agents only for this):\n" + strings.Join(ev, "\n") + "\nFOLDERS:\n" + strings.Join(fl, "\n") + "\nSESSIONS:\n" + strings.Join(lines, "\n") + "\nEXISTING AGENTS (do not propose one that overlaps these; to change one, reuse its exact name with the improved role, tools or schedule):\n" + strings.Join(have, "\n") + "\n"
 	out, err := m.cfg.Advisor("claude", cwd, false, uiAgentSuggestPrompt+m.cfg.Tokens.redact(data))
 	if err != nil {
 		return 0, errors.New("Cully could not ask the advisor right now; try again in a few minutes")
@@ -191,7 +198,7 @@ func (m *uiManager) agentSuggestRun() (int, error) {
 			names[f.Name] = f.Cwd
 		}
 	}
-	fresh := uiParseAgentSuggestions(out, names, taken)
+	fresh := uiAgentSuggestFilter(uiParseAgentSuggestions(out, names, taken), existing, prior)
 	if len(fresh) == 0 {
 		return 0, nil
 	}
@@ -199,4 +206,61 @@ func (m *uiManager) agentSuggestRun() (int, error) {
 	defer uiSuggestMu.Unlock()
 	uiWriteAgentSuggestions(fresh)
 	return len(fresh), nil
+}
+
+// uiAgentSame reports whether two agents are about the same job: the same name,
+// or the same folder with mostly the same words in name and role.
+func uiAgentSame(nameA, roleA, folderA, nameB, roleB, folderB string) bool {
+	if strings.EqualFold(strings.TrimSpace(nameA), strings.TrimSpace(nameB)) {
+		return true
+	}
+	return folderA == folderB && uiSimilar(uiGoalWords(nameA+" "+roleA), uiGoalWords(nameB+" "+roleB))
+}
+
+func uiSameGroups(a, b map[string]bool) bool {
+	for k, v := range a {
+		if v != b[k] {
+			return false
+		}
+	}
+	for k, v := range b {
+		if v != a[k] {
+			return false
+		}
+	}
+	return true
+}
+
+// uiAgentSuggestFilter checks fresh proposals against the agents that already
+// exist and the proposals already made. One about the same job as a waiting or
+// rejected proposal is dropped. One about the same job as an existing agent
+// becomes an update of that agent (under its name), or is dropped when it would
+// change nothing. Only a job nothing covers stays a new agent.
+func uiAgentSuggestFilter(fresh []uiAgentSuggestion, existing []uiIdentity, prior []uiAgentSuggestion) []uiAgentSuggestion {
+	var out []uiAgentSuggestion
+next:
+	for _, f := range fresh {
+		for _, p := range prior {
+			if (p.State == "new" || p.State == "dismissed") && uiAgentSame(f.Name, f.Role, f.Folder, p.Name, p.Role, p.Folder) {
+				continue next
+			}
+		}
+		for _, o := range out {
+			if uiAgentSame(f.Name, f.Role, f.Folder, o.Name, o.Role, o.Folder) {
+				continue next
+			}
+		}
+		for _, e := range existing {
+			if !uiAgentSame(f.Name, f.Role, f.Folder, e.Name, e.Role, e.Folder) {
+				continue
+			}
+			if uiSimilar(uiGoalWords(f.Role), uiGoalWords(e.Role)) && uiSameGroups(f.Groups, e.Groups) && f.Schedule == e.Schedule {
+				continue next // nothing to change
+			}
+			f.Replaces, f.Name = e.ID, e.Name
+			break
+		}
+		out = append(out, f)
+	}
+	return out
 }

@@ -169,3 +169,30 @@ func TestNoAgentIsProposedWhenNothingRepeats(t *testing.T) {
 		t.Fatal("asked")
 	}
 }
+
+func TestAgentProposalsCheckExistingAgentsFirst(t *testing.T) {
+	groups := map[string]bool{"read": true}
+	existing := []uiIdentity{{ID: "a1", Name: "PR watcher", Role: "Reports open pull requests and what blocks them.", Folder: "/tmp/proj", Groups: groups, Schedule: "daily"}}
+	mk := func(name, role string, g map[string]bool, sched string) uiAgentSuggestion {
+		return uiAgentSuggestion{ID: name, Name: name, Role: role, Folder: "/tmp/proj", Groups: g, Schedule: sched, State: "new"}
+	}
+	// Says the same thing as an agent that exists: nothing to propose.
+	if got := uiAgentSuggestFilter([]uiAgentSuggestion{mk("Pull request watcher", "Reports open pull requests and what blocks them.", groups, "daily")}, existing, nil); len(got) != 0 {
+		t.Fatalf("proposed what exists: %+v", got)
+	}
+	// Same job with a change (now also runs commands, hourly): an update of that agent.
+	got := uiAgentSuggestFilter([]uiAgentSuggestion{mk("PR watcher", "Reports open pull requests and what blocks them.", map[string]bool{"read": true, "commands": true}, "hourly")}, existing, nil)
+	if len(got) != 1 || got[0].Replaces != "a1" || got[0].Name != "PR watcher" {
+		t.Fatalf("update = %+v", got)
+	}
+	// A different job in the same folder is a new agent.
+	got = uiAgentSuggestFilter([]uiAgentSuggestion{mk("Release notes", "Drafts release notes from merged changes.", groups, "none")}, existing, nil)
+	if len(got) != 1 || got[0].Replaces != "" {
+		t.Fatalf("new = %+v", got)
+	}
+	// One already waiting, or rejected, is not proposed again.
+	prior := []uiAgentSuggestion{{Name: "Release notes", Role: "Drafts release notes from merged changes.", Folder: "/tmp/proj", State: "dismissed"}}
+	if got := uiAgentSuggestFilter([]uiAgentSuggestion{mk("Release writer", "Drafts release notes from merged changes.", groups, "none")}, existing, prior); len(got) != 0 {
+		t.Fatalf("proposed a rejected idea again: %+v", got)
+	}
+}

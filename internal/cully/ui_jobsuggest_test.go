@@ -30,7 +30,7 @@ func TestJobProposalsAreCheckedStrictly(t *testing.T) {
 		`JOB|notjson|app|make test|02:00|x`,
 		`JOB|missing|app|["definitely-not-installed-xyz"]|02:00|x`,
 	}, "\n")
-	got := uiParseJobSuggestions(out, folders, map[string]bool{})
+	got := uiParseJobSuggestions(out, folders, nil, nil)
 	if len(got) != 1 || got[0].Name != "nightly-tests" || got[0].Command[2] != "/tmp" || got[0].After != "02:00" {
 		t.Fatalf("proposals = %+v", got)
 	}
@@ -45,7 +45,7 @@ func TestJobProposalsAreCheckedStrictly(t *testing.T) {
 	if _, err := exec.LookPath("pytest"); err == nil && uiJobCommandOK([]string{"pytest", "-q", "/tmp"}, "/tmp") != nil {
 		t.Fatal("pytest on the proposal's folder was refused")
 	}
-	if got := uiParseJobSuggestions(out, folders, map[string]bool{"nightly-tests": true}); len(got) != 0 {
+	if got := uiParseJobSuggestions(out, folders, []scheduledJob{{Name: "nightly-tests", Command: []string{"make", "-C", "/tmp", "test"}, After: "01:00"}}, nil); len(got) != 0 {
 		t.Fatal("proposed a job whose name is taken")
 	}
 }
@@ -120,5 +120,60 @@ func TestProposalsAreListedForTheBackgroundJobsPageWithTheExactCommand(t *testin
 	body := rec.Body.String()
 	if rec.Code != 200 || !strings.Contains(body, `"display":"go -C `+repo+` vet ./..."`) || !strings.Contains(body, `"name":"vet-all"`) {
 		t.Fatalf("%d %s", rec.Code, body)
+	}
+}
+
+func TestAProposalForWhatAlreadyExistsIsDroppedOrBecomesAnUpdate(t *testing.T) {
+	folders := map[string]string{"app": "/tmp"}
+	line := func(name, cmd, at string) string { return "JOB|" + name + "|app|" + cmd + "|" + at + "|You repeat it" }
+	same := `["make","-C","{folder}","test"]`
+	// The same command as a waiting proposal under another name: one is enough.
+	prior := []uiJobSuggestion{{ID: "p1", Name: "mcp-runtime-nightly-test", Command: []string{"make", "-C", "/tmp", "test"}, State: "new"}}
+	if got := uiParseJobSuggestions(line("nightly-mcp-runtime-test", same, "02:00"), folders, nil, prior); len(got) != 0 {
+		t.Fatalf("a second proposal for the same command: %+v", got)
+	}
+	// The same program on the same folder with a different target while one waits: still one.
+	if got := uiParseJobSuggestions(line("lint-nightly", `["make","-C","{folder}","lint"]`, "02:00"), folders, nil, prior); len(got) != 0 {
+		t.Fatalf("a second proposal for the same program and folder: %+v", got)
+	}
+	// A rejected proposal does not come back.
+	rejected := []uiJobSuggestion{{ID: "p2", Name: "old", Command: []string{"make", "-C", "/tmp", "test"}, State: "dismissed"}}
+	if got := uiParseJobSuggestions(line("again", same, "02:00"), folders, nil, rejected); len(got) != 0 {
+		t.Fatalf("a rejected proposal came back: %+v", got)
+	}
+	// An existing job already runs it: nothing to add.
+	jobs := []scheduledJob{{Name: "tests", Command: []string{"make", "-C", "/tmp", "test"}, After: "23:00"}}
+	if got := uiParseJobSuggestions(line("tests-2", same, "02:00"), folders, jobs, nil); len(got) != 0 {
+		t.Fatalf("proposed what already runs: %+v", got)
+	}
+	// Same program and folder, different target: an update of that job, under its name.
+	got := uiParseJobSuggestions(line("whatever", `["make","-C","{folder}","ci"]`, "03:00"), folders, jobs, nil)
+	if len(got) != 1 || got[0].Updates != "tests" || got[0].Name != "tests" || got[0].After != "03:00" {
+		t.Fatalf("update = %+v", got)
+	}
+}
+
+func TestApprovingAnUpdateChangesThatJobAndKeepsItsOtherSettings(t *testing.T) {
+	m, repo, _ := uiIndexManager(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	dir := filepath.Join(home, ".cully")
+	_ = os.MkdirAll(dir, 0o700)
+	orig := `{"jobs": [{"name": "tests", "command": ["make", "-C", "` + repo + `", "test"], "after": "23:00", "timeout_minutes": 30}, {"name": "other", "command": ["git", "-C", "` + repo + `", "fetch"], "after": "01:00"}]}`
+	if err := os.WriteFile(filepath.Join(dir, "jobs.json"), []byte(orig), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	uiDB().put("jobsuggest", "u1", uiJobSuggestion{ID: "u1", Name: "tests", Command: []string{"make", "-C", repo, "ci"}, After: "03:00", Folder: repo, Why: "w", State: "new", Updates: "tests"})
+	if _, err := m.jobSuggestionAccept("u1", ""); err != nil {
+		t.Fatal(err)
+	}
+	jobs, err := loadJobs(filepath.Join(dir, "jobs.json"))
+	if err != nil || len(jobs) != 2 || jobs[0].Command[3] != "ci" || jobs[0].After != "03:00" || jobs[0].TimeoutMinutes != 30 || jobs[1].Name != "other" {
+		t.Fatalf("jobs = %+v, %v", jobs, err)
+	}
+	// An update for a job that was removed is refused rather than added as a new one.
+	uiDB().put("jobsuggest", "u2", uiJobSuggestion{ID: "u2", Name: "gone", Command: []string{"make", "-C", repo, "ci"}, After: "03:00", Folder: repo, Why: "w", State: "new", Updates: "gone"})
+	if _, err := m.jobSuggestionAccept("u2", ""); err == nil {
+		t.Fatal("updated a job that does not exist")
 	}
 }
