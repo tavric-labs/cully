@@ -133,6 +133,7 @@ type uiAgentView struct {
 }
 
 type uiManager struct {
+	voice     uiVoice // speech to text for the page's microphone button
 	cfg       uiConfig
 	repos     []string
 	mcp       *uiMCP
@@ -231,11 +232,21 @@ func (m *uiManager) addRepoInit(path string, initGit bool) (uiRepoInfo, error) {
 			root, err = uiRepoRoot(path)
 		}
 	}
+	noGit := false
 	if err != nil {
 		if strings.Contains(err.Error(), "dubious ownership") {
 			return uiRepoInfo{}, errors.New("git does not trust this folder because another user owns it; ask the owner to run: git config --global --add safe.directory " + path)
 		}
-		return uiRepoInfo{}, err
+		// No git here. That is fine: a task works in the folder directly, with no branch or
+		// worktree. Only a folder far too broad to work in is refused.
+		real, cerr := canonicalDir(path)
+		if cerr != nil {
+			return uiRepoInfo{}, errors.New("that folder does not exist")
+		}
+		if home, _ := os.UserHomeDir(); real == "/" || (home != "" && real == filepath.Clean(home)) {
+			return uiRepoInfo{}, errors.New("choose a project folder, not your home folder or the filesystem root")
+		}
+		root, noGit = real, true
 	}
 	m.repoMu.Lock()
 	defer m.repoMu.Unlock()
@@ -244,7 +255,10 @@ func (m *uiManager) addRepoInit(path string, initGit bool) (uiRepoInfo, error) {
 			return r, nil
 		}
 	}
-	ri := uiRepoInfo{Path: root, Name: filepath.Base(root), Remote: uiRepoRemote(root)}
+	ri := uiRepoInfo{Path: root, Name: filepath.Base(root), Git: !noGit}
+	if !noGit {
+		ri.Remote = uiRepoRemote(root)
+	}
 	m.repos = append(m.repos, root)
 	m.repoInfos = append(m.repoInfos, ri)
 	return ri, nil
@@ -330,8 +344,8 @@ func (m *uiManager) start(req uiStartRequest) (*uiAgent, error) {
 		if err != nil {
 			return nil, err
 		}
-		if out, err := exec.Command("git", "-C", repo, "rev-parse", "--git-dir").CombinedOutput(); err != nil {
-			return nil, fmt.Errorf("repo is not a git repository: %s", strings.TrimSpace(string(out)))
+		if err := exec.Command("git", "-C", repo, "rev-parse", "--git-dir").Run(); err != nil {
+			req.inPlaceDir = repo // no git: the task works in the folder itself, no worktree
 		}
 	}
 	title := strings.TrimSpace(req.Title)
@@ -949,6 +963,7 @@ type uiRepoInfo struct {
 	Name   string `json:"name"`
 	Remote string `json:"remote,omitempty"` // host/owner/name, never with credentials
 	Branch string `json:"branch,omitempty"` // the branch checked out now
+	Git    bool   `json:"git"`              // false for a folder with no git: tasks there work in it directly
 }
 
 func uiRepoRemote(path string) string {

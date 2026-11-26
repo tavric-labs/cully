@@ -136,8 +136,8 @@ func decodeJSON(t *testing.T, r *http.Response, v any) {
 func TestAddFolderCanSetUpGitInAPlainFolder(t *testing.T) {
 	m, _, _ := uiTestManager(t, uiWriteScript(t, fakeClaude), "tok-aaa1")
 	plain := t.TempDir()
-	if _, err := m.addRepoInit(plain, false); err == nil {
-		t.Fatal("a plain folder was accepted without asking for git")
+	if in, err := m.addRepoInit(plain, false); err != nil || in.Git {
+		t.Fatalf("a plain folder should be accepted as a folder with no git: %+v %v", in, err)
 	}
 	info, err := m.addRepoInit(plain, true)
 	if err != nil {

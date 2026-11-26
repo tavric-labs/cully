@@ -333,3 +333,27 @@ func TestHandoffForAnotherHarnessCarriesWhatTheUserWantsNext(t *testing.T) {
 		t.Fatal("an empty next step was added")
 	}
 }
+
+func TestAnyFolderCanStartATaskWithOrWithoutGit(t *testing.T) {
+	m, _, _ := uiTestManager(t, uiWriteScript(t, fakeClaude), "tok-aaa1")
+	plain := t.TempDir() // no git here
+	info, err := m.addRepo(plain)
+	if err != nil || info.Git {
+		t.Fatalf("a folder with no git was refused or marked as git: %+v, %v", info, err)
+	}
+	a, err := m.start(uiStartRequest{Repo: info.Path, Prompt: "tidy the notes"})
+	if err != nil {
+		t.Fatalf("a task could not start in a folder with no git: %v", err)
+	}
+	uiWaitState(t, a, "waiting")
+	if v := a.snapshot(); v.Branch != "no git" || v.Worktree != info.Path {
+		t.Fatalf("view = %+v", v)
+	}
+	if _, err := os.Stat(filepath.Join(ConfigDir(), "ui-worktrees", a.id)); err == nil {
+		t.Fatal("a worktree was made where there is no git")
+	}
+	home, _ := os.UserHomeDir()
+	if _, err := m.addRepo(home); err == nil {
+		t.Fatal("the home folder was accepted")
+	}
+}

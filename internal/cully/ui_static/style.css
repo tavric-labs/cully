@@ -807,3 +807,9 @@ details.tool summary { display: flex; flex-wrap: wrap; gap: 6px 10px; align-item
 table.ptable { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 6px; } table.ptable th { text-align: left; color: var(--soft); font-weight: 600; }
 table.ptable th, table.ptable td { padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
 @media (max-width: 760px) { .hlayout { grid-template-columns: 1fr; } .hnav { position: static; display: flex; overflow-x: auto; gap: 6px; } .hnav a { white-space: nowrap; } }
+
+/* voice */
+.row.voice { gap: 10px; align-items: center; margin-top: 8px; }
+.btn.mic.rec { background: var(--red); color: #fff; border-color: var(--red); }
+.micmeter { display: inline-block; width: 90px; height: 6px; border-radius: 3px; background: var(--surface2); overflow: hidden; }
+.micmeter i { display: block; height: 100%; width: 0; background: var(--forest-hi); transition: width 0.1s; }

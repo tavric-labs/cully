@@ -143,6 +143,18 @@ The **coach** reads all analysed sessions and suggests a job, skill, MCP server,
 
 Turn on **Keep going until checked** when you start an agent and, after each turn, Cully makes sure the agent ran tests after changing files, steers it when it repeats the same call or the same failing call, and judges its work against the "done when" lines you wrote. It stops after three rounds (up to six), after 200 tool calls, or after eight identical calls in a row. Every message Cully sends is shown in the feed.
 
+## Any folder, with or without git
+
+A task can start in any folder you can write in. In a git repository it gets its own branch and worktree. In a folder with no git it works in the folder directly, with no branch to review; the task shows "no git" where the branch would be. Cully works out which when the task starts, so you never have to set git up first. Your home folder and `/` are refused as too broad.
+
+## Voice
+
+The **Speak** button beside the task box starts a task by voice. Click it, say the task, and stop talking: it stops after 1.6 seconds of quiet (or click again, or press Escape; it gives up after 10 seconds of silence and stops at two minutes). The audio goes to the Cully server, which turns it into text with a speech model on that machine, and the text becomes the task. With **Start when I stop talking** on (the default) the task starts at once; turn it off to check the text first.
+
+The first click offers **Set up voice**: Cully creates a private Python environment under its folder (`voice/`), installs faster-whisper and downloads the `distil-large-v3` model, about 1.5 GB, which takes a few minutes. The model runs on the server's CPU, one worker stays loaded while you use it and stops after ten idle minutes. The audio is written to a private temporary file, deleted straight away and never kept or sent anywhere. To use a different engine, set `CULLY_STT_CMD` to a JSON list that prints the text, with `{file}` where the audio goes, for example `["whisper-cli","-m","/models/ggml-large-v3.bin","-f","{file}","-nt","-np"]`.
+
+The browser lets a page use the microphone only over https or on localhost, so over plain `http://10.x.x.x` the button explains this instead of recording. Use an SSH tunnel (`ssh -L 7777:127.0.0.1:7777 HOST`, then `http://127.0.0.1:7777`), or start the server with `--tls-cert` and `--tls-key` and open the https address.
+
 ## Continue any session as a task
 
 Every session on the Sessions page, from Claude, Codex or Cursor, has **Continue as a task**. It starts a new task in the harness Cully runs tasks in (the one you opened the page with, Claude by default) and gives it the session's handoff as its first message: the goal, what it did, where it ended, whether it drifted or left changes untested, what would have gone better, and the path to the full record, which the task is allowed to read. You can add what to do next. The handoff is built from the analysis the library already did in the background; a session not analysed yet gets only its size and checks, and the dialog says so. The original session is not touched, so work begun in Cursor carries on in Claude. A folder with no git works too: the task runs in it directly, with no worktree. Resume and Fork of a Claude session also work in a folder with no git, for the same reason.

@@ -108,7 +108,7 @@ func TestAddRepoAcceptsGitFoldersOnly(t *testing.T) {
 	}
 	file := filepath.Join(t.TempDir(), "f.txt")
 	os.WriteFile(file, []byte("x"), 0o644)
-	for _, bad := range []string{t.TempDir(), file, "/nonexistent/path", "", "relative/path"} {
+	for _, bad := range []string{file, "/nonexistent/path", "", "relative/path"} {
 		if _, err := m.addRepo(bad); err == nil {
 			t.Fatalf("addRepo(%q) accepted", bad)
 		}
@@ -152,8 +152,11 @@ func TestSessionAndRepoEndpoints(t *testing.T) {
 	if r := uiDo(t, "POST", srv.URL+"/api/repos", map[string]string{"path": repoB}, noHeader); r.StatusCode != 403 {
 		t.Fatalf("repos without X-Cully-UI: %d", r.StatusCode)
 	}
-	if r := uiDo(t, "POST", srv.URL+"/api/repos", map[string]string{"path": t.TempDir()}, uiAuthed); r.StatusCode != 400 {
-		t.Fatalf("non-git folder: %d", r.StatusCode)
+	if r := uiDo(t, "POST", srv.URL+"/api/repos", map[string]string{"path": t.TempDir()}, uiAuthed); r.StatusCode != 201 {
+		t.Fatalf("a folder with no git should be accepted: %d", r.StatusCode)
+	}
+	if r := uiDo(t, "POST", srv.URL+"/api/repos", map[string]string{"path": "/"}, uiAuthed); r.StatusCode != 400 {
+		t.Fatalf("the filesystem root should be refused: %d", r.StatusCode)
 	}
 	if r := uiDo(t, "POST", srv.URL+"/api/repos", map[string]string{"path": repoB}, uiAuthed); r.StatusCode != 201 {
 		t.Fatalf("add repo: %d", r.StatusCode)

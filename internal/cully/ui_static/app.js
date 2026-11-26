@@ -25,6 +25,7 @@
 
   // Static icon paths; elements are built with the DOM, never parsed from strings.
   const ICONS = {
+    mic: 'M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3zM5 11a7 7 0 0 0 14 0M12 18v3',
     plus: 'M12 5v14M5 12h14', send: 'M12 19V5M5 12l7-7 7 7', stop: 'M7 7h10v10H7z', copy: 'M9 9h11v11H9zM5 15V4h11',
     refresh: 'M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7', check: 'M5 12l5 5L20 7', down: 'M12 5v14M5 12l7 7 7-7',
     lock: 'M7 11V8a5 5 0 0 1 10 0v3M5 11h14v10H5z', external: 'M14 4h6v6M20 4l-9 9M18 14v5H5V6h5',
@@ -226,6 +227,104 @@
     input.addEventListener('change', () => { S.opts[key] = input.checked; lab.classList.toggle('on', input.checked); });
     return lab;
   }
+  // ---------- voice ----------
+  // Speak a task. The page records, stops itself when you go quiet, sends the audio to this Cully
+  // server, which turns it into text with a speech model on the same machine, and the text becomes
+  // the task. The browser only lets a page use the microphone on https or localhost.
+  const VOICE_LS = 'cully-voice-autostart';
+  const voiceAuto = () => { try { return localStorage.getItem(VOICE_LS) !== '0'; } catch (_) { return true; } };
+  const voiceAutoSet = (on) => { try { localStorage.setItem(VOICE_LS, on ? '1' : '0'); } catch (_) {} };
+  function voiceBlocked() {
+    if (window.isSecureContext && navigator.mediaDevices && window.MediaRecorder) return null;
+    return ['The browser blocks the microphone on this address.', 'A page may use the microphone only over https or on localhost. Either open Cully through an SSH tunnel (ssh -L 7777:127.0.0.1:7777 HOST, then http://127.0.0.1:7777), or start it with --tls-cert and --tls-key and open the https address.'];
+  }
+  // Reports progress on the button while the speech model is installed, then says when it is ready.
+  async function voiceWait(btn, rest) {
+    btn.disabled = true;
+    for (;;) {
+      let st;
+      try { st = await api('/api/voice'); } catch (e) { toast(e.message, true); rest(); return; }
+      if (st.ready) { toast('Voice is ready. Click Speak.'); rest(); return; }
+      if (st.state === 'failed') { toast('Voice setup failed: ' + (st.detail || 'unknown error'), true); rest(); return; }
+      btn.replaceChildren(icon('mic'), 'Setting up: ' + (st.detail || 'starting'));
+      await new Promise((r) => setTimeout(r, 3000));
+    }
+  }
+  // Records until you stop talking (or press the button again). Resolves with the audio, or null.
+  function voiceRecord(btn, onLevel) {
+    return new Promise(async (resolve, reject) => {
+      let stream;
+      try { stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } }); } catch (e) { reject(new Error(e && e.name === 'NotAllowedError' ? 'Microphone access was refused. Allow it for this page and try again.' : 'No microphone found.')); return; }
+      const mime = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/mp4'].find((m) => MediaRecorder.isTypeSupported(m)) || '';
+      const rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+      const chunks = [];
+      rec.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const an = ctx.createAnalyser(); an.fftSize = 1024;
+      ctx.createMediaStreamSource(stream).connect(an);
+      const buf = new Uint8Array(an.fftSize);
+      const t0 = Date.now(); let spoke = false; let quietSince = 0; let done = false;
+      const finish = (keep) => {
+        if (done) return; done = true; clearInterval(timer); document.removeEventListener('keydown', onKey);
+        rec.onstop = () => { stream.getTracks().forEach((t) => t.stop()); ctx.close().catch(() => {}); resolve(keep && chunks.length ? new Blob(chunks, { type: rec.mimeType || mime || 'audio/webm' }) : null); };
+        if (rec.state !== 'inactive') rec.stop(); else rec.onstop();
+      };
+      const onKey = (e) => { if (e.key === 'Escape') finish(false); };
+      document.addEventListener('keydown', onKey);
+      btn.onclick = () => finish(true);
+      const timer = setInterval(() => {
+        an.getByteTimeDomainData(buf);
+        let sum = 0; for (const v of buf) { const x = (v - 128) / 128; sum += x * x; }
+        const rms = Math.sqrt(sum / buf.length);
+        onLevel(Math.min(1, rms * 6));
+        const now = Date.now();
+        if (rms > 0.02) { spoke = true; quietSince = 0; } else if (spoke && !quietSince) quietSince = now;
+        if (spoke && quietSince && now - quietSince > 1600) finish(true);   // you stopped talking
+        else if (!spoke && now - t0 > 10000) finish(false);                 // nothing was said
+        else if (now - t0 > 120000) finish(true);                           // two minutes is the longest
+      }, 100);
+      rec.start(250);
+    });
+  }
+  // The microphone button and its "start straight away" switch, for a text box and its form.
+  function voiceControls(ta, form) {
+    const btn = h('button', { type: 'button', class: 'btn ghost mic', title: 'Speak the task. It stops when you go quiet.' }, icon('mic'), 'Speak');
+    const meter = h('span', { class: 'micmeter' }); const fillBar = h('i'); meter.append(fillBar);
+    const auto = h('input', Object.assign({ type: 'checkbox', 'aria-label': 'Start as soon as I stop talking' }, voiceAuto() ? { checked: true } : {}));
+    auto.addEventListener('change', () => voiceAutoSet(auto.checked));
+    const rest = () => { btn.className = 'btn ghost mic'; btn.replaceChildren(icon('mic'), 'Speak'); btn.disabled = false; btn.onclick = begin; fillBar.style.width = '0%'; };
+    async function begin() {
+      const blocked = voiceBlocked();
+      if (blocked) { confirmDialog({ title: blocked[0], body: [blocked[1]], confirmLabel: 'OK', onConfirm: () => {} }); return; }
+      btn.disabled = true;
+      let st;
+      try { st = await api('/api/voice'); } catch (e) { toast(e.message, true); rest(); return; }
+      if (!st.ready) {
+        btn.disabled = false;
+        if (st.state === 'installing') { voiceWait(btn, rest); return; }
+        confirmDialog({ title: 'Set up voice?', body: ['Cully will install a speech model in its own folder on this machine (about 1.5 GB: faster-whisper and distil-large-v3). Your audio is turned into text here and is never sent anywhere or kept.', 'It takes a few minutes the first time; you can keep using the page.'], confirmLabel: 'Set it up',
+          onConfirm: async () => { await api('/api/voice/setup', { method: 'POST', body: JSON.stringify({}) }); voiceWait(btn, rest); } });
+        return;
+      }
+      btn.disabled = false; btn.className = 'btn mic rec'; btn.replaceChildren(icon('stop'), 'Listening… click to stop');
+      let blob;
+      try { blob = await voiceRecord(btn, (l) => { fillBar.style.width = Math.round(l * 100) + '%'; }); } catch (e) { toast(e.message, true); rest(); return; }
+      if (!blob) { toast('Nothing was recorded'); rest(); return; }
+      btn.disabled = true; btn.className = 'btn ghost mic'; btn.replaceChildren(icon('refresh'), 'Turning it into text…');
+      try {
+        const res = await fetch('/api/voice/transcribe', { method: 'POST', credentials: 'same-origin', headers: { 'X-Cully-UI': '1', 'Content-Type': blob.type || 'audio/webm' }, body: blob });
+        const j = await res.json();
+        if (!res.ok) throw new Error(j.error || 'Could not transcribe that');
+        if (!j.text) { toast('I did not catch anything. Try again.'); rest(); return; }
+        ta.value = (ta.value.trim() ? ta.value.trim() + ' ' : '') + j.text; ta.dispatchEvent(new Event('input'));
+        rest();
+        if (auto.checked) form.requestSubmit(); else { ta.focus(); toast('Check it, then start the task'); }
+      } catch (e) { toast(e.message, true); rest(); }
+    }
+    btn.onclick = begin;
+    return h('div', { class: 'row voice' }, btn, meter, h('label', { class: 'faint small', title: 'Start the task as soon as the words are turned into text' }, auto, ' Start when I stop talking'));
+  }
+
   function mountHome() {
     S.homeGate = !claudeInUse();
     if (S.homeGate) {
@@ -274,6 +373,7 @@
           toggle('recall', 'Recall', 'Ask Cully memory what is relevant (needs the Cully MCP signed in)'),
           toggle('scout', 'Scout', 'Search the web for current practice and pitfalls'), loopToggle, seg, repo),
         h('div', { class: 'row' }, later, start)), err);
+    form.insertBefore(voiceControls(ta, form), err);
     later.addEventListener('click', async () => {
       err.hidden = true;
       try {
@@ -1775,7 +1875,7 @@
         h('a', { class: 'glance-row', href: '#/dashboard/activity' }, h('span', { class: 'gl' }, 'This folder'), h('span', { class: 'gv' }, activity && activity.recorded ? activity.facts.edits + (activity.facts.edits === 1 ? ' edit' : ' edits') + ' recorded' : 'Nothing recorded yet'), h('span', { class: 'ga' }, 'Details'))),
       h('section', { class: 'start-else' }, h('h3', {}, 'Start somewhere else'), h('p', { class: 'faint' }, 'Choose any folder on this machine and start a new task there.'),
         h('div', { class: 'row' }, h('button', { class: 'btn', onclick: () => openFolderChooser() }, icon('folder'), 'Choose a folder'),
-          ...recentFolders(5).filter((r) => r.git && r.path !== S.opts.repo).map((r) => h('button', { class: 'chip', title: r.path, onclick: () => startIn(r.path) }, icon('folder'), r.name)))));
+          ...recentFolders(5).filter((r) => r.path !== S.opts.repo).map((r) => h('button', { class: 'chip', title: r.path, onclick: () => startIn(r.path) }, icon('folder'), r.name)))));
     renderNeeds();
   }
 
@@ -2187,18 +2287,15 @@
   // Choose any folder on this machine and start there.
   function recentFolders(limit) {
     const seen = new Map();
-    for (const r of (S.info && S.info.repoInfo) || []) seen.set(r.path, { path: r.path, name: r.name, git: true });
+    for (const r of (S.info && S.info.repoInfo) || []) seen.set(r.path, { path: r.path, name: r.name, git: r.git !== false });
     for (const x of S.sessions || []) { const p = x.repo || x.cwd; if (p && !seen.has(p)) seen.set(p, { path: p, name: x.name, git: !!x.repo }); }
     return [...seen.values()].slice(0, limit || 6);
   }
   async function startIn(path, init) {
     try { const info = await addFolder(path, init); closeMCP(); location.hash = '#/'; if (S.route.name === 'home') mountHome(); toast('Ready to start a task in ' + info.name); } catch (e) { toast(e.message, true); }
   }
-  // A folder that is not a git repository needs one first: agents work on their own branch.
-  function startHere(path, isGit) {
-    if (isGit) return startIn(path);
-    confirmDialog({ title: 'Set up git here?', body: [path + ' is not a git repository.', 'Agents work on their own branch, so Cully will run git init and make an empty first commit. Your files are not changed.'], confirmLabel: 'Set up git and start', onConfirm: () => startIn(path, true) });
-  }
+  // Any folder works. With git a task gets its own branch and worktree; without it the task works in
+  // the folder directly. Cully works out which when the task starts.
   function openFolderChooser(start) {
     const state = { path: start || '~', showDot: false, data: null, err: '' };
     const body = h('div', { class: 'mbody chooser' });
@@ -2230,10 +2327,10 @@
         state.err ? h('div', { class: 'err' }, state.err) : null,
         d ? h('ul', { class: 'frows' }, ...(d.entries.length ? d.entries.map((e) => h('li', {},
           h('button', { class: 'frow', onclick: () => load(e.path) }, icon('folder'), h('span', { class: 'fn' }, e.name), e.isGit ? h('span', { class: 'chip mono' }, icon('branch'), 'git repository') : null, e.writable ? null : h('span', { class: 'chip' }, icon('lock'), 'read only')),
-          e.writable ? h('button', { class: 'btn small', onclick: () => startHere(e.path, e.isGit) }, 'Start here') : null)) : [h('li', { class: 'faint' }, 'No folders here.')])) : h('p', { class: 'faint' }, 'Loading…'),
+          e.writable ? h('button', { class: 'btn small', onclick: () => startIn(e.path) }, 'Start here') : null)) : [h('li', { class: 'faint' }, 'No folders here.')])) : h('p', { class: 'faint' }, 'Loading…'),
         d && d.truncated ? h('p', { class: 'faint small' }, 'Showing the first folders only. Paste a path to go further.') : null,
         h('div', { class: 'row foot' }, pathIn,
-          d && d.writable ? h('button', { class: 'btn', onclick: () => startHere(d.path, d.isGit) }, icon('plus'), 'Use this folder')
+          d && d.writable ? h('button', { class: 'btn', onclick: () => startIn(d.path) }, icon('plus'), 'Use this folder')
             : h('span', { class: 'faint small' }, d ? 'You do not have write access to this folder, so Cully cannot work here.' : '')));
     }
     draw();
@@ -2245,10 +2342,10 @@
   // Which harness (Claude Code, Codex, Cursor) a session belongs to. Only tasks started here are tied to one.
   const harnessChip = (agent) => (agent ? h('span', { class: 'chip harness h-' + agent, title: 'The harness this session ran in' }, AGENT_LABEL[agent] || agent) : null);
   async function startHere(sess) {
-    try { await addFolder(sess.repo); location.hash = '#/'; toast('Ready to start a task in ' + sess.name); } catch (e) { toast(e.message, true); }
+    try { await addFolder(sess.repo || sess.cwd); location.hash = '#/'; toast('Ready to start a task in ' + sess.name); } catch (e) { toast(e.message, true); }
   }
   async function viewHistory(sess) {
-    try { await addFolder(sess.repo); location.hash = '#/dashboard/status'; } catch (e) { toast(e.message, true); }
+    try { await addFolder(sess.repo || sess.cwd); location.hash = '#/dashboard/status'; } catch (e) { toast(e.message, true); }
   }
   function renderSessions() {
     const box = $('sessions');
@@ -2401,8 +2498,8 @@
             snapChip(x.snapshot))),
         h('div', { class: 'row hact' },
           rec && S.hist && S.hist.agent === 'claude' ? h('button', { class: 'btn small', title: 'Start a new session from this one; the original stays as it is', onclick: () => continueSession(rec, true) }, icon('branch'), 'Fork') : null,
-          h('button', { class: rec ? 'btn ghost small' : 'btn small', disabled: !x.repo, title: x.repo ? '' : 'This folder is not a git repository', onclick: () => startHere(x) }, icon('plus'), 'New task here'),
-          h('button', { class: 'btn ghost small', disabled: !x.repo, onclick: () => viewHistory(x) }, 'View history')));
+          h('button', { class: rec ? 'btn ghost small' : 'btn small', disabled: !(x.repo || x.cwd), onclick: () => startHere(x) }, icon('plus'), 'New task here'),
+          h('button', { class: 'btn ghost small', disabled: !(x.repo || x.cwd), onclick: () => viewHistory(x) }, 'View history')));
     })));
   }
   function drawHistory() {
