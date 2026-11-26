@@ -1,10 +1,7 @@
 package cully
 
 import (
-	"encoding/json"
 	"errors"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
 )
@@ -36,15 +33,9 @@ type uiCoach struct {
 
 var uiCoachKinds = map[string]bool{"job": true, "workflow": true, "skill": true, "mcp": true, "habit": true, "eval": true}
 
-func uiCoachPath() string { return filepath.Join(cullyDir(), "coach.json") }
-
 func (m *uiManager) coachGet() uiCoach {
-	m.coachMu.Lock()
-	defer m.coachMu.Unlock()
 	c := uiCoach{Items: []uiCoachItem{}}
-	if b, err := os.ReadFile(uiCoachPath()); err == nil {
-		_ = json.Unmarshal(b, &c)
-	}
+	uiDB().get("coach", "latest", &c)
 	if c.Items == nil {
 		c.Items = []uiCoachItem{}
 	}
@@ -117,13 +108,7 @@ func (m *uiManager) coachRun() (uiCoach, error) {
 	if len(c.Items) == 0 {
 		return uiCoach{}, errors.New("the coach gave no suggestions this time")
 	}
-	m.coachMu.Lock()
-	defer m.coachMu.Unlock()
-	b, _ := json.Marshal(c)
-	tmp := uiCoachPath() + ".tmp"
-	if os.WriteFile(tmp, b, 0o600) == nil {
-		_ = os.Rename(tmp, uiCoachPath())
-	}
+	uiDB().put("coach", "latest", c)
 	return c, nil
 }
 

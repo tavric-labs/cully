@@ -86,3 +86,41 @@ func TestServerDetailEndpoints(t *testing.T) {
 		t.Fatalf("codex details: %d", r.StatusCode)
 	}
 }
+
+func TestTheHarnessIsProbedOnceToLearnItsServersAndNotRepeatedWhileFresh(t *testing.T) {
+	m, _, _ := uiTestManager(t, uiWriteScript(t, fakeClaude), "tok-aaa1")
+	saved, savedProbe := uiHarnessVersion, uiProbeCall
+	uiHarnessVersion = func(string) string { return "1.0" }
+	t.Cleanup(func() { uiHarnessVersion, uiProbeCall = saved, savedProbe })
+	_ = os.WriteFile(filepath.Join(ConfigDir(), ".claude.json"), []byte(`{"mcpServers":{"gitlab":{"type":"http","url":"https://g.example/mcp"},"gerrit":{"type":"http","url":"https://r.example/mcp"}}}`), 0o600)
+	calls := 0
+	uiProbeCall = func() ([]byte, error) {
+		calls++
+		return []byte(`{"type":"system","subtype":"init","model":"m","tools":["Bash","mcp__gitlab__get_issue"],"slash_commands":["/mcp__gitlab__review"],"mcp_servers":[{"name":"gitlab","status":"connected"},{"name":"gerrit","status":"needs-auth"}]}` + "\n"), nil
+	}
+	m.probeIfDue()
+	m.probeIfDue()
+	if calls != 1 {
+		t.Fatalf("probed %d times; the second look should find fresh data", calls)
+	}
+	info := m.harnessInfo("claude")
+	st := map[string]string{}
+	for _, s := range info.MCP {
+		st[s.Name] = s.Status
+	}
+	if st["gitlab"] != "connected" || st["gerrit"] != "needs-auth" {
+		t.Fatalf("statuses = %v", st)
+	}
+	d, _ := m.serverDetail("claude", "gitlab")
+	if len(d.Tools) != 1 || d.Prompts[0] != "review" {
+		t.Fatalf("gitlab = %+v", d)
+	}
+	g, _ := m.serverDetail("claude", "gerrit")
+	if len(g.Tools) != 0 || !strings.Contains(g.Note, "needs-auth") {
+		t.Fatalf("a server that is not connected should say why it has no tools: %+v", g)
+	}
+	uiProbeCall = func() ([]byte, error) { return []byte("nothing useful\n"), nil }
+	if _, err := m.probeHarness(); err == nil {
+		t.Fatal("a probe that reported no servers was treated as success")
+	}
+}

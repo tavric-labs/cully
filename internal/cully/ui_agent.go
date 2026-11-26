@@ -148,12 +148,13 @@ type uiManager struct {
 		at   time.Time
 		info uiHarnessInfo
 	}
-	lastMCP   map[string]string
-	syncMu    sync.Mutex
-	initNames *uiInitNames
-	syncAt    time.Time
-	snapMu    sync.Mutex
-	snapCache map[string]struct {
+	lastMCP    map[string]string
+	syncMu     sync.Mutex
+	initNames  *uiInitNames
+	idxWritten map[string]string // session documents as last written, so only changes are saved
+	syncAt     time.Time
+	snapMu     sync.Mutex
+	snapCache  map[string]struct {
 		at   time.Time
 		snap uiSnapshot
 	}

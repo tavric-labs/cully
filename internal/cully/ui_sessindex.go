@@ -129,29 +129,42 @@ type uiLibrary struct {
 	} `json:"analysis"`
 }
 
-func uiIndexPath() string { return filepath.Join(cullyDir(), "session-index.json") }
-
 func (m *uiManager) loadIndexLocked() {
 	if m.index != nil {
 		return
 	}
 	m.index = &uiIndexFile{Sessions: map[string]*uiIndexed{}}
-	if b, err := os.ReadFile(uiIndexPath()); err == nil {
-		var f uiIndexFile
-		if json.Unmarshal(b, &f) == nil && f.Sessions != nil {
-			m.index = &f
+	m.idxWritten = map[string]string{}
+	db := uiDB()
+	var meta uiIndexFile
+	if db.get("index", "meta", &meta) {
+		meta.Sessions = m.index.Sessions
+		m.index = &meta
+	}
+	for _, raw := range db.all("session") {
+		var e uiIndexed
+		if json.Unmarshal(raw, &e) == nil && e.ID != "" {
+			m.index.Sessions[e.ID] = &e
+			m.idxWritten[e.ID] = string(raw)
 		}
 	}
 }
 
+// saveIndexLocked writes the settings and only the sessions that changed since they were last written.
 func (m *uiManager) saveIndexLocked() {
-	b, err := json.Marshal(m.index)
-	if err != nil {
-		return
-	}
-	tmp := uiIndexPath() + ".tmp"
-	if os.WriteFile(tmp, b, 0o600) == nil {
-		_ = os.Rename(tmp, uiIndexPath())
+	db := uiDB()
+	meta := *m.index
+	meta.Sessions = nil
+	db.put("index", "meta", meta)
+	for id, e := range m.index.Sessions {
+		b, err := json.Marshal(e)
+		if err != nil {
+			continue
+		}
+		if m.idxWritten[id] != string(b) {
+			db.put("session", id, e)
+			m.idxWritten[id] = string(b)
+		}
 	}
 }
 
@@ -641,6 +654,7 @@ func (m *uiManager) runIndexer(ctx context.Context) {
 		m.rulesIfDue()
 		m.syncAgentsIfDue()
 	}
+	go m.probeIfDue()
 	tick()
 	t := time.NewTicker(uiIndexTick)
 	defer t.Stop()

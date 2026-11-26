@@ -1272,10 +1272,13 @@
         const c = h('div', { class: 'scard', role: 'button', tabindex: '0', 'data-name': m.name, 'aria-label': 'Open ' + m.name, onclick: open, onkeydown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); } } },
           h('div', { class: 'sc-top' }, h('b', { class: 'sc-name' }, m.name), sw),
           h('div', { class: 'sc-target faint small' }, (m.kind === 'http' ? 'Web address ' : 'Program ') + (m.target || '')),
-          h('div', { class: 'row' }, m.status ? h('span', { class: 'chip ' + (/connect/i.test(m.status) ? 'ok' : 'warn') }, h('span', { class: 'dot ' + (/connect/i.test(m.status) ? 'working' : 'waiting') }), m.status) : h('span', { class: 'chip' }, 'Status shown after a task starts'), h('span', { class: 'sc-open faint small' }, 'Tools and prompts ›')));
+          h('div', { class: 'row' }, m.status ? h('span', { class: 'chip ' + (/^connected/i.test(m.status) ? 'ok' : 'warn') }, h('span', { class: 'dot ' + (/^connected/i.test(m.status) ? 'working' : 'waiting') }), m.status === 'needs-auth' ? 'Needs sign-in' : m.status === 'failed' ? 'Failed to connect' : m.status) : h('span', { class: 'chip' }, 'Not checked yet'), h('span', { class: 'sc-open faint small' }, 'Tools and prompts ›')));
         return c;
       }));
-      body.append(card('Connected servers', 'Click a server to see its tools, prompts and resources.', summary, info.mcp.length ? grid : h('p', { class: 'faint small' }, 'No servers are connected to ' + info.name + '.'), bar));
+      const unchecked = info.tasksUseIt && info.mcp.length && info.mcp.every((m) => !m.status);
+      const check = unchecked ? h('div', { class: 'ctxnote' }, icon('alert'), h('div', {}, h('b', {}, 'Cully has not checked these servers yet'), h('div', { class: 'faint small' }, 'Claude reports which servers connected, and what each offers, when it starts. Cully can start it once for a moment to find out; it costs a fraction of a cent.')),
+        h('button', { class: 'btn small', onclick: async (e) => { e.currentTarget.disabled = true; e.currentTarget.textContent = 'Checking…'; try { const r = await api('/api/harness/probe', { method: 'POST' }); toast('Checked ' + r.servers + ' servers'); renderHarness(); } catch (x) { toast(x.message, true); renderHarness(); } } }, 'Check now')) : null;
+      body.append(card('Connected servers', 'Click a server to see its tools, prompts and resources.', check, summary, info.mcp.length ? grid : h('p', { class: 'faint small' }, 'No servers are connected to ' + info.name + '.'), bar));
       syncBar();
     } else if (section === 'skills') {
       const q = h('input', { type: 'search', class: 'bsearch', placeholder: 'Search skills', 'aria-label': 'Search skills', autocomplete: 'off' });
@@ -1693,7 +1696,7 @@
       if (a.installed) {
         for (const it of a.items) rows.push(setupRow(it.OK === undefined ? it.ok : it.ok, it.label, it.hint));
         if (mcp) {
-          if (local || mcp.state === 'not-configured') rows.push(h('li', { class: 'ok' }, icon('check'), h('span', { class: 'sl' }, 'Keeping history on this machine (local disk mode)'), h('button', { class: 'btn ghost small', onclick: () => connectMCPDialog(a.agent) }, icon('lock'), 'Connect the Cully MCP')));
+          if (local || mcp.state === 'not-configured') rows.push(h('li', { class: 'ok' }, icon('check'), h('span', { class: 'sl' }, 'Keeping history on this machine (local mode, SQLite)'), h('button', { class: 'btn ghost small', onclick: () => connectMCPDialog(a.agent) }, icon('lock'), 'Connect the Cully MCP')));
           else if (mcp.state === 'connected') rows.push(setupRow(true, 'Cully memory connected'));
           else if (mcp.state === 'needs-auth') rows.push(setupRow(false, 'Cully memory needs sign-in', '', h('button', { class: 'btn small', onclick: () => openMCP(a.agent) }, icon('lock'), 'Sign in')));
           else if (mcp.state === 'unhealthy') rows.push(setupRow(false, "Cully memory can't be reached", 'Check that the Cully server is up.'));
@@ -1882,7 +1885,7 @@
     chip.hidden = false;
     chip.className = 'mcpchip ' + (need.length ? 'warn' : ok || local ? 'ok' : '');
     chip.title = local ? 'Cully keeps your session history in files on this machine.' : '';
-    chip.replaceChildren(icon(local ? 'check' : 'lock'), h('span', { class: 'lbl' }, local ? 'Local disk mode' : need.length ? 'Cully MCP needs sign-in' : ok ? 'Cully MCP connected' : 'Cully MCP not connected'));
+    chip.replaceChildren(icon(local ? 'check' : 'lock'), h('span', { class: 'lbl' }, local ? 'Local mode (SQLite)' : need.length ? 'Cully MCP needs sign-in' : ok ? 'Cully MCP connected' : 'Cully MCP not connected'));
     chip.onclick = () => openMCP((need[0] || mcpUsed()[0] || S.mcp.find((m) => m.state !== 'not-installed') || S.mcp[0]).agent);
   }
   function drawMCPBanner() {
@@ -1929,11 +1932,12 @@
   let modalSig = '';
   function renderLocalModal() {
     const used = mcpUsed().map((m) => m.agent);
-    const modal = h('div', { class: 'modal', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Local disk mode' },
-      h('header', {}, h('h2', {}, 'Local disk mode'), h('button', { class: 'btn ghost small sp', onclick: closeMCP }, 'Close')),
+    const modal = h('div', { class: 'modal', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Local mode' },
+      h('header', {}, h('h2', {}, 'Local mode'), h('button', { class: 'btn ghost small sp', onclick: closeMCP }, 'Close')),
       h('div', { class: 'mbody' },
-        h('p', {}, 'Cully keeps your session history, handoffs and advice in files on this machine. Nothing is sent to a server.'),
-        h('p', {}, 'To keep memory across machines and share it with a team, connect the Cully MCP:'),
+        h('p', {}, 'Cully keeps your session history, agents, evals and advice in one small SQLite database on this machine (cully.db). Nothing is sent to a server, and nothing needs Postgres or Mem0 installed.'),
+        h('div', { class: 'callout' }, h('b', {}, 'Local mode is less efficient. '), 'It recalls past work by keyword only, so agents may be given more context than needed and use more tokens. The Cully MCP (Postgres and Mem0) finds the few relevant records by meaning, keeps memory across machines and shares it with a team.'),
+        h('p', {}, 'To set it up, connect the Cully MCP:'),
         h('div', { class: 'callout' }, h('code', { class: 'k' }, 'cully mcp add --agent ' + (used[0] || 'claude') + ' --url <your Cully MCP URL> --oauth'), ', then sign in from here.')));
     const bg = h('div', { class: 'modal-bg', onclick: (e) => { if (e.target === bg) closeMCP(); } }, modal);
     $('modal-root').replaceChildren(bg);

@@ -50,8 +50,12 @@ func TestCoachNeedsNamedSessionsThenSavesAndRunsOncePerHour(t *testing.T) {
 	if asked != 1 {
 		t.Fatalf("the coach ran again within the hour: %d", asked)
 	}
-	if st, _ := os.Stat(filepath.Join(cullyDir(), "coach.json")); st == nil || st.Mode().Perm() != 0o600 {
-		t.Fatal("coach file missing or not private")
+	var kept uiCoach
+	if !uiDB().get("coach", "latest", &kept) || len(kept.Items) != 1 {
+		t.Fatal("the coach's suggestions were not kept in the database")
+	}
+	if st, err := os.Stat(uiStorePath()); err != nil || st.Mode().Perm() != 0o600 {
+		t.Fatalf("database file: %v %v", st, err)
 	}
 	_ = time.Now
 }

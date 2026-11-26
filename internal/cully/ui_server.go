@@ -133,6 +133,7 @@ func newUIServer(m *uiManager, token string, loopback bool) http.Handler {
 	mux.Handle("POST /api/rules/{id}/approve", s.api(s.rulesApproveH))
 	mux.Handle("POST /api/rules/{id}/dismiss", s.api(s.rulesDismissH))
 	mux.Handle("GET /api/harness", s.api(s.harnessGet))
+	mux.Handle("POST /api/harness/probe", s.api(s.harnessProbe))
 	mux.Handle("GET /api/harness/server", s.api(s.harnessServerGet))
 	mux.Handle("POST /api/harness/server/details", s.api(s.harnessServerLoad))
 	mux.Handle("GET /api/usage", s.api(s.usageGet))
@@ -145,6 +146,11 @@ func newUIServer(m *uiManager, token string, loopback bool) http.Handler {
 	mux.Handle("DELETE /api/identities/{id}", s.api(s.identityDeleteH))
 	mux.Handle("POST /api/identities/{id}/run", s.api(s.identityRunH))
 	mux.Handle("POST /api/identities/{id}/approve", s.api(s.identityApproveH))
+	mux.Handle("GET /api/identities/{id}/evals", s.api(s.agentEvalsGet))
+	mux.Handle("POST /api/identities/{id}/evals/suggest", s.api(s.agentEvalsSuggest))
+	mux.Handle("POST /api/identities/{id}/evals/run", s.api(s.agentEvalsRun))
+	mux.Handle("POST /api/identities/{id}/evals/{cid}/approve", s.api(s.agentEvalsApprove))
+	mux.Handle("DELETE /api/identities/{id}/evals/{cid}", s.api(s.agentEvalsRemove))
 	mux.Handle("GET /api/research", s.api(s.researchGet))
 	mux.Handle("POST /api/coach/run", s.api(s.coachRunH))
 	mux.Handle("POST /api/evals/{id}/run", s.api(s.evalRunStart))
@@ -1184,4 +1190,56 @@ func (s *uiServer) harnessServerLoad(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	uiJSON(w, http.StatusOK, d)
+}
+
+func (s *uiServer) agentEvalsGet(w http.ResponseWriter, r *http.Request) {
+	e, err := s.m.agentEvalsView(r.PathValue("id"))
+	if err != nil {
+		uiError(w, http.StatusNotFound, err.Error())
+		return
+	}
+	uiJSON(w, http.StatusOK, e)
+}
+
+func (s *uiServer) agentEvalsSuggest(w http.ResponseWriter, r *http.Request) {
+	n, err := s.m.agentEvalSuggest(r.PathValue("id"))
+	if err != nil {
+		uiError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	uiJSON(w, http.StatusOK, map[string]int{"added": n})
+}
+
+func (s *uiServer) agentEvalsRun(w http.ResponseWriter, r *http.Request) {
+	id, err := s.m.agentEvalRun(r.PathValue("id"))
+	if err != nil {
+		uiError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	uiJSON(w, http.StatusCreated, map[string]string{"run": id})
+}
+
+func (s *uiServer) agentEvalsApprove(w http.ResponseWriter, r *http.Request) {
+	if err := s.m.agentEvalSetCase(r.PathValue("id"), r.PathValue("cid"), true, false); err != nil {
+		uiError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *uiServer) agentEvalsRemove(w http.ResponseWriter, r *http.Request) {
+	if err := s.m.agentEvalSetCase(r.PathValue("id"), r.PathValue("cid"), false, true); err != nil {
+		uiError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *uiServer) harnessProbe(w http.ResponseWriter, r *http.Request) {
+	n, err := s.m.probeHarness()
+	if err != nil {
+		uiError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	uiJSON(w, http.StatusOK, map[string]int{"servers": n})
 }

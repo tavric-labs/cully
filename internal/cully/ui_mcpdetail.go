@@ -47,9 +47,6 @@ type uiServerDetail struct {
 	Known       bool           `json:"known"` // a task has run, so the tool names are known
 }
 
-func uiInitPath() string    { return filepath.Join(cullyDir(), "harness-init.json") }
-func uiCatalogPath() string { return filepath.Join(cullyDir(), "mcp-catalog.json") }
-
 type uiInitNames struct {
 	Tools    []string  `json:"tools"`
 	Commands []string  `json:"commands"`
@@ -60,20 +57,16 @@ func (m *uiManager) rememberInit(tools, commands []string) {
 	m.infoMu.Lock()
 	defer m.infoMu.Unlock()
 	m.initNames = &uiInitNames{Tools: tools, Commands: commands, Seen: time.Now().UTC()}
-	if b, err := json.Marshal(m.initNames); err == nil {
-		uiWriteAtomic(uiInitPath(), b)
-	}
+	uiDB().put("cache", "init", m.initNames)
 }
 
 func (m *uiManager) initKnown() *uiInitNames {
 	m.infoMu.Lock()
 	defer m.infoMu.Unlock()
 	if m.initNames == nil {
-		if b, err := os.ReadFile(uiInitPath()); err == nil {
-			var n uiInitNames
-			if json.Unmarshal(b, &n) == nil {
-				m.initNames = &n
-			}
+		var n uiInitNames
+		if uiDB().get("cache", "init", &n) {
+			m.initNames = &n
 		}
 	}
 	return m.initNames
@@ -81,9 +74,7 @@ func (m *uiManager) initKnown() *uiInitNames {
 
 func uiReadCatalog() map[string][]uiToolDetail {
 	out := map[string][]uiToolDetail{}
-	if b, err := os.ReadFile(uiCatalogPath()); err == nil {
-		_ = json.Unmarshal(b, &out)
-	}
+	uiDB().get("cache", "catalog", &out)
 	return out
 }
 
@@ -124,6 +115,9 @@ func (m *uiManager) serverDetail(agent, name string) (uiServerDetail, error) {
 	sort.Slice(d.Tools, func(i, j int) bool { return d.Tools[i].Name < d.Tools[j].Name })
 	sort.Strings(d.Prompts)
 	d.Note = "Claude Code does not report a server's resources, so Cully cannot list them."
+	if d.Status != "" && !strings.Contains(strings.ToLower(d.Status), "connected") {
+		d.Note = "This server is " + d.Status + ", so it reported no tools. " + d.Note
+	}
 	if name == "cully" {
 		if cat, err := mcpcat.Catalog("ui"); err == nil {
 			d.Tools, d.DetailsFrom = d.Tools[:0], "Cully's own tool list"
@@ -231,10 +225,53 @@ func (m *uiManager) loadServerDetails(agent, name string) (uiServerDetail, error
 	}
 	all := uiReadCatalog()
 	all[agent+"|"+name] = list
-	if b, err := json.Marshal(all); err == nil {
-		uiWriteAtomic(uiCatalogPath(), b)
-	}
+	uiDB().put("cache", "catalog", all)
 	return m.serverDetail(agent, name)
 }
 
 func uiMCPDefsRaw() map[string]json.RawMessage { return uiMCPDefs() }
+
+// uiProbeCall starts the harness for one throwaway turn and returns its stream. The start line lists every
+// tool and prompt it loaded and the status of each connected server, which is what the Harness page shows.
+var uiProbeCall = func() ([]byte, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, claudeExecutable(), "-p", "--output-format", "stream-json", "--verbose", "--max-turns", "1", "--model", "haiku", "--permission-mode", "plan", "--no-session-persistence")
+	cmd.Dir = ConfigDir()
+	cmd.Stdin = strings.NewReader("Reply with the single word ok.\n")
+	return cmd.Output()
+}
+
+// probeHarness records what the harness reports at start. It costs one very small turn.
+func (m *uiManager) probeHarness() (int, error) {
+	out, err := uiProbeCall()
+	if err != nil && len(out) == 0 {
+		return 0, errors.New("could not start Claude to check the servers")
+	}
+	servers := 0
+	for _, line := range strings.Split(string(out), "\n") {
+		p := parseStreamLine([]byte(line))
+		if len(p.InitTools) > 0 {
+			m.rememberInit(p.InitTools, p.InitCommands)
+		}
+		if len(p.MCP) > 0 {
+			m.rememberMCP(p.MCP)
+			servers = len(p.MCP)
+		}
+	}
+	m.infoMu.Lock()
+	delete(m.infoCache, "claude") // the inventory shows the new statuses at once
+	m.infoMu.Unlock()
+	if servers == 0 {
+		return 0, errors.New("Claude did not report its servers")
+	}
+	return servers, nil
+}
+
+// probeIfDue checks the servers once when the page starts if nothing is known or what is known is old.
+func (m *uiManager) probeIfDue() {
+	if n := m.initKnown(); n != nil && time.Since(n.Seen) < 12*time.Hour {
+		return
+	}
+	_, _ = m.probeHarness()
+}

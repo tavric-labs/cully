@@ -82,22 +82,17 @@ func uiAgentsDir() string {
 	return d
 }
 
-func uiIdentityLegacyPath() string { return filepath.Join(cullyDir(), "identities.json") }
-
 var uiSlugOK = regexp.MustCompile(`[^a-z0-9]+`)
 
-// dir is where one agent lives on disk: a folder named for it, holding its
-// definition (agent.json), its notes as plain Markdown (notes.md), its run
-// history (runs.json) and, when it has no project folder, its own workspace.
-func (id *uiIdentity) dir() string {
-	slug := strings.Trim(uiSlugOK.ReplaceAllString(strings.ToLower(id.Name), "-"), "-")
-	if slug == "" {
-		slug = "agent"
+// workspace is the folder an agent works in when it has no project folder of its own. It is the
+// only part of an agent that lives outside the database: it holds the agent's own files.
+func (id *uiIdentity) workspace() string {
+	// an agent kept by an earlier version has its workspace in a folder named for it
+	if old, _ := filepath.Glob(filepath.Join(uiAgentsDir(), "*-"+id.ID, "workspace")); len(old) > 0 {
+		return old[0]
 	}
-	return filepath.Join(uiAgentsDir(), slug+"-"+id.ID)
+	return filepath.Join(uiAgentsDir(), id.ID, "workspace")
 }
-
-func (id *uiIdentity) workspace() string { return filepath.Join(id.dir(), "workspace") }
 
 func uiWriteAtomic(path string, b []byte) {
 	tmp := path + ".tmp"
@@ -111,24 +106,10 @@ func (m *uiManager) loadIdentitiesLocked() []*uiIdentity {
 		return m.identities
 	}
 	m.identities = []*uiIdentity{}
-	dirs, _ := os.ReadDir(uiAgentsDir())
-	for _, d := range dirs {
-		if !d.IsDir() {
-			continue
-		}
-		b, err := os.ReadFile(filepath.Join(uiAgentsDir(), d.Name(), "agent.json"))
-		if err != nil {
-			continue
-		}
+	for _, raw := range uiDB().all("agent") {
 		var id uiIdentity
-		if json.Unmarshal(b, &id) != nil || id.ID == "" {
+		if json.Unmarshal(raw, &id) != nil || id.ID == "" {
 			continue
-		}
-		if nb, err := os.ReadFile(filepath.Join(uiAgentsDir(), d.Name(), "notes.md")); err == nil {
-			id.Memory = uiNotesBody(string(nb))
-		}
-		if rb, err := os.ReadFile(filepath.Join(uiAgentsDir(), d.Name(), "runs.json")); err == nil {
-			_ = json.Unmarshal(rb, &id.Runs)
 		}
 		if id.Runs == nil {
 			id.Runs = []uiIdentityRun{}
@@ -136,23 +117,12 @@ func (m *uiManager) loadIdentitiesLocked() []*uiIdentity {
 		if id.Scope == "" {
 			id.Scope = "project"
 		}
-		m.identities = append(m.identities, &id)
-	}
-	if len(m.identities) == 0 { // the single file earlier versions wrote
-		if b, err := os.ReadFile(uiIdentityLegacyPath()); err == nil && json.Unmarshal(b, &m.identities) == nil && len(m.identities) > 0 {
-			for _, id := range m.identities {
-				id.Approved, id.Scope = true, "project"
-			}
-			m.saveIdentitiesLocked()
-			_ = os.Rename(uiIdentityLegacyPath(), uiIdentityLegacyPath()+".migrated")
-		}
-	}
-	for _, id := range m.identities {
 		for i := range id.Runs {
 			if id.Runs[i].Status == "running" {
 				id.Runs[i].Status, id.Runs[i].Summary = "failed", "The page's server restarted before this run finished."
 			}
 		}
+		m.identities = append(m.identities, &id)
 	}
 	return m.identities
 }
@@ -169,17 +139,9 @@ func uiNotesBody(md string) string {
 }
 
 func (m *uiManager) saveIdentitiesLocked() {
+	db := uiDB()
 	for _, id := range m.identities {
-		_ = os.MkdirAll(id.dir(), 0o700)
-		def := *id
-		def.Memory, def.Runs = "", nil
-		if b, err := json.MarshalIndent(def, "", "  "); err == nil {
-			uiWriteAtomic(filepath.Join(id.dir(), "agent.json"), b)
-		}
-		uiWriteAtomic(filepath.Join(id.dir(), "notes.md"), []byte("# "+id.Name+": notes\n\n"+id.Memory+"\n"))
-		if b, err := json.MarshalIndent(id.Runs, "", "  "); err == nil {
-			uiWriteAtomic(filepath.Join(id.dir(), "runs.json"), b)
-		}
+		db.put("agent", id.ID, id)
 	}
 }
 
@@ -317,16 +279,12 @@ func (m *uiManager) identityUpdate(id string, in uiIdentityInput) (uiIdentity, e
 	if cur == nil {
 		return uiIdentity{}, errors.New("no such agent")
 	}
-	oldDir := cur.dir()
 	cur.Name, cur.Role, cur.Instructions, cur.Scope, cur.Folder, cur.Groups, cur.Mode = in.Name, in.Role, in.Instructions, in.Scope, in.Folder, in.Groups, in.Mode
 	if in.Approve {
 		cur.Approved = true
 	}
 	cur.Schedule, cur.Enabled = in.Schedule, in.Enabled && in.Schedule != "" && cur.Approved
 	cur.Synced = false
-	if cur.dir() != oldDir { // renamed: its folder moves with it
-		_ = os.Rename(oldDir, cur.dir())
-	}
 	if in.ClearMemory {
 		cur.Memory = ""
 	}
@@ -340,10 +298,8 @@ func (m *uiManager) identityDelete(id string) error {
 	all := m.loadIdentitiesLocked()
 	for i, x := range all {
 		if x.ID == id {
-			for _, f := range []string{"agent.json", "notes.md", "runs.json"} {
-				_ = os.Remove(filepath.Join(x.dir(), f))
-			}
-			_ = os.Remove(x.dir()) // only if nothing else, such as its workspace, is in it
+			uiDB().del("agent", x.ID)
+			uiDB().del("agenteval", x.ID)
 			m.identities = append(all[:i:i], all[i+1:]...)
 			return nil
 		}

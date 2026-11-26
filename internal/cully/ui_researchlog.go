@@ -1,12 +1,8 @@
 package cully
 
 import (
-	"bufio"
 	"encoding/json"
-	"os"
-	"path/filepath"
 	"sort"
-	"sync"
 	"time"
 )
 
@@ -33,28 +29,12 @@ type uiResearchRec struct {
 	Synced bool      `json:"synced"`
 }
 
-var uiResearchMu sync.Mutex
-
-func uiResearchPath() string { return filepath.Join(cullyDir(), "research-log.jsonl") }
-
 func uiReadResearch() []uiResearchRec {
 	var out []uiResearchRec
-	f, err := os.Open(uiResearchPath())
-	if err != nil {
-		return nil
-	}
-	defer f.Close()
-	r := bufio.NewReaderSize(f, 256<<10)
-	for {
-		line, err := r.ReadBytes('\n')
-		if len(line) > 0 {
-			var rec uiResearchRec
-			if json.Unmarshal(line, &rec) == nil {
-				out = append(out, rec)
-			}
-		}
-		if err != nil {
-			break
+	for _, raw := range uiDB().logAll("research") {
+		var rec uiResearchRec
+		if json.Unmarshal(raw, &rec) == nil {
+			out = append(out, rec)
 		}
 	}
 	return out
@@ -64,39 +44,11 @@ func (m *uiManager) recordResearch(rec uiResearchRec) {
 	rec.ID, rec.Time = uiNewID(), time.Now().UTC()
 	rec.Text = uiClip(m.cfg.Tokens.redact(rec.Text), uiResearchText)
 	rec.Query = uiClip(m.cfg.Tokens.redact(rec.Query), 400)
-	b, err := json.Marshal(rec)
-	if err != nil {
-		return
-	}
-	uiResearchMu.Lock()
-	defer uiResearchMu.Unlock()
-	f, err := os.OpenFile(uiResearchPath(), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
-	if err != nil {
-		return
-	}
-	_, _ = f.Write(append(b, '\n'))
-	_ = f.Close()
-	if all := uiReadResearch(); len(all) > uiResearchKeep+100 {
-		all = all[len(all)-uiResearchKeep:]
-		tmp := uiResearchPath() + ".tmp"
-		if g, err := os.OpenFile(tmp, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600); err == nil {
-			w := bufio.NewWriter(g)
-			for _, r := range all {
-				if l, err := json.Marshal(r); err == nil {
-					_, _ = w.Write(append(l, '\n'))
-				}
-			}
-			_ = w.Flush()
-			_ = g.Close()
-			_ = os.Rename(tmp, uiResearchPath())
-		}
-	}
+	uiDB().logAdd("research", rec, uiResearchKeep)
 }
 
 func (m *uiManager) researchList(kind string, limit int) []uiResearchRec {
-	uiResearchMu.Lock()
 	all := uiReadResearch()
-	uiResearchMu.Unlock()
 	out := []uiResearchRec{}
 	for _, r := range all {
 		if kind != "" && r.Kind != kind || uiHidden(r.Repo, m.cfg.HideSessionsIn) {

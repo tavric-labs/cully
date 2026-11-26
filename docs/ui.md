@@ -111,7 +111,7 @@ Handoff is a plain summary: what was asked, where the agent stopped, what change
 
 ## Memory mode and sign-in
 
-The header says how agents sign in: Claude subscription accounts (with a count) when you give a tokens file, or this machine's own Claude login. If no Cully MCP is registered for the agents you use, the header says **Local disk mode**: session history is kept in files on this machine and nothing asks you to sign in. Set `CULLY_MEMORY=local` or `mcp` to pin it. The sign-in dialog focuses on the agents you launch Cully with (`cully run --ui AGENT`, or `--agent`), and the others are tucked under Show other agents.
+The header says how agents sign in: Claude subscription accounts (with a count) when you give a tokens file, or this machine's own Claude login. If no Cully MCP is registered for the agents you use, the header says **Local mode (SQLite)**: everything the UI keeps (session library, agents and their notes, evals, advice, usage) lives in one SQLite database, `cully.db` in the Cully folder, with mode 0600; nothing needs Postgres or Mem0 and nothing asks you to sign in. Local mode is less efficient than the Cully MCP: it recalls by keyword only, so agents can receive more context and use more tokens, and the page says so and shows how to connect the MCP. Files from earlier versions are imported once and renamed `*.imported`. Set `CULLY_MEMORY=local` or `mcp` to pin it. The sign-in dialog focuses on the agents you launch Cully with (`cully run --ui AGENT`, or `--agent`), and the others are tucked under Show other agents.
 
 ## Agents working together
 
@@ -137,7 +137,7 @@ Fan-out (one prompt to several agents, compared side by side) is not built yet.
 
 **Session health** scores each session from 0 to 100. Signals follow what coding-agent harnesses watch for ("Harness Engineering", arXiv 2609.00006): the same call repeated three or more times in a row, the same call failing three or more times, ending after changes with no test run, and the judged outcome. **Make an eval** turns a completed session into a test case (goal, checks, what it did) saved under `evals/`. **Evals** runs a case on a fresh agent in its own worktree and a judge scores it pass, partial or fail.
 
-The **coach** reads all named sessions and suggests a job, skill, MCP server, habit or eval; it runs about once an hour while naming is on, or when you ask. Everything above is kept on disk in disk mode. Saving it to the Cully MCP is not built yet; the records carry a `synced` field for that.
+The **coach** reads all named sessions and suggests a job, skill, MCP server, habit or eval; it runs about once an hour while naming is on, or when you ask. Everything above is kept in the local database. Saving it to the Cully MCP is not built yet; the records carry a `synced` field for that.
 
 ## Keep going until checked
 
@@ -179,7 +179,7 @@ Claude Code compacts its own history before the context window fills, so a full 
 
 ## Saving agents to Cully memory
 
-In disk mode an agent lives in its own folder under the Cully folder. When the Cully MCP is connected, Cully also saves each approved agent to Cully memory (Postgres) through the new `cully_agent_save` tool, so it follows you to another machine; `cully_agents` lists your agents and `cully_agent_delete` removes one. The page has no MCP login of its own: a short headless Claude call, allowed to use only that one tool, makes the save, at most every ten minutes and only for agents that changed. Disk stays the source of truth, a failed save is retried, and the saved definition never includes a path on this machine. Migration 011 adds the table; it is private to the owner like every other record. Restoring agents from memory onto a new machine is not built yet.
+In local mode an agent is a record in the database (its workspace folder stays on disk). When the Cully MCP is connected, Cully also saves each approved agent to Cully memory (Postgres) through the new `cully_agent_save` tool, so it follows you to another machine; `cully_agents` lists your agents and `cully_agent_delete` removes one. The page has no MCP login of its own: a short headless Claude call, allowed to use only that one tool, makes the save, at most every ten minutes and only for agents that changed. The local database stays the source of truth, a failed save is retried, and the saved definition never includes a path on this machine. Migration 011 adds the table; it is private to the owner like every other record. Restoring agents from memory onto a new machine is not built yet.
 
 ## Servers, tools and prompts
 

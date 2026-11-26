@@ -47,6 +47,7 @@ func uiWriteScript(t *testing.T, body string) string {
 func uiNewTestRepo(t *testing.T) string {
 	t.Helper()
 	t.Setenv("CLAUDE_CONFIG_DIR", t.TempDir())
+	t.Cleanup(uiCloseStores)             // close the database before its temporary folder is removed
 	t.Setenv("CODEX_HOME", t.TempDir())  // never read the real machine's Codex sessions
 	t.Setenv("CURSOR_HOME", t.TempDir()) // ...or its Cursor ones
 	t.Setenv("GIT_AUTHOR_NAME", "t")

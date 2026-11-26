@@ -3,8 +3,6 @@ package cully
 import (
 	"encoding/json"
 	"errors"
-	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -36,35 +34,34 @@ type uiEvalRun struct {
 
 var uiEvalRunMu sync.Mutex
 
-func uiEvalRunsPath() string { return filepath.Join(uiEvalDir(), "runs.json") }
-
 func (m *uiManager) loadEvalRunsLocked() []*uiEvalRun {
 	if m.evalRuns != nil {
 		return m.evalRuns
 	}
 	m.evalRuns = []*uiEvalRun{}
-	if b, err := os.ReadFile(uiEvalRunsPath()); err == nil {
-		_ = json.Unmarshal(b, &m.evalRuns)
-		for _, r := range m.evalRuns {
-			if r.Status == "running" || r.Status == "judging" {
-				r.Status, r.Reason = "error", "The page's server restarted before this run finished."
-			}
+	for _, raw := range uiDB().all("evalrun") {
+		var run uiEvalRun
+		if json.Unmarshal(raw, &run) != nil || run.ID == "" {
+			continue
 		}
+		if run.Status == "running" || run.Status == "judging" {
+			run.Status, run.Reason = "error", "The page's server restarted before this run finished."
+		}
+		m.evalRuns = append(m.evalRuns, &run)
 	}
 	return m.evalRuns
 }
 
 func (m *uiManager) saveEvalRunsLocked() {
+	db := uiDB()
 	if len(m.evalRuns) > uiEvalRunsMax {
+		for _, old := range m.evalRuns[:len(m.evalRuns)-uiEvalRunsMax] {
+			db.del("evalrun", old.ID)
+		}
 		m.evalRuns = m.evalRuns[len(m.evalRuns)-uiEvalRunsMax:]
 	}
-	b, err := json.Marshal(m.evalRuns)
-	if err != nil {
-		return
-	}
-	tmp := uiEvalRunsPath() + ".tmp"
-	if os.WriteFile(tmp, b, 0o600) == nil {
-		_ = os.Rename(tmp, uiEvalRunsPath())
+	for _, run := range m.evalRuns {
+		db.put("evalrun", run.ID, run)
 	}
 }
 

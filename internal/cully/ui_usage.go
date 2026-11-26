@@ -1,12 +1,9 @@
 package cully
 
 import (
-	"bufio"
 	"encoding/json"
-	"os"
 	"path/filepath"
 	"sort"
-	"sync"
 	"time"
 )
 
@@ -30,10 +27,6 @@ type uiUsageRec struct {
 	Named       bool      `json:"named"` // started as a named agent's run
 }
 
-var uiUsageMu sync.Mutex
-
-func uiUsagePath() string { return filepath.Join(cullyDir(), "usage-log.jsonl") }
-
 func (m *uiManager) recordUsage(a *uiAgent) {
 	a.mu.Lock()
 	if a.usageRecorded || a.usage.Total() == 0 {
@@ -46,53 +39,15 @@ func (m *uiManager) recordUsage(a *uiAgent) {
 	rec := uiUsageRec{Time: time.Now().UTC(), TaskID: a.id, Title: a.title, Repo: a.repo, Turns: turns,
 		Fresh: u.Input + u.CacheWrite, Cached: u.CacheRead, Output: u.Output, McpFiltered: a.mcpFiltered, Named: a.req.appendSystem != ""}
 	a.mu.Unlock()
-	b, err := json.Marshal(rec)
-	if err != nil {
-		return
-	}
-	uiUsageMu.Lock()
-	defer uiUsageMu.Unlock()
-	f, err := os.OpenFile(uiUsagePath(), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
-	if err != nil {
-		return
-	}
-	_, _ = f.Write(append(b, '\n'))
-	_ = f.Close()
-	if all := uiReadUsage(); len(all) > uiUsageKeep+200 {
-		all = all[len(all)-uiUsageKeep:]
-		tmp := uiUsagePath() + ".tmp"
-		if g, err := os.OpenFile(tmp, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600); err == nil {
-			w := bufio.NewWriter(g)
-			for _, r := range all {
-				if l, err := json.Marshal(r); err == nil {
-					_, _ = w.Write(append(l, '\n'))
-				}
-			}
-			_ = w.Flush()
-			_ = g.Close()
-			_ = os.Rename(tmp, uiUsagePath())
-		}
-	}
+	uiDB().logAdd("usage", rec, uiUsageKeep)
 }
 
 func uiReadUsage() []uiUsageRec {
-	f, err := os.Open(uiUsagePath())
-	if err != nil {
-		return nil
-	}
-	defer f.Close()
 	var out []uiUsageRec
-	r := bufio.NewReaderSize(f, 64<<10)
-	for {
-		line, err := r.ReadBytes('\n')
-		if len(line) > 0 {
-			var rec uiUsageRec
-			if json.Unmarshal(line, &rec) == nil {
-				out = append(out, rec)
-			}
-		}
-		if err != nil {
-			break
+	for _, raw := range uiDB().logAll("usage") {
+		var rec uiUsageRec
+		if json.Unmarshal(raw, &rec) == nil {
+			out = append(out, rec)
 		}
 	}
 	return out
@@ -154,9 +109,7 @@ func (m *uiManager) usageSummary(days int) uiUsageSummary {
 	}
 	byFolder := map[string]*uiUsageFolder{}
 	var allIn, allTurns, filtIn, filtTurns int
-	uiUsageMu.Lock()
 	recs := uiReadUsage()
-	uiUsageMu.Unlock()
 	var tasks []uiUsageTask
 	for _, r := range recs {
 		if r.Time.Before(cut) || uiHidden(r.Repo, m.cfg.HideSessionsIn) {

@@ -1,7 +1,6 @@
 package cully
 
 import (
-	"encoding/json"
 	"errors"
 	"hash/fnv"
 	"os"
@@ -86,25 +85,15 @@ func uiRulesCurrent() string {
 	return ""
 }
 
-func uiRulesProposalPath() string { return filepath.Join(cullyDir(), "rules-proposal.json") }
-
 func uiReadRulesProposal() *uiRulesProposal {
-	b, err := os.ReadFile(uiRulesProposalPath())
-	if err != nil {
-		return nil
-	}
 	var p uiRulesProposal
-	if json.Unmarshal(b, &p) != nil {
+	if !uiDB().get("rules", "proposal", &p) {
 		return nil
 	}
 	return &p
 }
 
-func uiWriteRulesProposal(p *uiRulesProposal) {
-	if b, err := json.MarshalIndent(p, "", "  "); err == nil {
-		uiWriteAtomic(uiRulesProposalPath(), b)
-	}
-}
+func uiWriteRulesProposal(p *uiRulesProposal) { uiDB().put("rules", "proposal", p) }
 
 func uiTextHash(s string) string {
 	h := fnv.New64a()

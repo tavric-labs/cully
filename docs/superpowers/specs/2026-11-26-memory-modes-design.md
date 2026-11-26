@@ -60,3 +60,7 @@ Triggers: a session start with MCP connected and a non-empty outbox, the moment 
 - Retention: how long may synced-but-kept local notes live before being offered for deletion again?
 - Note format: one file per task, or an append-only log per project? Per-task files make idempotent push and per-note deletion simpler.
 - Should the advisor's recall step read local notes when the MCP is down, or stay silent?
+
+## Update: the browser UI keeps local mode in SQLite
+
+The `cully ui` page keeps everything it records in local mode (session library, agents and their notes, evals, advice, usage) in one embedded SQLite database, `cully.db` in the Cully folder (mode 0600, pure Go via `modernc.org/sqlite`, WAL). It replaces the earlier scatter of JSON and JSONL files; those are imported once and renamed `*.imported`. Local mode installs no Postgres, Mem0 or MCP server. It is less efficient than MCP mode (keyword recall instead of semantic recall, so agents may get more context and use more tokens), and the UI says so and shows how to connect the Cully MCP. SQLite was chosen over bbolt and similar stores for multi-process safety and for FTS5 keyword search.

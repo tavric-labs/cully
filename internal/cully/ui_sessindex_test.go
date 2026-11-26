@@ -85,12 +85,15 @@ func TestIndexAddsFactsForEverySessionButHiddenOnes(t *testing.T) {
 	if len(v.Folders) != 1 || v.Folders[0].Count != 1 || v.Folders[0].ActiveSec == 0 {
 		t.Fatalf("folders = %+v", v.Folders)
 	}
-	b, err := os.ReadFile(filepath.Join(cullyDir(), "session-index.json"))
-	if err != nil || strings.Contains(string(b), "SECRET") || strings.Contains(string(b), uiTestSessB) {
-		t.Fatalf("index file: err=%v body=%s", err, b)
+	docs := uiDB().all("session")
+	if len(docs) != 1 {
+		t.Fatalf("sessions in the database = %d", len(docs))
 	}
-	if st, _ := os.Stat(filepath.Join(cullyDir(), "session-index.json")); st.Mode().Perm() != 0o600 {
-		t.Fatalf("mode = %v", st.Mode())
+	if strings.Contains(string(docs[0]), "SECRET") || strings.Contains(string(docs[0]), uiTestSessB) {
+		t.Fatalf("a session document holds conversation text or a hidden session: %s", docs[0])
+	}
+	if st, err := os.Stat(uiStorePath()); err != nil || st.Mode().Perm() != 0o600 {
+		t.Fatalf("database file: %v %v", st, err)
 	}
 }
 
@@ -257,13 +260,12 @@ func TestOnlyCompletedSessionsBecomeEvalsAndHoldNoPrompts(t *testing.T) {
 	if c.Schema != uiEvalSchema || c.Task != "Fix the login bug." || len(c.Criteria) != 1 || len(c.Observed.Files) != 1 || c.Observed.Files[0] != "login.go" {
 		t.Fatalf("case = %+v", c)
 	}
-	p := filepath.Join(cullyDir(), "evals", done+".json")
-	b, err := os.ReadFile(p)
-	if err != nil || strings.Contains(string(b), "SECRET") {
-		t.Fatalf("eval file: %v %s", err, b)
+	var stored uiEvalCase
+	if !uiDB().get("eval", done, &stored) {
+		t.Fatal("the eval case is not in the database")
 	}
-	if st, _ := os.Stat(p); st.Mode().Perm() != 0o600 {
-		t.Fatalf("mode = %v", st.Mode())
+	if raw, _ := json.Marshal(stored); strings.Contains(string(raw), "SECRET") {
+		t.Fatalf("a prompt reached the eval case: %s", raw)
 	}
 	if len(m.listEvals()) != 1 {
 		t.Fatalf("evals = %+v", m.listEvals())

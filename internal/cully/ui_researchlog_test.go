@@ -3,7 +3,6 @@ package cully
 import (
 	"context"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -22,8 +21,8 @@ func TestResearchIsKeptOnDiskPrivatelyAndFilteredByFolder(t *testing.T) {
 	if s := m.researchList("scout", 10); len(s) != 1 || strings.Contains(s[0].Text, "tok-secret-9z") {
 		t.Fatalf("scouts = %+v", s)
 	}
-	if st, err := os.Stat(filepath.Join(cullyDir(), "research-log.jsonl")); err != nil || st.Mode().Perm() != 0o600 {
-		t.Fatalf("file: %v %v", st, err)
+	if st, err := os.Stat(uiStorePath()); err != nil || st.Mode().Perm() != 0o600 {
+		t.Fatalf("database file: %v %v", st, err)
 	}
 	m2 := newUIManager(m.cfg)
 	if len(m2.researchList("", 10)) != 2 {

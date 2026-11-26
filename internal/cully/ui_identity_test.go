@@ -30,8 +30,8 @@ func TestAgentsAreCreatedValidatedAndKeptOnDisk(t *testing.T) {
 	if _, err := m.identityCreate(uiIdentityInputFor(repo)); err == nil {
 		t.Fatal("a second agent with the same name was accepted")
 	}
-	if files, _ := filepath.Glob(filepath.Join(cullyDir(), "agents", "*", "agent.json")); len(files) != 1 {
-		t.Fatalf("agent files = %v", files)
+	if n := len(uiDB().all("agent")); n != 1 {
+		t.Fatalf("agents in the database = %d", n)
 	}
 	if l := newUIManager(m.cfg).identityList(); len(l) != 1 || l[0].Name != "Release watcher" {
 		t.Fatalf("not kept: %+v", l)
@@ -221,45 +221,101 @@ func TestAgentsDoNotNeedGitAndGlobalOnesBelongToNoFolder(t *testing.T) {
 	if err := m.identityDelete(g.ID); err != nil {
 		t.Fatal(err)
 	}
-	ws, _ := filepath.Glob(filepath.Join(cullyDir(), "agents", "dev-workflow-*", "workspace"))
-	if len(ws) != 1 {
-		t.Fatalf("deleting an agent removed its workspace: %v", ws)
+	if _, err := os.Stat(filepath.Join(cullyDir(), "agents", g.ID, "workspace")); err != nil {
+		t.Fatalf("deleting an agent removed its workspace: %v", err)
+	}
+	if uiDB().get("agent", g.ID, &uiIdentity{}) {
+		t.Fatal("the deleted agent is still in the database")
 	}
 }
 
-func TestAgentsAreKeptInTheirOwnFoldersAndOldFilesAreMigrated(t *testing.T) {
+func TestAgentsAndTheirNotesAreKeptInTheDatabase(t *testing.T) {
 	m, repo, _ := uiTestManager(t, uiWriteScript(t, fakeClaude), "tok-aaa1")
 	a, _ := m.identityCreate(uiIdentityInputFor(repo))
 	uiIdentityMu.Lock()
 	m.loadIdentitiesLocked()[0].Memory = "- PR 12 waits on CI"
 	m.saveIdentitiesLocked()
 	uiIdentityMu.Unlock()
-	dir := filepath.Join(cullyDir(), "agents", "release-watcher-"+a.ID)
-	for _, f := range []string{"agent.json", "notes.md", "runs.json"} {
-		if st, err := os.Stat(filepath.Join(dir, f)); err != nil || st.Mode().Perm() != 0o600 {
-			t.Fatalf("%s: %v %v", f, st, err)
-		}
+	var stored uiIdentity
+	if !uiDB().get("agent", a.ID, &stored) || stored.Memory != "- PR 12 waits on CI" || stored.Name != "Release watcher" || !stored.Approved {
+		t.Fatalf("stored = %+v", stored)
 	}
-	notes, _ := os.ReadFile(filepath.Join(dir, "notes.md"))
-	if string(notes) != "# Release watcher: notes\n\n- PR 12 waits on CI\n" {
-		t.Fatalf("notes = %q", notes)
+	if st, err := os.Stat(uiStorePath()); err != nil || st.Mode().Perm() != 0o600 {
+		t.Fatalf("database file: %v %v", st, err)
 	}
-	def, _ := os.ReadFile(filepath.Join(dir, "agent.json"))
-	if strings.Contains(string(def), "PR 12") {
-		t.Fatal("notes are also inside the definition")
-	}
-	if l := newUIManager(m.cfg).identityList(); len(l) != 1 || l[0].Memory != "- PR 12 waits on CI" || !l[0].Approved {
+	if l := newUIManager(m.cfg).identityList(); len(l) != 1 || l[0].Memory != "- PR 12 waits on CI" {
 		t.Fatalf("reloaded = %+v", l)
 	}
-	// an older install kept everything in one file
-	_ = os.RemoveAll(filepath.Join(cullyDir(), "agents"))
-	legacy := `[{"id":"abc12345","name":"Old agent","role":"r","instructions":"","folder":"` + repo + `","groups":{"read":true},"mode":"edit","schedule":"","enabled":false,"memory":"- old note","created":"2026-11-01T00:00:00Z","runs":[]}]`
-	_ = os.WriteFile(filepath.Join(cullyDir(), "identities.json"), []byte(legacy), 0o600)
-	l := newUIManager(m.cfg).identityList()
-	if len(l) != 1 || l[0].Name != "Old agent" || l[0].Memory != "- old note" || !l[0].Approved || l[0].Scope != "project" {
-		t.Fatalf("migrated = %+v", l)
+}
+
+func TestFilesFromEarlierVersionsAreImportedOnceAndSetAside(t *testing.T) {
+	t.Setenv("CLAUDE_CONFIG_DIR", t.TempDir())
+	t.Setenv("CODEX_HOME", t.TempDir())
+	t.Cleanup(uiCloseStores)
+	dir := cullyDir()
+	write := func(name, body string) {
+		p := filepath.Join(dir, name)
+		_ = os.MkdirAll(filepath.Dir(p), 0o755)
+		if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
 	}
-	if _, err := os.Stat(filepath.Join(cullyDir(), "identities.json.migrated")); err != nil {
-		t.Fatal("the old file was not set aside")
+	write("session-index.json", `{"analyze":true,"autoScout":true,"sessions":{"`+uiTestSessA+`":{"id":"`+uiTestSessA+`","agent":"claude","cwd":"/p/x","name":"x","title":"Old title","source":"ai","turns":3}}}`)
+	write("research-log.jsonl", `{"id":"r1","kind":"scout","text":"found it","repo":"/p/x"}`+"\n"+`{"id":"r2","kind":"advice","text":"add tests","repo":"/p/x"}`+"\n")
+	write("usage-log.jsonl", `{"taskId":"t1","title":"a","repo":"/p/x","fresh":1,"cached":9}`+"\n")
+	write("coach.json", `{"based":4,"items":[{"kind":"habit","title":"Run tests","why":"w","how":"h"}]}`)
+	write("ui-settings.json", `{"allow":["WebSearch"]}`)
+	write("agent-suggestions.json", `[{"id":"s1","name":"A","state":"new"}]`)
+	write("identities.json", `[{"id":"abc12345","name":"Old agent","role":"r","folder":"/p/x","groups":{"read":true},"mode":"edit","memory":"- old note","runs":[]}]`)
+	write("agents/new-agent-def45678/agent.json", `{"id":"def45678","name":"New agent","role":"r","scope":"global","approved":true}`)
+	write("agents/new-agent-def45678/notes.md", "# New agent: notes\n\n- kept note\n")
+	write("evals/"+uiTestSessA+".json", `{"id":"`+uiTestSessA+`","task":"Fix it","criteria":["works"]}`)
+
+	db := uiDB()
+	var idx uiIndexFile
+	if !db.get("index", "meta", &idx) || !idx.Analyze || !idx.AutoScout {
+		t.Fatalf("index settings = %+v", idx)
+	}
+	var sess uiIndexed
+	if !db.get("session", uiTestSessA, &sess) || sess.Title != "Old title" || sess.Turns != 3 {
+		t.Fatalf("session = %+v", sess)
+	}
+	if n := len(db.logAll("research")); n != 2 {
+		t.Fatalf("research rows = %d", n)
+	}
+	if n := len(db.logAll("usage")); n != 1 {
+		t.Fatalf("usage rows = %d", n)
+	}
+	var coach uiCoach
+	if !db.get("coach", "latest", &coach) || len(coach.Items) != 1 {
+		t.Fatalf("coach = %+v", coach)
+	}
+	var pol uiPolicy
+	if !db.get("settings", "policy", &pol) || len(pol.Allow) != 1 {
+		t.Fatalf("policy = %+v", pol)
+	}
+	var old, fresh uiIdentity
+	if !db.get("agent", "abc12345", &old) || old.Memory != "- old note" || !old.Approved || old.Scope != "project" {
+		t.Fatalf("old agent = %+v", old)
+	}
+	if !db.get("agent", "def45678", &fresh) || fresh.Memory != "- kept note" || fresh.Scope != "global" {
+		t.Fatalf("new agent = %+v", fresh)
+	}
+	if len(db.all("agentsuggest")) != 1 || len(db.all("eval")) != 1 {
+		t.Fatal("suggestions or evals were not imported")
+	}
+	for _, f := range []string{"session-index.json", "research-log.jsonl", "usage-log.jsonl", "coach.json", "ui-settings.json", "agent-suggestions.json", "identities.json"} {
+		if _, err := os.Stat(filepath.Join(dir, f)); err == nil {
+			t.Errorf("%s was not set aside", f)
+		}
+		if _, err := os.Stat(filepath.Join(dir, f+".imported")); err != nil {
+			t.Errorf("%s.imported is missing", f)
+		}
+	}
+	// opening the database again must not import twice
+	uiCloseStores()
+	again := uiDB()
+	if n := len(again.logAll("research")); n != 2 {
+		t.Fatalf("research rows after reopening = %d", n)
 	}
 }

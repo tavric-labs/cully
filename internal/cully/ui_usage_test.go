@@ -1,9 +1,7 @@
 package cully
 
 import (
-	"encoding/json"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -32,12 +30,13 @@ func TestFinishedTasksLeaveACountOnlyUsageRecord(t *testing.T) {
 	if len(recs) != 1 || recs[0].Fresh != 100 || recs[0].Cached != 900 || recs[0].Output != 10 || recs[0].Turns != 1 || recs[0].TaskID != a.id {
 		t.Fatalf("records = %+v", recs)
 	}
-	raw, _ := os.ReadFile(filepath.Join(cullyDir(), "usage-log.jsonl"))
-	if strings.Contains(string(raw), "go") && strings.Contains(string(raw), "\"prompt\"") {
-		t.Fatal("a prompt reached the usage log")
+	for _, raw := range uiDB().logAll("usage") {
+		if strings.Contains(string(raw), "\"prompt\"") {
+			t.Fatal("a prompt reached the usage log")
+		}
 	}
-	if st, _ := os.Stat(filepath.Join(cullyDir(), "usage-log.jsonl")); st.Mode().Perm() != 0o600 {
-		t.Fatalf("mode = %v", st.Mode())
+	if st, err := os.Stat(uiStorePath()); err != nil || st.Mode().Perm() != 0o600 {
+		t.Fatalf("database file: %v %v", st, err)
 	}
 	m.recordUsage(a) // a second record for the same task is not written
 	if len(uiReadUsage()) != 1 {
@@ -49,7 +48,6 @@ func TestSavingsSummaryShowsCacheAndWhatLimitingServersSaved(t *testing.T) {
 	m, repo, _ := uiTestManager(t, uiWriteScript(t, uiUsageFake), "tok-aaa1")
 	hidden := t.TempDir()
 	now := time.Now().UTC()
-	uiUsageMu.Lock()
 	for _, r := range []uiUsageRec{
 		{Time: now, TaskID: "a", Title: "plain 1", Repo: repo, Turns: 2, Fresh: 4000, Cached: 6000, Output: 100},
 		{Time: now, TaskID: "b", Title: "plain 2", Repo: repo, Turns: 2, Fresh: 4000, Cached: 6000, Output: 100},
@@ -57,12 +55,8 @@ func TestSavingsSummaryShowsCacheAndWhatLimitingServersSaved(t *testing.T) {
 		{Time: now.AddDate(0, 0, -40), TaskID: "old", Title: "old", Repo: repo, Turns: 1, Fresh: 1, Cached: 1, Output: 1},
 		{Time: now, TaskID: "h", Title: "hidden", Repo: hidden, Turns: 1, Fresh: 9, Cached: 9, Output: 9},
 	} {
-		f, _ := os.OpenFile(uiUsagePath(), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
-		b, _ := json.Marshal(r)
-		f.Write(append(b, '\n'))
-		f.Close()
+		uiDB().logAdd("usage", r, 0)
 	}
-	uiUsageMu.Unlock()
 	m.cfg.HideSessionsIn = []string{hidden}
 	s := m.usageSummary(14)
 	if s.Tasks != 3 || s.Tokens != 24300 || s.Cached != 15000 || s.CachedShare != 62 || s.Saved != 13500 {

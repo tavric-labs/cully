@@ -51,8 +51,9 @@ func TestToolPolicyChangesApplyToNewAgentsAndSurviveARestart(t *testing.T) {
 	if allowed, denied := m2.toolPolicy(false); !strings.Contains(allowed, "WebSearch") || denied != "Bash(rm:*)" {
 		t.Fatalf("settings were not kept: %s | %s", allowed, denied)
 	}
-	if info, err := os.Stat(filepath.Join(cullyDir(), "ui-settings.json")); err != nil || info.Mode().Perm() != 0o600 {
-		t.Fatalf("settings file = %v, %v", info, err)
+	var stored uiPolicy
+	if !uiDB().get("settings", "policy", &stored) || len(stored.Allow) != 2 {
+		t.Fatalf("settings in the database = %+v", stored)
 	}
 	if err := m.setToolPolicy(uiPolicyInput{Presets: nil, Allow: nil, Deny: nil}); err != nil {
 		t.Fatal(err)

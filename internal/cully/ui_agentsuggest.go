@@ -3,8 +3,6 @@ package cully
 import (
 	"encoding/json"
 	"errors"
-	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -36,27 +34,27 @@ type uiAgentSuggestion struct {
 
 var uiSuggestMu sync.Mutex
 
-func uiAgentSuggestPath() string { return filepath.Join(cullyDir(), "agent-suggestions.json") }
-
 func uiReadAgentSuggestions() []uiAgentSuggestion {
 	var out []uiAgentSuggestion
-	if b, err := os.ReadFile(uiAgentSuggestPath()); err == nil {
-		_ = json.Unmarshal(b, &out)
+	for _, raw := range uiDB().all("agentsuggest") {
+		var x uiAgentSuggestion
+		if json.Unmarshal(raw, &x) == nil {
+			out = append(out, x)
+		}
 	}
 	return out
 }
 
+// uiWriteAgentSuggestions saves each suggestion and forgets the oldest beyond the limit.
 func uiWriteAgentSuggestions(l []uiAgentSuggestion) {
-	if len(l) > uiAgentSuggestKeep {
-		l = l[len(l)-uiAgentSuggestKeep:]
+	db := uiDB()
+	for _, x := range l {
+		db.put("agentsuggest", x.ID, x)
 	}
-	b, err := json.MarshalIndent(l, "", "  ")
-	if err != nil {
-		return
-	}
-	tmp := uiAgentSuggestPath() + ".tmp"
-	if os.WriteFile(tmp, b, 0o600) == nil {
-		_ = os.Rename(tmp, uiAgentSuggestPath())
+	if all := uiReadAgentSuggestions(); len(all) > uiAgentSuggestKeep {
+		for _, x := range all[:len(all)-uiAgentSuggestKeep] {
+			db.del("agentsuggest", x.ID)
+		}
 	}
 }
 
@@ -199,6 +197,6 @@ func (m *uiManager) agentSuggestRun() (int, error) {
 	}
 	uiSuggestMu.Lock()
 	defer uiSuggestMu.Unlock()
-	uiWriteAgentSuggestions(append(uiReadAgentSuggestions(), fresh...))
+	uiWriteAgentSuggestions(fresh)
 	return len(fresh), nil
 }

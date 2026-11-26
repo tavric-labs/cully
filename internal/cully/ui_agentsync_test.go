@@ -113,3 +113,36 @@ func TestAgentSaveArgumentsHoldNoPathNotesAreSeparate(t *testing.T) {
 		t.Fatal("notes were also put in the definition")
 	}
 }
+
+func TestAModelThatChangesTheArgumentsOrCallsSomethingElseIsNotTrusted(t *testing.T) {
+	want := `{"agent_id":"ab12cd34","name":"Release watcher","scope":"project","approved":true,"definition":"{}","notes":"- n"}`
+	call := func(name string, in string) string {
+		return `{"type":"assistant","message":{"content":[{"type":"tool_use","id":"t1","name":"` + name + `","input":` + in + `}]}}` + "\n"
+	}
+	result := func(isErr string) string {
+		return `{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t1","is_error":` + isErr + `,"content":"ok"}]}}` + "\n"
+	}
+	full := "mcp__cully__cully_agent_save"
+	if err := uiVerifyToolCall([]byte(call(full, want)+result("false")), full, want); err != nil {
+		t.Fatalf("a faithful call was refused: %v", err)
+	}
+	// key order does not matter, the arguments do
+	if err := uiVerifyToolCall([]byte(call(full, `{"notes":"- n","definition":"{}","approved":true,"scope":"project","name":"Release watcher","agent_id":"ab12cd34"}`)+result("false")), full, want); err != nil {
+		t.Fatalf("a reordered call was refused: %v", err)
+	}
+	for name, stream := range map[string]string{
+		"changed name":    call(full, strings.Replace(want, "Release watcher", "Evil", 1)) + result("false"),
+		"changed approve": call(full, strings.Replace(want, `"approved":true`, `"approved":false`, 1)) + result("false"),
+		"another tool":    call("mcp__cully__cully_delete", `{}`) + result("false"),
+		"two calls":       call(full, want) + result("false") + call(full, want) + result("false"),
+		"no call":         `{"type":"result","result":"Done"}` + "\n",
+		"tool error":      call(full, want) + result("true"),
+	} {
+		if err := uiVerifyToolCall([]byte(stream), full, want); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+	if err := uiVerifyToolCall([]byte(call("ToolSearch", `{"query":"x"}`)+call(full, want)+result("false")), full, want); err != nil {
+		t.Fatalf("ToolSearch before the call should be fine: %v", err)
+	}
+}

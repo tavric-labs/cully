@@ -75,18 +75,14 @@ type uiToolsView struct {
 	} `json:"effective"`
 }
 
-func uiSettingsPath() string { return filepath.Join(cullyDir(), "ui-settings.json") }
-
 func (m *uiManager) loadPolicyLocked() {
 	if m.policyLoaded {
 		return
 	}
 	m.policyLoaded = true
-	if b, err := os.ReadFile(uiSettingsPath()); err == nil {
-		var p uiPolicy
-		if json.Unmarshal(b, &p) == nil {
-			m.policy = p
-		}
+	var p uiPolicy
+	if uiDB().get("settings", "policy", &p) {
+		m.policy = p
 	}
 }
 
@@ -200,17 +196,7 @@ func (m *uiManager) setToolPolicy(in uiPolicyInput) error {
 		}
 	}
 	next.McpOnly = uiDedupe(in.McpOnly)
-	b, err := json.MarshalIndent(next, "", "  ")
-	if err != nil {
-		return err
-	}
-	tmp := uiSettingsPath() + ".tmp"
-	if err := os.WriteFile(tmp, b, 0o600); err != nil {
-		return err
-	}
-	if err := os.Rename(tmp, uiSettingsPath()); err != nil {
-		return err
-	}
+	uiDB().put("settings", "policy", next)
 	m.policyMu.Lock()
 	m.policy, m.policyLoaded = next, true
 	m.policyMu.Unlock()

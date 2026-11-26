@@ -3,7 +3,6 @@ package cully
 import (
 	"encoding/json"
 	"errors"
-	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -39,12 +38,6 @@ type uiEvalCase struct {
 	Observed uiEvalObserved `json:"observed"`
 }
 
-func uiEvalDir() string {
-	d := filepath.Join(cullyDir(), "evals")
-	_ = os.MkdirAll(d, 0o700)
-	return d
-}
-
 func (m *uiManager) createEval(id string) (uiEvalCase, error) {
 	if !uiSessionID.MatchString(id) {
 		return uiEvalCase{}, errors.New("no such session")
@@ -76,18 +69,7 @@ func (m *uiManager) createEval(id string) (uiEvalCase, error) {
 			}
 		}
 	}
-	b, err := json.MarshalIndent(c, "", "  ")
-	if err != nil {
-		return c, err
-	}
-	path := filepath.Join(uiEvalDir(), id+".json")
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, b, 0o600); err != nil {
-		return c, err
-	}
-	if err := os.Rename(tmp, path); err != nil {
-		return c, err
-	}
+	uiDB().put("eval", id, c)
 	m.idxMu.Lock()
 	if e := m.index.Sessions[id]; e != nil {
 		e.EvalAt = c.Created
@@ -101,12 +83,8 @@ func (m *uiManager) evalCase(id string) (uiEvalCase, bool) {
 	if !uiSessionID.MatchString(id) {
 		return uiEvalCase{}, false
 	}
-	b, err := os.ReadFile(filepath.Join(uiEvalDir(), id+".json"))
-	if err != nil {
-		return uiEvalCase{}, false
-	}
 	var c uiEvalCase
-	if json.Unmarshal(b, &c) != nil || uiHidden(c.Cwd, m.cfg.HideSessionsIn) {
+	if !uiDB().get("eval", id, &c) || uiHidden(c.Cwd, m.cfg.HideSessionsIn) {
 		return uiEvalCase{}, false
 	}
 	return c, true
@@ -114,9 +92,9 @@ func (m *uiManager) evalCase(id string) (uiEvalCase, bool) {
 
 func (m *uiManager) listEvals() []uiEvalCase {
 	out := []uiEvalCase{}
-	files, _ := os.ReadDir(uiEvalDir())
-	for _, f := range files {
-		if c, ok := m.evalCase(strings.TrimSuffix(f.Name(), ".json")); ok {
+	for _, raw := range uiDB().all("eval") {
+		var c uiEvalCase
+		if json.Unmarshal(raw, &c) == nil && !uiHidden(c.Cwd, m.cfg.HideSessionsIn) {
 			out = append(out, c)
 		}
 	}
