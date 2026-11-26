@@ -166,3 +166,7 @@ func (m *uiManager) scouts() []uiScoutView {
 	}
 	return out
 }
+
+func contextWithScoutBudget() (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.Background(), uiScoutBudget+time.Minute)
+}

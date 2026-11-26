@@ -132,7 +132,8 @@ func TestAgentsCanStartInAFolderAddedLater(t *testing.T) {
 func TestSessionAndRepoEndpoints(t *testing.T) {
 	repoB := uiNewBranchRepo(t, "dev")
 	uiFakeProcs(t, []uiProc{{Interactive: true, PID: 7, PPID: 1, Cmd: []string{"codex"}, Cwd: repoB, Started: time.Now()}})
-	srv, _, _ := uiTestServer(t, false)
+	srv, m, _ := uiTestServer(t, false)
+	m.mcp.markInUse("codex") // the page was opened through Codex
 	if r := uiDo(t, "GET", srv.URL+"/api/sessions", nil, nil); r.StatusCode != 401 {
 		t.Fatalf("no token: %d", r.StatusCode)
 	}
@@ -257,5 +258,40 @@ func TestParseUIFlagsHideSessions(t *testing.T) {
 	o, _ = parseUIFlags(nil)
 	if len(o.HideSessionsIn) != 2 || o.HideSessionsIn[0] != "/x/y" {
 		t.Fatalf("environment folders = %v", o.HideSessionsIn)
+	}
+}
+
+func TestSessionsSayWhichAgentsYouLaunchedCullyWith(t *testing.T) {
+	repo := uiNewTestRepo(t)
+	now := time.Now()
+	uiFakeProcs(t, []uiProc{
+		{Interactive: true, PID: 1, PPID: 9, Cmd: []string{"claude"}, Cwd: repo, Started: now},
+		{Interactive: true, PID: 2, PPID: 9, Cmd: []string{"codex"}, Cwd: repo, Started: now.Add(-time.Minute)},
+		{Detached: true, PID: 3, PPID: 9, Cmd: []string{"/x/bin/agent", "/x/cursor-agent/index.js"}, Cwd: repo, Started: now.Add(-time.Hour)},
+	})
+	m, _, _ := uiTestManager(t, uiWriteScript(t, fakeClaude), "tok-aaa1")
+	inUse := func() map[string]bool {
+		got := map[string]bool{}
+		for _, s := range m.sessions() {
+			got[s.Agent] = s.InUse
+		}
+		return got
+	}
+	if got := inUse(); !got["claude"] || got["codex"] || got["cursor"] {
+		t.Fatalf("by default only Claude is in use (UI-started agents run it): %v", got)
+	}
+	m.mcp.inUse = map[string]struct{}{}
+	m.mcp.markInUse("codex") // cully run --ui codex
+	if got := inUse(); got["claude"] || !got["codex"] || got["cursor"] {
+		t.Fatalf("after launching with Codex: %v", got)
+	}
+}
+
+func TestAppHidesClosedTerminalsByDefault(t *testing.T) {
+	js, _ := uiStaticFS.ReadFile("ui_static/app.js")
+	for _, want := range []string{"terminal was closed", "/api/sessions"} {
+		if !strings.Contains(string(js), want) {
+			t.Fatalf("app.js lacks %q", want)
+		}
 	}
 }

@@ -120,6 +120,11 @@ func uiMCPState(health, auth string, found bool) string {
 // status reports each wrapped agent's Cully MCP connection, probing in
 // parallel and caching briefly because the CLIs health-check every server.
 func (m *uiMCP) status(ctx context.Context) []uiMCPAgent {
+	return m.statusFor(ctx, func(string) bool { return true })
+}
+
+// statusFor probes and lists only the agents the page was opened for.
+func (m *uiMCP) statusFor(ctx context.Context, keep func(agent string) bool) []uiMCPAgent {
 	m.mu.Lock()
 	used := len(m.inUse) > 0
 	inUse := map[string]bool{}
@@ -127,9 +132,15 @@ func (m *uiMCP) status(ctx context.Context) []uiMCPAgent {
 		inUse[a] = true
 	}
 	m.mu.Unlock()
-	out := make([]uiMCPAgent, len(uiMCPAgents))
+	var wanted []string
+	for _, a := range uiMCPAgents {
+		if keep(a) {
+			wanted = append(wanted, a)
+		}
+	}
+	out := make([]uiMCPAgent, len(wanted))
 	var wg sync.WaitGroup
-	for i, agent := range uiMCPAgents {
+	for i, agent := range wanted {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -144,6 +155,18 @@ func (m *uiMCP) status(ctx context.Context) []uiMCPAgent {
 	}
 	wg.Wait()
 	return out
+}
+
+// isInUse reports whether an agent is one you launch Cully with. With none
+// registered, Claude is, because the agents the UI starts run Claude.
+func (m *uiMCP) isInUse(agent string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if len(m.inUse) == 0 {
+		return agent == "claude"
+	}
+	_, ok := m.inUse[agent]
+	return ok
 }
 
 // markInUse records that an agent is one you launch Cully with.
@@ -398,6 +421,13 @@ func (m *uiMCP) paste(agent, raw string) error {
 	}
 	_, err = ptmx.WriteString(checked + "\r")
 	return err
+}
+
+// forget drops the cached status so the next check asks the agent again.
+func (m *uiMCP) forget(agent string) {
+	m.mu.Lock()
+	delete(m.cache, agent)
+	m.mu.Unlock()
 }
 
 func (m *uiMCP) cancel(agent string) {

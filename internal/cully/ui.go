@@ -209,6 +209,7 @@ func RunUI(w io.Writer, args []string) error {
 	srv := &http.Server{Handler: newUIServer(m, token, uiLoopbackAddr(o.Addr)), ReadHeaderTimeout: 10 * time.Second}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+	go m.runIndexer(ctx)
 	go func() {
 		<-ctx.Done()
 		m.stopAll()

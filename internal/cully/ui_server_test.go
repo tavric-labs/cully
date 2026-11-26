@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"os/exec"
 	"strings"
 	"testing"
@@ -463,5 +464,39 @@ func TestCleanRemoteStripsCredentialsAndNoise(t *testing.T) {
 		if got := uiCleanRemote(in); got != want {
 			t.Fatalf("uiCleanRemote(%q) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+func TestInfoSaysWhichMachineAndWhichFolder(t *testing.T) {
+	srv, _, repo := uiTestServer(t, false)
+	var info struct {
+		Host     string
+		User     string
+		RepoInfo []uiRepoInfo
+	}
+	json.NewDecoder(uiDo(t, "GET", srv.URL+"/api/info", nil, uiAuthed).Body).Decode(&info)
+	host, _ := os.Hostname()
+	if info.Host == "" || info.Host != host {
+		t.Fatalf("host = %q, want %q", info.Host, host)
+	}
+	if info.User == "" {
+		t.Fatal("user is missing")
+	}
+	real, _ := canonicalDir(repo)
+	if len(info.RepoInfo) != 1 || info.RepoInfo[0].Path != real || info.RepoInfo[0].Branch != "main" {
+		t.Fatalf("repoInfo = %+v, want the full path %s on branch main", info.RepoInfo, real)
+	}
+	exec.Command("git", "-C", repo, "checkout", "-q", "-b", "feature/x").Run()
+	json.NewDecoder(uiDo(t, "GET", srv.URL+"/api/info", nil, uiAuthed).Body).Decode(&info)
+	if info.RepoInfo[0].Branch != "feature/x" {
+		t.Fatalf("branch did not follow the checkout: %+v", info.RepoInfo[0])
+	}
+}
+
+func TestAppShowsTheMachineAndTheFullPath(t *testing.T) {
+	js, _ := uiStaticFS.ReadFile("ui_static/app.js")
+	html, _ := uiStaticFS.ReadFile("ui_static/index.html")
+	if !strings.Contains(string(js), "S.info.host") || !strings.Contains(string(js), "drawWhere") || !strings.Contains(string(html), `id="where"`) {
+		t.Fatal("the page does not show which machine and which full folder path it is working in")
 	}
 }

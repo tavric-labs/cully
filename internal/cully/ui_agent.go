@@ -29,6 +29,15 @@ const (
 // reach the network. It is defense in depth, not a sandbox: a determined
 // command can still find another route, so run cully ui as a user with no
 // credentials you would not give the agent.
+// Agents the page runs are headless, so nothing can answer a permission prompt:
+// a tool that is not listed here is refused, even when its server is connected.
+// These are the Cully memory tools an agent needs to read what the project
+// already knows and to save its own summary. Delete and update are left out.
+const (
+	uiCullyReadTools  = "ToolSearch,mcp__cully__cully_context,mcp__cully__cully_get,mcp__cully__cully_search,mcp__cully__cully_recall,mcp__cully__cully_recent,mcp__cully__cully_projects"
+	uiCullyWriteTools = "mcp__cully__cully_log,mcp__cully__cully_session"
+)
+
 const uiDeniedTools = "Bash(git push:*),Bash(curl:*),Bash(wget:*),Bash(ssh:*),Bash(scp:*),Bash(nc:*),Bash(kubectl:*)"
 
 var (
@@ -72,8 +81,16 @@ type uiStartRequest struct {
 	Mode    string `json:"mode"` // "" or "edit" (accept edits) or "plan" (read-only planning)
 
 	// Set by Cully for review agents; never read from the request body.
-	addDirs []string
-	rules   string
+	addDirs   []string
+	rules     string
+	Loop      bool   `json:"loop"`     // keep going until the agent has checked its work
+	DoneWhen  string `json:"doneWhen"` // checks that say the task is done, one per line
+	MaxRounds int    `json:"maxRounds"`
+	resumeID  string // continue this Claude session instead of starting a new one
+	resumeDir string // ...in this folder, run in place (no worktree)
+	fork      bool   // start a new session from resumeID; the original stays as it is
+	group     string // fan-out options share a group
+	option    string // "A", "B", ...
 }
 
 type uiStage struct {
@@ -85,30 +102,47 @@ type uiStage struct {
 }
 
 type uiAgentView struct {
-	ID       string        `json:"id"`
-	Title    string        `json:"title"`
-	Repo     string        `json:"repo"`
-	Branch   string        `json:"branch"`
-	Worktree string        `json:"worktree"`
-	Token    int           `json:"token"` // 1-based index; the value is never exposed
-	State    string        `json:"state"`
-	Created  time.Time     `json:"created"`
-	Stages   []uiStage     `json:"stages"`
-	Events   int           `json:"events"`
-	Files    []string      `json:"files"`   // project-relative files this agent has edited
-	MCP      []uiMCPServer `json:"mcp"`     // MCP servers as the agent saw them at start
-	Last     string        `json:"last"`    // one line describing the latest activity
-	Updated  time.Time     `json:"updated"` // when the latest activity happened
+	ID       string         `json:"id"`
+	Title    string         `json:"title"`
+	Repo     string         `json:"repo"`
+	Branch   string         `json:"branch"`
+	Worktree string         `json:"worktree"`
+	Token    int            `json:"token"` // 1-based index; the value is never exposed
+	State    string         `json:"state"`
+	Created  time.Time      `json:"created"`
+	Stages   []uiStage      `json:"stages"`
+	Events   int            `json:"events"`
+	Files    []string       `json:"files"`   // project-relative files this agent has edited
+	MCP      []uiMCPServer  `json:"mcp"`     // MCP servers as the agent saw them at start
+	Last     string         `json:"last"`    // one line describing the latest activity
+	Updated  time.Time      `json:"updated"` // when the latest activity happened
+	Harness  *uiHarnessView `json:"harness,omitempty"`
+	Group    string         `json:"group,omitempty"`  // fan-out: options of one task share it
+	Option   string         `json:"option,omitempty"` // fan-out: "A", "B", ...
 }
 
 type uiManager struct {
 	cfg       uiConfig
 	repos     []string
 	mcp       *uiMCP
+	scout     uiScoutRuns
 	repoMu    sync.RWMutex
 	repoInfos []uiRepoInfo
 
 	alerted map[string]struct{} // file|idA|idB pairs already warned about
+
+	evalRuns   []*uiEvalRun
+	coachMu    sync.Mutex
+	idxMu      sync.Mutex
+	index      *uiIndexFile
+	analyzedAt []time.Time
+
+	policyMu     sync.Mutex
+	policy       uiPolicy
+	policyLoaded bool
+
+	qmu   sync.Mutex
+	queue []*uiQueued
 
 	mu     sync.Mutex
 	agents map[string]*uiAgent
@@ -143,7 +177,12 @@ func canonicalDir(p string) (string, error) {
 // addRepo allows agents to run in a git repository. The folder must be an
 // absolute path to a directory the current user owns, inside a git repository;
 // the repository root is what gets added.
-func (m *uiManager) addRepo(path string) (uiRepoInfo, error) {
+func (m *uiManager) addRepo(path string) (uiRepoInfo, error) { return m.addRepoInit(path, false) }
+
+// addRepoInit allows a folder for agents. With initGit a folder that is not a
+// git repository becomes one, with an empty first commit, so agents can get
+// worktrees. It refuses the home folder and the filesystem root.
+func (m *uiManager) addRepoInit(path string, initGit bool) (uiRepoInfo, error) {
 	if !filepath.IsAbs(path) {
 		return uiRepoInfo{}, errors.New("give the full path of the folder")
 	}
@@ -151,11 +190,21 @@ func (m *uiManager) addRepo(path string) (uiRepoInfo, error) {
 	if err != nil || !info.IsDir() {
 		return uiRepoInfo{}, errors.New("that folder does not exist")
 	}
-	if st, ok := info.Sys().(*syscall.Stat_t); ok && int(st.Uid) != os.Getuid() {
-		return uiRepoInfo{}, errors.New("that folder belongs to another user")
+	// On a shared machine the folder may belong to a teammate: what matters is
+	// whether this user can write in it, which the operating system decides.
+	if !uiWritable(path) {
+		return uiRepoInfo{}, errors.New("you do not have write access to that folder")
 	}
 	root, err := uiRepoRoot(path)
+	if err != nil && initGit {
+		if err = uiInitRepo(path); err == nil {
+			root, err = uiRepoRoot(path)
+		}
+	}
 	if err != nil {
+		if strings.Contains(err.Error(), "dubious ownership") {
+			return uiRepoInfo{}, errors.New("git does not trust this folder because another user owns it; ask the owner to run: git config --global --add safe.directory " + path)
+		}
 		return uiRepoInfo{}, err
 	}
 	m.repoMu.Lock()
@@ -262,12 +311,21 @@ func (m *uiManager) start(req uiStartRequest) (*uiAgent, error) {
 		return nil, fmt.Errorf("already running %d agents; stop one first", m.cfg.MaxAgents)
 	}
 	id := uiNewID()
+	branch := "cully/" + uiSlug(req.Title+" "+boolText(req.Title == "", req.Prompt)) + "-" + id
+	worktree := filepath.Join(ConfigDir(), "ui-worktrees", id)
+	if req.resumeDir != "" { // a resumed session runs where it started, on the branch that is checked out
+		worktree = req.resumeDir
+		branch = uiCurrentBranch(req.resumeDir)
+	}
 	a := &uiAgent{
 		id: id, title: title, repo: repo, req: req, created: time.Now().UTC(),
-		branch:   "cully/" + uiSlug(req.Title+" "+boolText(req.Title == "", req.Prompt)) + "-" + id,
-		worktree: filepath.Join(ConfigDir(), "ui-worktrees", id),
+		branch:   branch,
+		worktree: worktree,
 		tokens:   m.cfg.Tokens, mgr: m, state: uiPreparing,
 		notify: make(chan struct{}), uses: map[string]uiToolUse{}, files: map[string]struct{}{}, done: make(chan struct{}),
+	}
+	if req.Loop {
+		a.harness = newUIHarness(req)
 	}
 	m.agents[id] = a
 	m.order = append(m.order, id)
@@ -343,6 +401,7 @@ type uiAgent struct {
 	}
 	stopped bool
 	pending int // turns sent and not yet answered by a result
+	harness *uiHarness
 	uses    map[string]uiToolUse
 	files   map[string]struct{}
 	base    string // commit the worktree started from
@@ -363,7 +422,7 @@ func (a *uiAgent) snapshot() uiAgentView {
 	return uiAgentView{
 		ID: a.id, Title: a.title, Repo: a.repo, Branch: a.branch, Worktree: a.worktree,
 		Token: a.token, State: a.state, Created: a.created,
-		Stages: a.stagesCopyLocked(), Events: len(a.events), Files: a.sortedFilesLocked(), Last: a.last, Updated: a.updated, MCP: append([]uiMCPServer(nil), a.mcp...),
+		Stages: a.stagesCopyLocked(), Events: len(a.events), Files: a.sortedFilesLocked(), Last: a.last, Updated: a.updated, Group: a.req.group, Option: a.req.option, Harness: a.harnessView(), MCP: append([]uiMCPServer(nil), a.mcp...),
 	}
 }
 
@@ -406,6 +465,9 @@ func (a *uiAgent) setState(s string) {
 	a.mu.Lock()
 	a.state = s
 	a.mu.Unlock()
+	if a.mgr != nil && (s == uiDone || s == uiFailed || s == uiStopped) {
+		go a.mgr.drainQueue()
+	}
 }
 
 func (a *uiAgent) fail(msg string) {
@@ -425,12 +487,25 @@ func (a *uiAgent) addWorktree() error {
 	if err != nil {
 		return fmt.Errorf("%v: %s", err, strings.TrimSpace(string(out)))
 	}
+	a.recordBase()
+	return nil
+}
+
+// recordBase remembers the commit the agent started from, so its changes can be shown against it.
+func (a *uiAgent) recordBase() {
 	if head, err := exec.Command("git", "-C", a.worktree, "rev-parse", "HEAD").Output(); err == nil {
 		a.mu.Lock()
 		a.base = strings.TrimSpace(string(head))
 		a.mu.Unlock()
 	}
-	return nil
+}
+
+func uiCurrentBranch(dir string) string {
+	out, err := exec.Command("git", "-C", dir, "rev-parse", "--abbrev-ref", "HEAD").Output()
+	if err != nil || strings.TrimSpace(string(out)) == "" {
+		return "current branch"
+	}
+	return strings.TrimSpace(string(out))
 }
 
 func uiAgentEnv(token string) []string {
@@ -479,10 +554,19 @@ func (a *uiAgent) isStopped() bool {
 
 func (a *uiAgent) run(m *uiManager) {
 	defer close(a.done)
-	prompt := a.prepare(m)
-	if err := a.addWorktree(); err != nil {
-		a.fail("could not create worktree: " + err.Error())
-		return
+	var prompt string
+	if a.req.resumeID != "" {
+		prompt = a.req.Prompt
+		for _, st := range []string{"context", "recall", "scout"} {
+			a.setStage(st, "skipped", "")
+		}
+		a.recordBase()
+	} else {
+		prompt = a.prepare(m)
+		if err := a.addWorktree(); err != nil {
+			a.fail("could not create worktree: " + err.Error())
+			return
+		}
 	}
 	if a.isStopped() {
 		a.setState(uiStopped)
@@ -497,9 +581,16 @@ func (a *uiAgent) run(m *uiManager) {
 	if a.req.Mode == "plan" {
 		permission = "plan"
 	}
+	allowed, denied := m.toolPolicy(a.req.Mode == "plan")
 	args := []string{"-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose",
-		"--permission-mode", permission, "--allowedTools", "Read,Glob,Grep,Edit,Write,Bash",
-		"--disallowedTools", uiDeniedTools}
+		"--permission-mode", permission, "--allowedTools", allowed,
+		"--disallowedTools", denied}
+	if a.req.resumeID != "" {
+		args = append(args, "--resume", a.req.resumeID)
+		if a.req.fork {
+			args = append(args, "--fork-session")
+		}
+	}
 	if a.req.Model != "" {
 		args = append(args, "--model", a.req.Model)
 	}
@@ -570,10 +661,14 @@ func (a *uiAgent) handleLine(line []byte) {
 	for id, u := range p.Uses {
 		a.uses[id] = u
 	}
+	uses := p.Uses
 	if len(p.MCP) > 0 {
 		a.mcp = p.MCP
 	}
 	a.mu.Unlock()
+	for id, u := range uses {
+		a.harnessUse(id, u)
+	}
 	for _, ev := range p.Events {
 		if ev.Kind == "tool" || ev.Kind == "tool_result" {
 			// Show paths as the agent's own project sees them.
@@ -588,16 +683,21 @@ func (a *uiAgent) handleLine(line []byte) {
 		if ok {
 			a.journalToolResult(use, r.Failed)
 		}
+		a.harnessResult(r.ID, r.Failed)
 	}
 	if p.TurnDone {
 		a.mu.Lock()
 		if a.pending > 0 {
 			a.pending--
 		}
+		turnOver := a.pending == 0
 		if a.pending == 0 && (a.state == uiWorking || a.state == uiPreparing) {
 			a.state = uiWaiting
 		}
 		a.mu.Unlock()
+		if turnOver && a.harness != nil {
+			go a.harnessAfterTurn()
+		}
 	}
 }
 
@@ -733,6 +833,7 @@ type uiRepoInfo struct {
 	Path   string `json:"path"`
 	Name   string `json:"name"`
 	Remote string `json:"remote,omitempty"` // host/owner/name, never with credentials
+	Branch string `json:"branch,omitempty"` // the branch checked out now
 }
 
 func uiRepoRemote(path string) string {
@@ -772,4 +873,28 @@ func uiCleanRemote(raw string) string {
 		return ""
 	}
 	return u.Hostname() + "/" + strings.TrimSuffix(strings.Trim(u.Path, "/"), ".git")
+}
+
+func uiInitRepo(path string) error {
+	real, err := canonicalDir(path)
+	if err != nil {
+		return errors.New("that folder does not exist")
+	}
+	if home, _ := os.UserHomeDir(); real == "/" || (home != "" && real == filepath.Clean(home)) {
+		return errors.New("choose a project folder, not your home folder or the filesystem root")
+	}
+	if !uiWritable(real) {
+		return errors.New("you cannot write in that folder")
+	}
+	if out, err := exec.Command("git", "-C", real, "init", "-q").CombinedOutput(); err != nil {
+		return fmt.Errorf("git init failed: %s", strings.TrimSpace(string(out)))
+	}
+	cmd := exec.Command("git", "-C", real, "commit", "-q", "--allow-empty", "-m", "Start with Cully")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		retry := exec.Command("git", "-C", real, "-c", "user.name=Cully", "-c", "user.email=cully@localhost", "commit", "-q", "--allow-empty", "-m", "Start with Cully")
+		if out2, err2 := retry.CombinedOutput(); err2 != nil {
+			return fmt.Errorf("could not make the first commit: %s %s", strings.TrimSpace(string(out)), strings.TrimSpace(string(out2)))
+		}
+	}
+	return nil
 }

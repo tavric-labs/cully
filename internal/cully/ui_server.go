@@ -2,6 +2,7 @@ package cully
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"crypto/subtle"
 	"embed"
@@ -14,6 +15,8 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
+	"os/user"
 	"regexp"
 	"sort"
 	"strconv"
@@ -99,7 +102,39 @@ func newUIServer(m *uiManager, token string, loopback bool) http.Handler {
 	mux.Handle("GET /api/agents/{id}/handoff", s.api(s.handoff))
 	mux.Handle("GET /api/agents/{id}/diff", s.api(s.diff))
 	mux.Handle("GET /api/board", s.api(s.board))
+	mux.Handle("GET /api/admin/tools", s.api(s.adminToolsGet))
+	mux.Handle("PUT /api/admin/tools", s.api(s.adminToolsPut))
+	mux.Handle("GET /api/queue", s.api(s.queueList))
+	mux.Handle("POST /api/queue", s.api(s.queueAdd))
+	mux.Handle("DELETE /api/queue/{id}", s.api(s.queueRemove))
+	mux.Handle("POST /api/queue/{id}/start", s.api(s.queueStart))
+	mux.Handle("POST /api/fanout", s.api(s.fanout))
+	mux.Handle("GET /api/fs", s.api(s.browse))
+	mux.Handle("POST /api/setup/{agent}/enable", s.api(s.enableAgent))
+	mux.Handle("POST /api/setup/advisor/start", s.api(s.startAdvisor))
+	mux.Handle("POST /api/mcp/{agent}/connect", s.api(s.connectMCP))
+	mux.Handle("GET /api/jobs", s.api(s.jobList))
+	mux.Handle("POST /api/jobs/{name}/run", s.api(s.runJob))
+	mux.Handle("POST /api/scout/run", s.api(s.scoutRun))
+	mux.Handle("GET /api/scout/runs", s.api(s.scoutRunList))
+	mux.Handle("GET /api/setup", s.api(s.setup))
+	mux.Handle("GET /api/impact", s.api(s.impact))
+	mux.Handle("GET /api/activity", s.api(s.activity))
 	mux.Handle("GET /api/sessions", s.api(s.sessionList))
+	mux.Handle("GET /api/history", s.api(s.historyList))
+	mux.Handle("GET /api/sessions/library", s.api(s.libraryGet))
+	mux.Handle("GET /api/sessions/evals", s.api(s.evalList))
+	mux.Handle("GET /api/evals/runs", s.api(s.evalRunsGet))
+	mux.Handle("GET /api/coach", s.api(s.coachGetH))
+	mux.Handle("GET /api/research", s.api(s.researchGet))
+	mux.Handle("POST /api/coach/run", s.api(s.coachRunH))
+	mux.Handle("POST /api/evals/{id}/run", s.api(s.evalRunStart))
+	mux.Handle("POST /api/sessions/{id}/summarize", s.api(s.summarize))
+	mux.Handle("POST /api/sessions/{id}/eval", s.api(s.evalCreate))
+	mux.Handle("GET /api/sessions/{id}/eval", s.api(s.evalGet))
+	mux.Handle("POST /api/sessions/analysis", s.api(s.analysisSet))
+	mux.Handle("POST /api/scout/auto", s.api(s.autoScoutSet))
+	mux.Handle("POST /api/history/{id}/resume", s.api(s.historyResume))
 	mux.Handle("POST /api/repos", s.api(s.addRepo))
 	mux.Handle("GET /api/scout", s.api(s.scoutList))
 	mux.Handle("GET /api/advice", s.api(s.adviceList))
@@ -211,7 +246,7 @@ func (s *uiServer) info(w http.ResponseWriter, r *http.Request) {
 		mode = "subscription" // Claude subscription tokens from `claude setup-token`
 	}
 	uiJSON(w, http.StatusOK, map[string]any{
-		"repos": repoPaths(s.m.repoList()), "repoInfo": s.m.repoList(), "tokens": accounts,
+		"repos": repoPaths(s.m.repoList()), "repoInfo": s.m.repoListNow(), "tokens": accounts, "host": uiHostname(), "user": uiUsername(),
 		"auth":      map[string]any{"mode": mode, "accounts": accounts},
 		"maxAgents": s.m.cfg.MaxAgents, "panels": uiPanels, "memoryOverride": uiMemoryOverride(),
 	})
@@ -387,7 +422,7 @@ func (s *uiServer) board(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *uiServer) mcpStatus(w http.ResponseWriter, r *http.Request) {
-	uiJSON(w, http.StatusOK, s.m.mcp.status(r.Context()))
+	uiJSON(w, http.StatusOK, s.m.mcp.statusFor(r.Context(), s.m.mcp.isInUse))
 }
 
 func (s *uiServer) mcpAgent(w http.ResponseWriter, r *http.Request) (string, bool) {
@@ -569,20 +604,370 @@ func repoPaths(list []uiRepoInfo) []string {
 }
 
 func (s *uiServer) sessionList(w http.ResponseWriter, r *http.Request) {
-	uiJSON(w, http.StatusOK, s.m.sessions())
+	mine := []uiSession{}
+	for _, x := range s.m.sessions() {
+		if x.InUse {
+			mine = append(mine, x)
+		}
+	}
+	uiJSON(w, http.StatusOK, mine)
 }
 
 func (s *uiServer) addRepo(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Path string `json:"path"`
+		Init bool   `json:"init"` // make the folder a git repository first
 	}
 	if !uiDecode(w, r, &body) {
 		return
 	}
-	info, err := s.m.addRepo(body.Path)
+	info, err := s.m.addRepoInit(body.Path, body.Init)
 	if err != nil {
 		uiError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	uiJSON(w, http.StatusCreated, info)
+}
+
+func (s *uiServer) setup(w http.ResponseWriter, r *http.Request) {
+	uiJSON(w, http.StatusOK, uiSetupFor(s.m.mcp.isInUse))
+}
+
+func (s *uiServer) impact(w http.ResponseWriter, r *http.Request) {
+	days, _ := strconv.Atoi(r.URL.Query().Get("days"))
+	uiJSON(w, http.StatusOK, uiImpact(days))
+}
+
+func (s *uiServer) activity(w http.ResponseWriter, r *http.Request) {
+	repo, err := s.m.resolveRepo(r.URL.Query().Get("repo"))
+	if err != nil {
+		uiError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	uiJSON(w, http.StatusOK, s.m.activity(repo))
+}
+
+func (s *uiServer) enableAgent(w http.ResponseWriter, r *http.Request) {
+	agent := r.PathValue("agent")
+	if !uiKnownAgent(agent) {
+		uiError(w, http.StatusNotFound, "unknown agent")
+		return
+	}
+	msg, err := uiEnableAgent(agent)
+	if err != nil {
+		uiError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	s.m.mcp.forget(agent)
+	uiJSON(w, http.StatusOK, map[string]string{"message": msg})
+}
+
+func (s *uiServer) startAdvisor(w http.ResponseWriter, r *http.Request) {
+	if err := uiStartAdvisor(); err != nil {
+		uiError(w, http.StatusBadRequest, "The advisor could not start: "+err.Error())
+		return
+	}
+	uiJSON(w, http.StatusOK, map[string]string{"message": "The advisor is running."})
+}
+
+func (s *uiServer) connectMCP(w http.ResponseWriter, r *http.Request) {
+	agent, ok := s.mcpAgent(w, r)
+	if !ok {
+		return
+	}
+	var body struct {
+		URL string `json:"url"`
+	}
+	if !uiDecode(w, r, &body) {
+		return
+	}
+	endpoint := strings.TrimSpace(body.URL)
+	if err := validateMCPURL(endpoint); err != nil {
+		uiError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := uiAddMCP(agent, endpoint); err != nil {
+		uiError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	s.m.mcp.forget(agent)
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *uiServer) jobList(w http.ResponseWriter, r *http.Request) {
+	uiJSON(w, http.StatusOK, uiJobs())
+}
+
+func (s *uiServer) runJob(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	known := false
+	for _, j := range uiJobs() {
+		known = known || j.Name == name
+	}
+	if !known {
+		uiError(w, http.StatusNotFound, "no such job")
+		return
+	}
+	if err := uiStartJob(name); err != nil {
+		uiError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusAccepted)
+}
+
+func (s *uiServer) scoutRun(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Query string `json:"query"`
+	}
+	if !uiDecode(w, r, &body) {
+		return
+	}
+	v, err := s.m.startScout(body.Query)
+	if err != nil {
+		uiError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	uiJSON(w, http.StatusAccepted, v)
+}
+
+func (s *uiServer) scoutRunList(w http.ResponseWriter, r *http.Request) {
+	uiJSON(w, http.StatusOK, s.m.scoutRuns())
+}
+
+// repoListNow is repoList with each repository's current branch.
+func (m *uiManager) repoListNow() []uiRepoInfo {
+	list := m.repoList()
+	for i := range list {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		if out, err := exec.CommandContext(ctx, "git", "-C", list[i].Path, "branch", "--show-current").Output(); err == nil {
+			list[i].Branch = strings.TrimSpace(string(out))
+		}
+		cancel()
+	}
+	return list
+}
+
+func uiUsername() string {
+	if u, err := user.Current(); err == nil {
+		return u.Username
+	}
+	return ""
+}
+
+func (s *uiServer) browse(w http.ResponseWriter, r *http.Request) {
+	path := r.URL.Query().Get("path")
+	if path == "" {
+		path = uiHomeMarker
+	}
+	v, err := uiBrowse(path, r.URL.Query().Get("hidden") == "1")
+	if err != nil {
+		uiError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	uiJSON(w, http.StatusOK, v)
+}
+
+func (s *uiServer) queueList(w http.ResponseWriter, r *http.Request) {
+	uiJSON(w, http.StatusOK, s.m.queueList())
+}
+
+func (s *uiServer) queueAdd(w http.ResponseWriter, r *http.Request) {
+	var req uiStartRequest
+	if !uiDecode(w, r, &req) {
+		return
+	}
+	q, err := s.m.enqueue(req)
+	if err != nil {
+		uiError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	uiJSON(w, http.StatusCreated, q)
+}
+
+func (s *uiServer) queueRemove(w http.ResponseWriter, r *http.Request) {
+	if err := s.m.dequeue(r.PathValue("id")); err != nil {
+		uiError(w, http.StatusNotFound, err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *uiServer) queueStart(w http.ResponseWriter, r *http.Request) {
+	a, err := s.m.startQueued(r.PathValue("id"))
+	if err != nil {
+		uiError(w, http.StatusConflict, err.Error())
+		return
+	}
+	uiJSON(w, http.StatusCreated, a.snapshot())
+}
+
+func (s *uiServer) fanout(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		uiStartRequest
+		Count int `json:"count"`
+	}
+	if !uiDecode(w, r, &body) {
+		return
+	}
+	res, err := s.m.fanout(body.uiStartRequest, body.Count)
+	if err != nil {
+		uiError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	uiJSON(w, http.StatusCreated, res)
+}
+
+func (s *uiServer) historyList(w http.ResponseWriter, r *http.Request) {
+	agent := r.URL.Query().Get("agent")
+	if agent == "" {
+		for _, a := range []string{"claude", "codex", "cursor"} {
+			if s.m.mcp.isInUse(a) {
+				agent = a
+				break
+			}
+		}
+	}
+	if !uiKnownAgent(agent) || !s.m.mcp.isInUse(agent) {
+		uiError(w, http.StatusBadRequest, "this page was not opened through that agent")
+		return
+	}
+	days := 7
+	if q := r.URL.Query().Get("days"); q != "" {
+		n, err := strconv.Atoi(q)
+		if err != nil || n < 0 || n > uiHistoryAllMax {
+			uiError(w, http.StatusBadRequest, "days must be a number from 0 to 3650")
+			return
+		}
+		days = n
+	}
+	uiJSON(w, http.StatusOK, s.m.history(agent, days))
+}
+
+func (s *uiServer) historyResume(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Prompt string `json:"prompt"`
+		Fork   bool   `json:"fork"`
+	}
+	if !uiDecode(w, r, &body) {
+		return
+	}
+	if len([]rune(body.Prompt)) > uiMaxPromptRunes {
+		uiError(w, http.StatusBadRequest, "prompt is too long")
+		return
+	}
+	a, err := s.m.resumeSession(r.PathValue("id"), body.Prompt, body.Fork)
+	if err != nil {
+		uiError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	uiJSON(w, http.StatusCreated, a.snapshot())
+}
+
+func (s *uiServer) adminToolsGet(w http.ResponseWriter, r *http.Request) {
+	uiJSON(w, http.StatusOK, s.m.toolsView())
+}
+
+func (s *uiServer) adminToolsPut(w http.ResponseWriter, r *http.Request) {
+	var in uiPolicyInput
+	if !uiDecode(w, r, &in) {
+		return
+	}
+	if err := s.m.setToolPolicy(in); err != nil {
+		uiError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	uiJSON(w, http.StatusOK, s.m.toolsView())
+}
+
+func (s *uiServer) libraryGet(w http.ResponseWriter, r *http.Request) {
+	s.m.indexSessions(200)
+	uiJSON(w, http.StatusOK, s.m.sessionLibrary())
+}
+
+func (s *uiServer) analysisSet(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		On bool `json:"on"`
+	}
+	if !uiDecode(w, r, &body) {
+		return
+	}
+	s.m.setAnalysis(body.On)
+	uiJSON(w, http.StatusOK, s.m.sessionLibrary())
+}
+
+func (s *uiServer) evalList(w http.ResponseWriter, r *http.Request) {
+	uiJSON(w, http.StatusOK, s.m.listEvals())
+}
+
+func (s *uiServer) evalCreate(w http.ResponseWriter, r *http.Request) {
+	c, err := s.m.createEval(r.PathValue("id"))
+	if err != nil {
+		uiError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	uiJSON(w, http.StatusCreated, c)
+}
+
+func (s *uiServer) evalGet(w http.ResponseWriter, r *http.Request) {
+	c, ok := s.m.evalCase(r.PathValue("id"))
+	if !ok {
+		uiError(w, http.StatusNotFound, "no eval for this session")
+		return
+	}
+	uiJSON(w, http.StatusOK, c)
+}
+
+func (s *uiServer) summarize(w http.ResponseWriter, r *http.Request) {
+	e, err := s.m.summarizeOne(r.PathValue("id"))
+	if err != nil {
+		uiError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	uiJSON(w, http.StatusOK, e)
+}
+
+func (s *uiServer) evalRunsGet(w http.ResponseWriter, r *http.Request) {
+	uiJSON(w, http.StatusOK, s.m.evalRunList())
+}
+
+func (s *uiServer) evalRunStart(w http.ResponseWriter, r *http.Request) {
+	run, err := s.m.runEval(r.PathValue("id"))
+	if err != nil {
+		uiError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	uiJSON(w, http.StatusCreated, run)
+}
+
+func (s *uiServer) coachGetH(w http.ResponseWriter, r *http.Request) {
+	uiJSON(w, http.StatusOK, s.m.coachGet())
+}
+
+func (s *uiServer) coachRunH(w http.ResponseWriter, r *http.Request) {
+	c, err := s.m.coachRun()
+	if err != nil {
+		uiError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	uiJSON(w, http.StatusOK, c)
+}
+
+func (s *uiServer) researchGet(w http.ResponseWriter, r *http.Request) {
+	kind := r.URL.Query().Get("kind")
+	if kind != "" && kind != "scout" && kind != "recall" && kind != "advice" {
+		uiError(w, http.StatusBadRequest, "kind must be scout, recall or advice")
+		return
+	}
+	uiJSON(w, http.StatusOK, s.m.researchList(kind, 200))
+}
+
+func (s *uiServer) autoScoutSet(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		On bool `json:"on"`
+	}
+	if !uiDecode(w, r, &body) {
+		return
+	}
+	s.m.setAutoScout(body.On)
+	uiJSON(w, http.StatusOK, s.m.sessionLibrary().Analysis)
 }

@@ -21,18 +21,19 @@ type uiChecks struct {
 }
 
 type uiHandoffView struct {
-	Branch          string   `json:"branch"`
-	Task            string   `json:"task,omitempty"`
-	LastReply       string   `json:"lastReply,omitempty"`
-	Files           []string `json:"files"`
-	FileCount       int      `json:"fileCount"`
-	Added           int      `json:"added"`
-	Removed         int      `json:"removed"`
-	Checks          uiChecks `json:"checks"`
-	Edits           int      `json:"edits"`
-	EditsSinceCheck int      `json:"editsSinceCheck"`
-	Loops           int      `json:"loops"`
-	Activity        bool     `json:"activity"`
+	Branch          string        `json:"branch"`
+	Task            string        `json:"task,omitempty"`
+	LastReply       string        `json:"lastReply,omitempty"`
+	Files           []string      `json:"files"`
+	Groups          []uiFileGroup `json:"groups"`
+	FileCount       int           `json:"fileCount"`
+	Added           int           `json:"added"`
+	Removed         int           `json:"removed"`
+	Checks          uiChecks      `json:"checks"`
+	Edits           int           `json:"edits"`
+	EditsSinceCheck int           `json:"editsSinceCheck"`
+	Loops           int           `json:"loops"`
+	Activity        bool          `json:"activity"`
 }
 
 func (v *uiHandoffView) applyFacts(events []journalEvent) {
@@ -45,8 +46,10 @@ func (v *uiHandoffView) applyFacts(events []journalEvent) {
 	}
 }
 
-func (v *uiHandoffView) setFiles(files []string, total int) {
-	v.FileCount = total
+func (v *uiHandoffView) setFiles(all []string) {
+	v.FileCount = len(all)
+	v.Groups = uiGroupFiles(all)
+	files := all
 	if len(files) > uiSummaryFiles {
 		files = files[:uiSummaryFiles]
 	}
@@ -93,7 +96,7 @@ func (a *uiAgent) summary() uiHandoffView {
 	if base != "" {
 		files, added, removed := uiWorktreeChanges(a.worktree, base)
 		v.Added, v.Removed = added, removed
-		v.setFiles(files, len(files))
+		v.setFiles(files)
 	}
 	return v
 }
@@ -112,7 +115,7 @@ func uiRepoSummary(repo string) uiHandoffView {
 		events = ev
 	}
 	v.applyFacts(events)
-	branch, stat, files, total := gitLive(repo)
+	branch, stat, _, _ := gitLive(repo)
 	v.Branch = branch
 	if m := uiStatAdded.FindStringSubmatch(stat); m != nil {
 		v.Added, _ = strconv.Atoi(m[1])
@@ -120,6 +123,6 @@ func uiRepoSummary(repo string) uiHandoffView {
 	if m := uiStatRemoved.FindStringSubmatch(stat); m != nil {
 		v.Removed, _ = strconv.Atoi(m[1])
 	}
-	v.setFiles(files, total)
+	v.setFiles(uiPorcelainFiles(repo))
 	return v
 }

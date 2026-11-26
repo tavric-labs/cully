@@ -3,6 +3,7 @@ package cully
 import (
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 )
@@ -13,14 +14,24 @@ import (
 // has done, what would you tell it? The answer is kept per agent and can be
 // sent to that agent with one click.
 
+// uiHostname is this machine's name, for the advisor and the page header.
+func uiHostname() string {
+	h, err := os.Hostname()
+	if err != nil {
+		return ""
+	}
+	return h
+}
+
 const (
 	uiAdviceMax    = 3
-	uiAdvicePrompt = `You are Cully's advisor, reviewing the progress of a coding agent. Give at most 3 pieces of advice, each on its own line, each starting with WARN| for something that will waste time or break work, CAUT| for a risk worth checking, or ADV| for a helpful improvement. Address the agent directly, for example "Run the tests before editing more." Be concrete and short: one sentence, no markdown. Base the advice only on the signals below. Do not use any tools. If everything looks fine, reply with exactly: ADV|Nothing to change; keep going.`
+	uiAdvicePrompt = `You are Cully's advisor, reviewing the progress of a coding agent. Give at most 3 pieces of advice, each on its own line, each starting with WARN| for something that will waste time or break work, CAUT| for a risk worth checking, or ADV| for a helpful improvement. Address the agent directly, for example "Run the tests before editing more." Be concrete and short: one sentence, no markdown. Base the advice only on the signals below. Use HANDOFF| instead of ADV| when the best next step is to copy this session's handoff and continue the work from it, for example when the work should continue in another open session or agent. Do not use any tools. You are told which machine and folder the work is on and which sessions are already open there; if one of those sessions is the natural place to continue, say so, so the person can continue it. If everything looks fine, reply with exactly: ADV|Nothing to change; keep going.`
 )
 
 type uiAdvice struct {
 	ID        string    `json:"id"`
-	Level     string    `json:"level"` // warn, caution or advice
+	Level     string    `json:"level"`            // warn, caution or advice
+	Action    string    `json:"action,omitempty"` // handoff: the card offers to copy the session's handoff
 	Text      string    `json:"text"`
 	Created   time.Time `json:"created"`
 	Applied   bool      `json:"applied"`
@@ -47,6 +58,17 @@ func (a *uiAgent) adviceList() []uiAdvice {
 func (a *uiAgent) uiAdviceSignals() string {
 	s := a.summary()
 	var b strings.Builder
+	fmt.Fprintf(&b, "Machine: %s\n", uiHostname())
+	fmt.Fprintf(&b, "Folder: %s\n", a.repo)
+	if branch := uiFolderInfo(a.repo).branch; branch != "" {
+		fmt.Fprintf(&b, "Branch: %s\n", branch)
+	}
+	if s.Branch != "" {
+		fmt.Fprintf(&b, "Working branch: %s\n", s.Branch)
+	}
+	if open := a.openSessionsInFolder(); open != "" {
+		fmt.Fprintf(&b, "Sessions already open in this folder: %s\n", open)
+	}
 	fmt.Fprintf(&b, "Task: %s\n", s.Task)
 	turns := 0
 	var failures []string
@@ -87,8 +109,10 @@ func uiParseAdvice(out string, existing []uiAdvice) []uiAdvice {
 		if line[0] == '{' || line[0] == '[' {
 			continue // machine output, not advice
 		}
-		level, text := "advice", line
-		if lvl, body, ok := parseSeverityPrefix(line); ok {
+		level, text, action := "advice", line, ""
+		if rest, ok := strings.CutPrefix(line, "HANDOFF|"); ok {
+			text, action = strings.TrimSpace(rest), "handoff"
+		} else if lvl, body, ok := parseSeverityPrefix(line); ok {
 			text = body
 			switch lvl {
 			case AlertWarn:
@@ -102,7 +126,7 @@ func uiParseAdvice(out string, existing []uiAdvice) []uiAdvice {
 			continue
 		}
 		seen[strings.ToLower(text)] = true
-		res = append(res, uiAdvice{ID: uiNewID(), Level: level, Text: text, Created: time.Now().UTC()})
+		res = append(res, uiAdvice{ID: uiNewID(), Level: level, Text: text, Action: action, Created: time.Now().UTC()})
 		if len(res) == uiAdviceMax {
 			break
 		}
@@ -136,6 +160,7 @@ func (m *uiManager) advise(id string) error {
 	}
 	a.mu.Unlock()
 	signals := a.uiAdviceSignals()
+	overlap := a.openSessionsInFolder()
 	if reason := admitAdvisorRequest("ui-"+a.id, signals, time.Now()); reason != "" {
 		return errors.New(uiAdviceWaitMessage(reason))
 	}
@@ -150,7 +175,15 @@ func (m *uiManager) advise(id string) error {
 			a.adviceStatus, a.adviceError = "failed", "The advisor could not answer. Try again in a few minutes."
 			return
 		}
-		a.advice = append(a.advice, uiParseAdvice(out, a.advice)...)
+		fresh := uiParseAdvice(out, a.advice)
+		if overlap != "" && !uiHasAction(a.advice, fresh, "handoff") {
+			fresh = append(fresh, uiAdvice{ID: uiNewID(), Level: "advice", Action: "handoff", Created: time.Now().UTC(),
+				Text: "Another session is already open in this folder (" + overlap + "). Copy this session's handoff and continue the work there."})
+		}
+		a.advice = append(a.advice, fresh...)
+		for _, f := range fresh {
+			m.recordResearch(uiResearchRec{Kind: "advice", Source: a.title, Repo: a.repo, Query: a.req.Prompt, Text: f.Text, Level: f.Level, Action: f.Action})
+		}
 		a.adviceStatus = "ok"
 	}()
 	return nil
@@ -223,4 +256,43 @@ func (m *uiManager) adviceAll() []uiAdviceFor {
 		a.mu.Unlock()
 	}
 	return out
+}
+
+func uiAgoWords(d time.Duration) string {
+	switch {
+	case d < time.Minute:
+		return "just now"
+	case d < time.Hour:
+		return fmt.Sprintf("%dm ago", int(d.Minutes()))
+	case d < 48*time.Hour:
+		return fmt.Sprintf("%dh ago", int(d.Hours()))
+	}
+	return fmt.Sprintf("%dd ago", int(d.Hours()/24))
+}
+
+// openSessionsInFolder names the sessions already open in this agent's folder,
+// such as "claude (open 2h)". Empty when there are none, which is also the
+// signal that the work does not overlap with anything.
+func (a *uiAgent) openSessionsInFolder() string {
+	if a.mgr == nil {
+		return ""
+	}
+	var open []string
+	for _, x := range a.mgr.sessions() {
+		if x.Repo == a.repo && !x.Detached {
+			open = append(open, x.Agent+" (open "+strings.TrimSuffix(uiAgoWords(time.Since(x.Started)), " ago")+")")
+		}
+	}
+	return strings.Join(open, ", ")
+}
+
+func uiHasAction(existing, fresh []uiAdvice, action string) bool {
+	for _, list := range [][]uiAdvice{existing, fresh} {
+		for _, x := range list {
+			if x.Action == action {
+				return true
+			}
+		}
+	}
+	return false
 }

@@ -3,9 +3,11 @@ package cully
 import (
 	"context"
 	"encoding/json"
+	"os"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 type uiAdviceAdvisor struct {
@@ -265,5 +267,115 @@ func TestParseAdviceIgnoresMachineOutputAndFences(t *testing.T) {
 	}
 	if len(uiParseAdvice("{\"a\":1}\n[\"b\"]", nil)) != 0 {
 		t.Fatal("JSON-only output produced advice")
+	}
+}
+
+func TestAdviceKnowsTheMachineFolderAndOpenSessions(t *testing.T) {
+	m, repo, _ := uiTestManager(t, uiWriteScript(t, fakeClaude), "tok-aaa1")
+	m.cfg.NoConflictAlerts = true
+	adv := &uiAdviceAdvisor{out: "ADV|Continue in the session you already have open."}
+	m.cfg.Advisor = adv.run
+	uiFakeProcs(t, []uiProc{{Interactive: true, PID: 5, PPID: 1, Cmd: []string{"claude"}, Cwd: repo, Started: time.Now().Add(-2 * time.Hour)}})
+	a, _ := m.start(uiStartRequest{Repo: repo, Title: "Fix login", Prompt: "make login stricter"})
+	uiWaitState(t, a, "waiting")
+	if err := m.advise(a.id); err != nil {
+		t.Fatal(err)
+	}
+	uiWaitAdvice(t, a, 1)
+	host, _ := os.Hostname()
+	real, _ := canonicalDir(repo)
+	adv.mu.Lock()
+	defer adv.mu.Unlock()
+	prompt := adv.prompts[0]
+	for _, want := range []string{"Machine: " + host, "Folder: " + real, "Branch: main", "Sessions already open in this folder: claude"} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("advisor context lacks %q:\n%s", want, prompt)
+		}
+	}
+	if !strings.Contains(prompt, "continue") {
+		t.Fatal("the advisor is not told it may suggest continuing an open session")
+	}
+}
+
+func TestScoutNeverSeesTheMachineOrFolder(t *testing.T) {
+	m, repo, _ := uiTestManager(t, uiWriteScript(t, fakeClaude), "tok-aaa1")
+	var seen []string
+	var mu sync.Mutex
+	m.cfg.Advisor = (&uiFakeAdvisor{}).run
+	m.cfg.ScoutStream = func(ctx context.Context, cwd, prompt string, progress func(string)) (string, error) {
+		mu.Lock()
+		seen = append(seen, prompt)
+		mu.Unlock()
+		return "findings", nil
+	}
+	a, _ := m.start(uiStartRequest{Repo: repo, Prompt: "fix the gateway timeout", Scout: true})
+	uiWaitState(t, a, "waiting")
+	if _, err := m.startScout("rate limiting patterns"); err != nil {
+		t.Fatal(err)
+	}
+	uiWaitFor(t, "both scouts", func() bool { mu.Lock(); defer mu.Unlock(); return len(seen) == 2 })
+	host, _ := os.Hostname()
+	real, _ := canonicalDir(repo)
+	mu.Lock()
+	defer mu.Unlock()
+	for _, p := range seen {
+		if strings.Contains(p, host) || strings.Contains(p, real) || strings.Contains(p, "Machine:") || strings.Contains(p, "Folder:") {
+			t.Fatalf("a public web search was given private context:\n%s", p)
+		}
+	}
+}
+
+func TestAdviceCanOfferTheHandoff(t *testing.T) {
+	got := uiParseAdvice("HANDOFF|Copy this session's handoff and continue the work there.\nADV|Run the tests.", nil)
+	if len(got) != 2 || got[0].Action != "handoff" || got[0].Level != "advice" || !strings.HasPrefix(got[0].Text, "Copy this session's handoff") {
+		t.Fatalf("advice = %+v", got)
+	}
+	if got[1].Action != "" {
+		t.Fatalf("a plain suggestion carries an action: %+v", got[1])
+	}
+}
+
+func TestAnOverlapAddsAHandoffSuggestion(t *testing.T) {
+	m, repo, _ := uiTestManager(t, uiWriteScript(t, fakeClaude), "tok-aaa1")
+	m.cfg.NoConflictAlerts = true
+	adv := &uiAdviceAdvisor{out: "ADV|Run the tests."}
+	m.cfg.Advisor = adv.run
+	a, _ := m.start(uiStartRequest{Repo: repo, Title: "Fix login", Prompt: "go"})
+	uiWaitState(t, a, "waiting")
+
+	uiFakeProcs(t, nil) // nothing else open: no handoff nudge
+	m.advise(a.id)
+	got := uiWaitAdvice(t, a, 1)
+	for _, g := range got {
+		if g.Action == "handoff" {
+			t.Fatalf("a handoff was suggested with no overlap: %+v", got)
+		}
+	}
+
+	// A session is already open in the same folder: the work overlaps.
+	uiFakeProcs(t, []uiProc{{Interactive: true, PID: 5, PPID: 1, Cmd: []string{"claude"}, Cwd: repo, Started: time.Now().Add(-time.Hour)}})
+	a2, _ := m.start(uiStartRequest{Repo: repo, Title: "Second", Prompt: "go"})
+	uiWaitState(t, a2, "waiting")
+	m.advise(a2.id)
+	got = uiWaitAdvice(t, a2, 2)
+	found := false
+	for _, g := range got {
+		found = found || (g.Action == "handoff" && strings.Contains(g.Text, "open in this folder"))
+	}
+	if !found {
+		t.Fatalf("no handoff suggestion although a session is open in the same folder: %+v", got)
+	}
+}
+
+func TestAdvisorIsToldItMayOfferTheHandoff(t *testing.T) {
+	if !strings.Contains(uiAdvicePrompt, "HANDOFF|") {
+		t.Fatal("the advisor prompt does not explain HANDOFF|")
+	}
+}
+
+func TestAppOffersCopyingTheHandoffFromAdvice(t *testing.T) {
+	js, _ := uiStaticFS.ReadFile("ui_static/app.js")
+	if !strings.Contains(string(js), "Copy handoff from this session") {
+		t.Fatal("advice cards cannot copy the session's handoff")
 	}
 }

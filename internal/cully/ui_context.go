@@ -120,6 +120,7 @@ func (a *uiAgent) prepare(m *uiManager) string {
 			}
 			*out = text
 			a.setStageOutput(name, text)
+			m.recordResearch(uiResearchRec{Kind: name, Source: a.title, Repo: a.repo, Query: a.req.Prompt, Text: text})
 			a.setStage(name, "ok", "")
 		}()
 	}

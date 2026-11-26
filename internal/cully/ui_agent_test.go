@@ -335,3 +335,30 @@ func TestToolEventPathsAreRelativeToWorktree(t *testing.T) {
 		t.Fatal("no tool event")
 	}
 }
+
+func TestAgentsMayUseCullyMemoryToolsButNotDeleteThem(t *testing.T) {
+	m, repo, out := uiTestManager(t, uiWriteScript(t, fakeClaude), "tok-aaa1")
+	a, err := m.start(uiStartRequest{Repo: repo, Prompt: "go"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	uiWaitState(t, a, "waiting")
+	b, _ := os.ReadFile(filepath.Join(out, "args.log"))
+	for _, want := range []string{"mcp__cully__cully_context", "mcp__cully__cully_log", "mcp__cully__cully_recall"} {
+		if !strings.Contains(string(b), want) {
+			t.Errorf("headless agent is not allowed %s: %s", want, b)
+		}
+	}
+	for _, bad := range []string{"cully_delete", "cully_update"} {
+		if strings.Contains(string(b), bad) {
+			t.Errorf("agent may call %s", bad)
+		}
+	}
+	p, _ := m.start(uiStartRequest{Repo: repo, Prompt: "plan it", Mode: "plan"})
+	uiWaitState(t, p, "waiting")
+	b, _ = os.ReadFile(filepath.Join(out, "args.log"))
+	last := strings.Split(strings.TrimSpace(string(b)), "\n")
+	if line := last[len(last)-1]; strings.Contains(line, "cully_log") {
+		t.Errorf("plan-only agent may write memory: %s", line)
+	}
+}

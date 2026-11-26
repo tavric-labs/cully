@@ -42,6 +42,7 @@ type uiSession struct {
 	Remote   string    `json:"remote,omitempty"`
 	Via      string    `json:"via"`                // cully or terminal
 	Detached bool      `json:"detached,omitempty"` // running, but its terminal window is gone
+	InUse    bool      `json:"inUse"`              // an agent you launch Cully with
 	Started  time.Time `json:"started"`
 }
 
@@ -158,7 +159,7 @@ func (m *uiManager) sessions() []uiSession {
 			continue // checked before any git command runs in that folder
 		}
 		info := uiFolderInfo(cwd)
-		s := uiSession{PID: f.p.PID, Agent: f.agent, Cwd: cwd, Repo: info.root, Branch: info.branch, Remote: info.remote, Via: "terminal", Started: f.p.Started, Detached: f.p.Detached}
+		s := uiSession{PID: f.p.PID, Agent: f.agent, Cwd: cwd, Repo: info.root, Branch: info.branch, Remote: info.remote, Via: "terminal", Started: f.p.Started, Detached: f.p.Detached, InUse: m.mcp.isInUse(f.agent)}
 		if f.p.InCully {
 			s.Via = "cully"
 		}
