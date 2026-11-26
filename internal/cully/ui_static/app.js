@@ -25,6 +25,7 @@
 
   // Static icon paths; elements are built with the DOM, never parsed from strings.
   const ICONS = {
+    plug: 'M9 3v5M15 3v5M6 8h12v4a6 6 0 0 1-12 0zM12 18v3',
     mic: 'M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3zM5 11a7 7 0 0 0 14 0M12 18v3',
     plus: 'M12 5v14M5 12h14', send: 'M12 19V5M5 12l7-7 7 7', stop: 'M7 7h10v10H7z', copy: 'M9 9h11v11H9zM5 15V4h11',
     refresh: 'M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7', check: 'M5 12l5 5L20 7', down: 'M12 5v14M5 12l7 7 7-7',
@@ -325,6 +326,53 @@
     return h('div', { class: 'row voice' }, btn, meter, h('label', { class: 'faint small', title: 'Start the task as soon as the words are turned into text' }, auto, ' Start when I stop talking'));
   }
 
+  // ---------- tasks that outlast the page ----------
+  // A task is kept in the database with every session it has had, from any harness, so today's and this
+  // week's work is still here after a restart and can be continued: the same conversation when it can
+  // be resumed, otherwise a new run that starts from a handoff.
+  const TASK_STATE = { preparing: ['Starting', 'info'], working: ['Working', 'info'], waiting: ['Needs you', 'wait'], done: ['Finished', 'good'], failed: ['Failed', 'bad'], stopped: ['Stopped', 'info'] };
+  function continueTaskDialog(t) {
+    const ta = h('textarea', { rows: '3', 'aria-label': 'What to do next', placeholder: 'What should it do next? Leave empty to finish what is left.' });
+    const err = h('div', { class: 'err', hidden: true });
+    const go = h('button', { class: 'btn', onclick: async () => {
+      go.disabled = true; err.hidden = true;
+      try { const v = await api('/api/tasks/' + t.id + '/continue', { method: 'POST', body: JSON.stringify({ prompt: ta.value }) }); closeMCP(); await refresh(); location.hash = '#/task/' + v.id; }
+      catch (e) { err.textContent = e.message; err.hidden = false; go.disabled = false; }
+    } }, icon('send'), 'Continue');
+    const harnesses = [...new Set((t.sessions || []).map((x) => x.agent).filter(Boolean))];
+    const modal = h('div', { class: 'modal', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Continue the task' },
+      h('header', {}, h('h2', {}, 'Continue this task'), h('button', { class: 'btn ghost small sp', onclick: closeMCP }, 'Cancel')),
+      h('div', { class: 'mbody' }, h('p', {}, h('b', {}, t.title)), t.last ? h('p', { class: 'faint small' }, t.last) : null,
+        (t.sessions || []).length ? h('div', { class: 'row' }, h('span', { class: 'faint small' }, (t.sessions.length === 1 ? 'One session' : t.sessions.length + ' sessions') + ':'), ...t.sessions.map((x) => harnessChip(x.agent))) : null,
+        h('p', { class: 'faint' }, 'If its last Claude session can be resumed, that conversation carries on. Otherwise a new run starts from what the task has done so far' + (harnesses.some((x) => x !== 'claude') ? ', including the ' + harnesses.filter((x) => x !== 'claude').map((x) => AGENT_NAMES[x] || x).join(' and ') + ' work' : '') + '.'),
+        ta, err, h('div', { class: 'row' }, go)));
+    const bg = h('div', { class: 'modal-bg', onclick: (e) => { if (e.target === bg) closeMCP(); } }, modal);
+    $('modal-root').replaceChildren(bg);
+    S.modal = { agent: 'continue' };
+    document.removeEventListener('keydown', escClose);
+    document.addEventListener('keydown', escClose);
+    ta.focus();
+  }
+  async function renderTaskHistory(box) {
+    const period = S.taskPeriod || 'today';
+    let list = [];
+    try { list = await api('/api/tasks?range=' + period); } catch (_) { return; }
+    const tab = ([k, l]) => h('button', { type: 'button', class: 'toggle' + (period === k ? ' on' : ''), onclick: () => { S.taskPeriod = k; renderTaskHistory(box); } }, l);
+    const card = (t) => {
+      const st = TASK_STATE[t.state] || [t.state, 'info'];
+      const ag = [...new Set((t.sessions || []).map((x) => x.agent).filter(Boolean))];
+      return h('article', { class: 'tcard' },
+        h('div', { class: 'row' }, h('b', { class: 'ttitle' }, t.title), h('span', { class: 'chip fs-' + (st[1] === 'good' ? 'good' : st[1] === 'bad' ? 'bad' : st[1] === 'wait' ? 'wait' : 'info') }, st[0]), h('span', { class: 'sp' }), h('span', { class: 'faint small' }, ago(t.updated))),
+        t.last ? h('p', { class: 'fprev' }, plainPreview(t.last)) : null,
+        h('div', { class: 'row' }, t.repo ? h('span', { class: 'chip', title: t.repo }, icon('folder'), t.repo.split('/').filter(Boolean).pop()) : null,
+          (t.sessions || []).length ? h('span', { class: 'chip' }, t.sessions.length + (t.sessions.length === 1 ? ' session' : ' sessions')) : null, ...ag.map((x) => harnessChip(x)),
+          t.files ? h('span', { class: 'chip' }, t.files + (t.files === 1 ? ' file changed' : ' files changed')) : null, h('span', { class: 'sp' }),
+          t.live ? h('a', { class: 'btn small', href: '#/task/' + t.live }, 'Open') : h('button', { class: 'btn small', onclick: () => continueTaskDialog(t) }, icon('send'), 'Continue')));
+    };
+    box.replaceChildren(h('div', { class: 'row' }, h('h3', { class: 'section-h' }, 'Your tasks'), h('span', { class: 'sp' }), ...[['today', 'Today'], ['week', 'This week'], ['all', 'Earlier']].map(tab)),
+      list.length ? h('div', { class: 'tgrid' }, ...list.slice(0, 24).map(card)) : h('p', { class: 'faint small' }, period === 'today' ? 'No tasks today yet.' : 'No tasks in this period.'));
+  }
+
   function mountHome() {
     S.homeGate = !claudeInUse();
     if (S.homeGate) {
@@ -404,6 +452,7 @@
       h('div', { id: 'mcpbanner' }), form, repoLine, fleet));
     renderFleet();
     drawMCPBanner();
+    const tasksBox = h('div', { class: 'taskhist' }); $('stage').firstChild.append(tasksBox); renderTaskHistory(tasksBox);
     ta.focus();
   }
   function agentCard(a) {
@@ -448,8 +497,9 @@
       h('button', { class: 'btn round', title: 'Send', 'aria-label': 'Send', onclick: () => { const t = ta.value; ta.value = ''; ta.style.height = 'auto'; sendMessage(a.id, t); } }, icon('send'))),
       h('div', { class: 'composer-hint' }, 'Enter sends, Shift+Enter adds a line'));
     const side = h('div', { class: 'col sidecol' }, h('div', { class: 'tabs side', id: 'tabs-side' }), h('div', { class: 'sidehead', id: 'sidehead' }), h('div', { class: 'sidebody', id: 'sidebody' }));
+    const activity = h('div', { id: 'activity', class: 'activity off', role: 'status', 'aria-live': 'polite' });
     const permBox = h('div', { id: 'permbox' });
-    const grid = h('div', { class: 'agrid', id: 'agrid', 'data-show': S.tab }, h('div', { class: 'col chatcol' }, body, permBox, quick, composer), side);
+    const grid = h('div', { class: 'agrid', id: 'agrid', 'data-show': S.tab }, h('div', { class: 'col chatcol' }, body, activity, permBox, quick, composer), side);
     $('stage').replaceChildren(ahead, sub, ctxnote, stepper, tabs, grid);
     body.after(jump);
     body.addEventListener('scroll', () => { jump.hidden = body.scrollTop + body.clientHeight >= body.scrollHeight - 60; });
@@ -590,6 +640,7 @@
   document.addEventListener('click', (e) => { for (const d of document.querySelectorAll('details.menu[open]')) if (!d.contains(e.target)) d.open = false; });
   function drawAgentChrome(a) {
     drawPermissions(a);
+    updateActivity();
     if (!$('ahead')) return;
     const finished = a.state === 'done' || a.state === 'failed' || a.state === 'stopped';
     const stop = h('button', { class: 'btn danger small', onclick: (e) => {
@@ -739,6 +790,7 @@
     const b = f.body;
     const stick = b.scrollTop + b.clientHeight >= b.scrollHeight - 60;
     if (f.typing) f.typing.remove();
+    if (ev.kind === 'plan') { renderPlan(ev.text); return; }
     if (ev.kind === 'tool' || ev.kind === 'tool_result') addToolRow(ev);
     else {
       f.group = null;
@@ -754,25 +806,71 @@
     if (a && (a.state === 'working' || a.state === 'preparing')) setTyping(true);
     if (stick) b.scrollTop = b.scrollHeight;
   }
+  // Tool calls as typed rows: an icon for what kind of thing it did, a spinner while it runs, a tick or a
+  // cross when it ends. Consecutive calls share one collapsible group so a long run stays readable.
+  const TOOL_ICON = { Bash: 'term', Read: 'eye', Edit: 'pencil', Write: 'pencil', MultiEdit: 'pencil', NotebookEdit: 'pencil', Grep: 'search', Glob: 'search', WebSearch: 'globe', WebFetch: 'globe', Task: 'spark', Agent: 'spark', ToolSearch: 'search' };
+  const toolIcon = (name) => TOOL_ICON[name] || (/^mcp__/.test(name) ? 'plug' : 'spark');
+  const toolLabel = (name) => (/^mcp__([^_]+(?:_[^_]+)*?)__(.+)$/.exec(name) || []).slice(1).reverse().join(' on ') || name;
   function addToolRow(ev) {
     const f = S.feed;
     if (!f.group) {
       const rows = h('div', { class: 'rows' });
       const sum = h('summary', {});
-      f.group = { el: h('details', { class: 'tools' }, sum, rows), rows, sum, names: {}, n: 0, bad: false };
+      f.group = { el: h('details', { class: 'tools' }, sum, rows), rows, sum, names: {}, n: 0, bad: false, last: null };
       f.body.append(f.group.el);
     }
     const g = f.group;
     if (ev.kind === 'tool') {
       g.n += 1; g.names[ev.tool] = (g.names[ev.tool] || 0) + 1;
-      g.rows.append(h('div', {}, h('b', {}, ev.tool), '  ', ev.text));
+      const row = h('div', { class: 'trow2 run' }, h('span', { class: 'tspin' }, icon(toolIcon(ev.tool))), h('b', {}, toolLabel(ev.tool)), h('span', { class: 'tsum' }, ev.text || ''));
+      g.rows.append(row); g.last = row; f.running = ev.tool + (ev.text ? ' ' + ev.text : '');
     } else {
+      f.running = '';
+      const row = g.last; g.last = null;
+      if (row) { row.classList.remove('run'); row.classList.add(ev.failed ? 'bad' : 'ok'); }
       if (ev.failed) { g.bad = true; g.el.classList.add('bad'); g.el.open = true; }
-      g.rows.append(h('div', { class: ev.failed ? 'f' : '' }, (ev.failed ? '✗ ' : '↳ ') + ((ev.text || 'ok').slice(0, 240))));
+      g.rows.append(h('div', { class: 'tres' + (ev.failed ? ' f' : '') }, (ev.failed ? '✗ ' : '↳ ') + ((ev.text || 'ok').slice(0, 240))));
     }
-    const parts = Object.entries(g.names).map(([k, v]) => k + (v > 1 ? ' ×' + v : '')).join(', ');
+    const parts = Object.entries(g.names).map(([k, v]) => toolLabel(k) + (v > 1 ? ' ×' + v : '')).join(', ');
     g.sum.textContent = 'Ran ' + g.n + (g.n === 1 ? ' tool' : ' tools') + (parts ? ' (' + parts + ')' : '') + (g.bad ? ', with a failure' : '');
+    updateActivity();
   }
+  // The agent's own plan, pinned above the chat and ticked off as it goes (the way Kiro shows its task
+  // list): how far along it is, what it is on now, and what is left.
+  function renderPlan(text) {
+    const f = S.feed;
+    if (!f) return;
+    let items = [];
+    try { items = JSON.parse(text); } catch (_) { return; }
+    if (!items.length) return;
+    f.plan = items;
+    if (!f.planEl) { f.planEl = h('section', { class: 'plancard', 'aria-label': 'Plan' }); f.body.before(f.planEl); }
+    const done = items.filter((x) => x.s === 'completed').length;
+    const now = items.find((x) => x.s === 'in_progress');
+    const open = f.planOpen != null ? f.planOpen : done < items.length;
+    const bar = h('span', { class: 'fbar' }, fill(Math.round((done * 100) / items.length)));
+    f.planEl.replaceChildren(h('button', { type: 'button', class: 'planhead', 'aria-expanded': String(open), onclick: () => { f.planOpen = !open; renderPlan(text); } },
+      icon('check'), h('b', {}, 'Plan'), h('span', { class: 'faint small' }, done + ' of ' + items.length + ' done' + (now ? ', now: ' + now.c : '')), bar, h('span', { class: 'chev faint' }, open ? '⌄' : '›')),
+      open ? h('ul', { class: 'planlist' }, ...items.map((x) => h('li', { class: 'p-' + x.s }, h('span', { class: 'pdot' }, x.s === 'completed' ? '✓' : x.s === 'in_progress' ? '●' : '○'), h('span', {}, x.c)))) : null);
+    updateActivity();
+  }
+  // One line that always says what the task is doing right now, or that it is your turn.
+  function updateActivity() {
+    const f = S.feed; const el = $('activity');
+    if (!f || !el) return;
+    const a = S.agents.find((x) => x.id === S.route.id);
+    if (!a) return;
+    const asking = (a.permissions || []).length;
+    const live = a.state === 'working' || a.state === 'preparing';
+    el.className = 'activity ' + (asking ? 'ask' : live ? 'live' : a.state === 'waiting' ? 'turn' : 'off');
+    if (!asking && !live && a.state !== 'waiting') { el.replaceChildren(); return; }
+    const secs = Math.max(0, Math.floor((Date.now() - new Date(a.updated || a.created).getTime()) / 1000));
+    const now = f.plan && f.plan.find((x) => x.s === 'in_progress');
+    const what = asking ? 'Needs your answer: allow or deny the request below' : live ? (f.running ? 'Running ' + f.running : now ? now.c : a.state === 'preparing' ? 'Gathering context' : 'Thinking') : 'Your turn: reply below or pick a suggestion';
+    el.replaceChildren(h('span', { class: 'adot' }), h('span', { class: 'awhat' }, uiClipText(what, 120)), live ? h('span', { class: 'faint small' }, secs < 5 ? 'just now' : secs + 's since the last update') : null);
+  }
+  const uiClipText = (t, n) => (t.length > n ? t.slice(0, n) + '…' : t);
+  setInterval(() => { if (S.route && S.route.name === 'agent') updateActivity(); }, 1000);
 
   // ---------- changes / handoff ----------
   function parseDiff(text) {
@@ -980,31 +1078,41 @@
     const q = prefs.q.trim().toLowerCase();
     const shown = S.agents.filter((a) => (!prefs.repo || a.repo === prefs.repo) && (!q || (a.title + ' ' + a.branch + ' ' + (a.files || []).join(' ')).toLowerCase().includes(q)));
     const title = (id) => (S.agents.find((a) => a.id === id) || {}).title || id;
-    const COLS = [['waiting', 'Needs you', 'Waiting for your reply'], ['working', 'Working', 'Busy right now'], ['queued', 'Up next', 'Waiting for a free slot'], ['finished', 'Finished', 'Review it, then carry on elsewhere']];
+    const COLS = [['queued', 'Up next', 'Waits for a free slot'], ['working', 'Working', 'Busy right now'], ['waiting', 'Needs you', 'Waiting for your reply'], ['finished', 'Finished', 'Review it, then carry on']];
     const listOf = (k) => (k === 'queued' ? queue : shown.filter((a) => bucket(a) === k));
     const tiles = h('div', { class: 'btiles' }, ...COLS.map(([k, l]) => h('div', { class: 'btile ' + k }, h('b', {}, String(listOf(k).length)), h('span', {}, l))));
     const search = h('input', { type: 'search', class: 'bsearch', placeholder: 'Search tasks, branches or files', 'aria-label': 'Search the board', value: prefs.q, autocomplete: 'off' });
     search.addEventListener('input', () => { saveBoardPrefs({ ...boardPrefs(), q: search.value }); renderBoard().then(() => { const el = document.querySelector('.bsearch'); if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); } }); });
     const sel = repos.length > 1 ? h('select', { 'aria-label': 'Folder', onchange: (e) => { saveBoardPrefs({ ...boardPrefs(), repo: e.target.value }); renderBoard(); } },
       h('option', { value: '' }, 'All folders'), ...repos.map((r) => h('option', Object.assign({ value: r }, r === prefs.repo ? { selected: true } : {}), repoName(r)))) : null;
-    const head = h('div', { class: 'bhead2' }, h('div', {}, h('h2', {}, 'Board'), h('p', { class: 'faint' }, 'Your tasks, by what they need from you. Below: what Cully is doing in the background and what is open in your terminals.')),
+    const head = h('div', { class: 'bhead2' }, h('div', {}, h('h2', {}, 'Board'), h('p', { class: 'faint' }, 'Drag a task from Up next to Working to start it, and a running one to Finished to stop it. Below: what Cully is doing in the background and what is open in your terminals.')),
       h('div', { class: 'row btools' }, search, sel, h('a', { class: 'btn', href: '#/' }, icon('plus'), 'New task')));
     const overlapBanner = S.overlaps.map((o) => h('div', { class: 'overlap' }, icon('alert'), ' ', h('b', {}, o.file), ' is being edited by ' + joinNames(o.agents.map(title)) + '. Expect a merge conflict, or ask one of them to wait.'));
     const board = h('div', { class: 'cols' }, ...COLS.map(([key, label, hint]) => {
       const all = listOf(key);
       const list = key === 'finished' && !S.finishedAll ? all.slice(0, 6) : all;
       const groups = key !== 'queued' ? [...new Set(all.filter((a) => a.group).map((a) => a.group))].filter((g) => S.agents.filter((a) => a.group === g).length > 1) : [];
-      const sec = h('section', { class: 'bcol ' + key }, h('h3', {}, label, h('span', {}, String(all.length))), h('p', { class: 'bhint' }, hint),
+      const addBtn = key === 'queued' ? h('button', { class: 'iconbtn', title: 'Add a task to the queue', 'aria-label': 'Add a task to the queue', onclick: () => { S.boardAdd = !S.boardAdd; S.boardSig = ''; renderBoard(); } }, icon('plus')) : null;
+      const addForm = key === 'queued' && S.boardAdd ? (() => {
+        const ta2 = h('textarea', { rows: '3', placeholder: 'What should Cully do next?', 'aria-label': 'New queued task' });
+        const err2 = h('div', { class: 'err', hidden: true });
+        const go2 = h('button', { class: 'btn small', onclick: async () => { go2.disabled = true; err2.hidden = true; try { await api('/api/queue', { method: 'POST', body: JSON.stringify({ prompt: ta2.value, repo: S.opts.repo || '', mode: S.opts.mode, context: S.opts.context, recall: S.opts.recall, scout: S.opts.scout }) }); S.boardAdd = false; S.boardSig = ''; renderBoard(); } catch (x) { err2.textContent = x.message; err2.hidden = false; go2.disabled = false; } } }, icon('plus'), 'Add to the queue');
+        setTimeout(() => ta2.focus(), 0);
+        return h('div', { class: 'card addcard' }, ta2, err2, h('div', { class: 'row' }, go2, h('button', { class: 'btn ghost small', onclick: () => { S.boardAdd = false; S.boardSig = ''; renderBoard(); } }, 'Cancel')));
+      })() : null;
+      const sec = h('section', { class: 'bcol ' + key }, h('header', { class: 'bcol-h' }, h('h3', {}, label), h('span', { class: 'bcount' }, String(all.length)), h('span', { class: 'sp' }), addBtn),
+        h('p', { class: 'bhint' }, hint),
+        h('div', { class: 'bcol-body' }, addForm,
         ...groups.map((g) => h('button', { class: 'btn ghost small cmpbtn', onclick: () => openCompare(g) }, icon('eye'), 'Compare options: ' + ((S.agents.find((a) => a.group === g) || {}).title || '').replace(/ \(option .\)$/, ''))),
-        ...(list.length ? list.map((x) => (key === 'queued' ? queueCard(x) : boardCard(x, S.overlaps))) : [h('div', { class: 'none' }, key === 'waiting' ? 'Nothing needs you.' : key === 'queued' ? 'No queued tasks. Use Queue for later when you start one.' : key === 'working' ? 'Nothing is running.' : 'Nothing finished yet.')]),
-        key === 'finished' && all.length > 6 ? h('button', { class: 'linkbtn', onclick: () => { S.finishedAll = !S.finishedAll; renderBoard(); } }, S.finishedAll ? 'Show fewer' : 'Show all ' + all.length) : null);
+        ...(list.length ? list.map((x) => (key === 'queued' ? queueCard(x) : boardCard(x, S.overlaps))) : [h('div', { class: 'none' }, key === 'waiting' ? 'Nothing needs you.' : key === 'queued' ? 'Nothing queued. Press + to add a task.' : key === 'working' ? 'Nothing is running. Drag a queued task here to start it.' : 'Nothing finished yet.')]),
+        key === 'finished' && all.length > 6 ? h('button', { class: 'linkbtn', onclick: () => { S.finishedAll = !S.finishedAll; renderBoard(); } }, S.finishedAll ? 'Show fewer' : 'Show all ' + all.length) : null));
       sec.addEventListener('dragover', (e) => { e.preventDefault(); sec.classList.add('over'); });
       sec.addEventListener('dragleave', () => sec.classList.remove('over'));
       sec.addEventListener('drop', (e) => { sec.classList.remove('over'); dropOn(key === 'working' ? 'preparing' : key, e); });
       return sec;
     }));
     const empty = !S.agents.length && !queue.length ? h('div', { class: 'empty-state' }, h('h2', {}, 'No tasks yet'), h('p', { class: 'faint' }, 'Give Cully a task and it shows up here, moving from Working to Finished.'), h('a', { class: 'btn', href: '#/' }, icon('plus'), 'Start a task')) : null;
-    box.replaceChildren(head, tiles, ...overlapBanner, empty || board, h('div', { id: 'running' }));
+    box.replaceChildren(head, ...overlapBanner, empty || board, h('div', { id: 'running' }));
     refreshRunning();
     clearInterval(S.runTimer);
     S.runTimer = setInterval(() => { if (S.route.name !== 'board') { clearInterval(S.runTimer); return; } refreshRunning(); }, 5000);
@@ -1413,9 +1521,9 @@
     const pct = total ? Math.round((t.analyzed / total) * 100) : 0;
     const toggle = async (on) => { try { await api('/api/sessions/analysis', { method: 'POST', body: JSON.stringify({ on }) }); again(); } catch (e) { toast(e.message, true); } };
     const analysis = lib.analysis.on
-      ? h('section', { class: 'lib-card' }, h('div', { class: 'row' }, h('b', {}, 'Analysing your sessions'), h('span', { class: 'faint' }, t.analyzed + ' of ' + total + ' done'), h('button', { class: 'btn ghost small sp', onclick: () => toggle(false) }, 'Pause')),
+      ? h('section', { class: 'lib-card' }, h('div', { class: 'row' }, h('b', {}, 'Analysing your sessions'), h('span', { class: 'faint' }, t.analyzed + ' of ' + total + ' done' + (t.open ? ', ' + t.open + (t.open === 1 ? ' is' : ' are') + ' open now' : '')), h('button', { class: 'btn ghost small sp', onclick: () => toggle(false) }, 'Pause')),
         h('div', { class: 'bar' }, fill(pct)),
-        h('p', { class: 'faint small' }, 'Claude reads each finished session in the background and works out its goal, whether it was finished and stayed on task, where it looped or went unchecked, and what could go better, and gives it a title. It does up to ' + lib.analysis.perHour + ' an hour, newest first, so the first pass takes a while. It uses your Claude plan.'))
+        h('p', { class: 'faint small' }, 'Claude reads each finished session in the background and works out its goal, whether it was finished and stayed on task, where it looped or went unchecked, and what could go better, and gives it a title. It does up to ' + lib.analysis.perHour + ' an hour, newest first, so the first pass takes a while. A session still in use is left alone and analysed 15 minutes after its last activity' + (t.open ? ', which is why ' + t.open + (t.open === 1 ? ' is' : ' are') + ' waiting now (this page\'s own session counts)' : '') + '.' + (t.failed ? ' ' + t.failed + ' could not be analysed after two tries.' : '') + ' It uses your Claude plan.'))
       : h('section', { class: 'lib-card' }, h('b', {}, t.pending ? 'Analyse your ' + t.pending + ' past sessions' : 'All sessions are analysed'),
         h('p', { class: 'faint small' }, 'Claude can read each finished session in the background and work out its goal, whether it was finished and stayed on task, where it looped or went unchecked, and what could go better. Nothing is sent anywhere except to your own Claude, and folders you hide are skipped. It takes a while and uses your Claude plan.'),
         t.pending ? h('button', { class: 'btn', onclick: () => toggle(true) }, icon('spark'), 'Start analysing sessions') : null);
@@ -1447,8 +1555,21 @@
   // ---------- the harness page: everything about the program that runs the model ----------
   // What a server's state means, in words, and what to do about it.
   const SRV_WORD = { ok: 'Connected', auth: 'Needs sign-in', bad: 'Failed to connect', unchecked: 'Not checked yet' };
-  const srvState = (st) => (!st ? 'unchecked' : /^connected/i.test(st) ? 'ok' : st === 'needs-auth' ? 'auth' : 'bad');
-  const SRV_FIX = { auth: 'Sign in from Claude Code: run /mcp and choose this server. Cully cannot sign in to it for you.', bad: 'Claude could not reach it. Check the address or that the program starts, then check again.' };
+  const srvState = (st) => (!st ? 'unchecked' : /^connected/i.test(st) ? 'ok' : st === 'needs-auth' ? 'auth' : st === 'pending' ? 'unchecked' : 'bad');
+  const SRV_FIX = { auth: 'Needs you to sign in.', bad: 'Claude could not connect just now.' };
+  // What is wrong with a server and what to do, in steps you can follow. A server with no header
+  // credentials set signs in with OAuth; one that has headers had them refused.
+  function srvHelp(m) {
+    const st = srvState(m.status);
+    const cmd = (c) => h('div', { class: 'row' }, h('code', { class: 'cmdline' }, c), copyBtn('Copy', () => c));
+    if (st === 'auth' && m.kind === 'connector') return h('div', { class: 'shelp' }, h('p', {}, 'This connector was added in claude.ai and has not been connected yet. Connect it in claude.ai under Settings, Connectors, or ignore it: tasks do not need it.'));
+    if (st === 'auth' && !(m.headers || []).length) return h('div', { class: 'shelp' }, h('p', {}, h('b', {}, 'Why: '), 'no header credentials are set for this server in the Claude config, so it uses OAuth sign-in. Cully cannot do that sign-in for you; Claude Code does it once and remembers it.'),
+      h('ol', {}, h('li', {}, 'In a terminal where Claude Code is installed, run:', cmd('claude')), h('li', {}, 'Type ', h('code', {}, '/mcp'), ', choose ', h('b', {}, m.name), ', then Authenticate, and finish in the browser.'), h('li', {}, 'Come back here and press Check again.')),
+      h('p', { class: 'faint small' }, 'If this server takes a token instead of a browser sign-in, add it as a header and there will be no sign-in step:'), cmd('claude mcp add --transport http ' + m.name + ' ' + (m.kind === 'http' && m.target ? 'https://' + m.target : '<url>') + ' --scope user --header "Authorization: Bearer <token>"'));
+    if (st === 'auth') return h('div', { class: 'shelp' }, h('p', {}, h('b', {}, 'Why: '), 'the server refused the credentials Claude sent in these headers: ', h('b', {}, (m.headers || []).join(', ')), '. The token may have expired, or the account may no longer have access. Replace the header value and check again.'), cmd('claude mcp remove ' + m.name + ' --scope user'), h('p', { class: 'faint small' }, 'then add it again with the new token (claude mcp add ... --header "Name: value").'));
+    if (st === 'bad') return h('div', { class: 'shelp' }, h('p', {}, h('b', {}, 'Why: '), 'Claude could not connect when it last started. That is often temporary (the server was restarting, or the network dropped). Check again before changing anything.'), m.kind === 'stdio' ? h('p', { class: 'faint small' }, 'For a program, run it by hand in a terminal to see why it does not start.') : h('p', { class: 'faint small' }, 'If it keeps failing, check the address and that your network reaches it.'));
+    return null;
+  }
   function srvHost(m) {
     if (m.kind === 'http') { try { const u = new URL(m.target); return u.host + (u.pathname.length > 1 ? u.pathname.replace(/\/$/, '') : ''); } catch (_) { /* show it as it is */ } }
     return m.target || '';
@@ -1540,45 +1661,61 @@
       const summary = h('p', { class: 'faint small' });
       const syncBar = () => {
         const changed = [...chosen].sort().join(',') !== initial;
-        summary.textContent = info.tasksUseIt ? (chosen.size ? 'Tasks load ' + chosen.size + ' of ' + info.mcp.length + ' servers.' : 'Tasks load all ' + info.mcp.length + ' servers.') + ' Each server adds its tool descriptions to every turn, so loading fewer saves tokens.' : 'Servers this harness has set up.';
+        summary.textContent = info.tasksUseIt ? (chosen.size ? 'Tasks load ' + chosen.size + ' of ' + own.length + ' servers.' : 'Tasks load all ' + own.length + ' servers.') + ' Each server adds its tool descriptions to every turn, so loading fewer saves tokens.' : 'Servers this harness has set up.';
         bar.hidden = !changed;
         if (info.tasksUseIt && toolsLoaded()) summary.textContent += ' That is ' + toolsLoaded() + ' tools in every turn.';
         for (const sw of body.querySelectorAll('[role=switch]')) sw.setAttribute('aria-checked', String(!chosen.size || chosen.has(sw.dataset.name)));
-        for (const c of body.querySelectorAll('.scard')) c.classList.toggle('off', chosen.size > 0 && !chosen.has(c.dataset.name));
+        for (const c of body.querySelectorAll('.srow')) c.classList.toggle('off', chosen.size > 0 && !chosen.has(c.dataset.name) && !c.querySelector('.sdot.connector'));
       };
       bar.append(h('span', {}, 'You have unsaved changes.'), h('button', { class: 'btn', onclick: async () => {
         try { await api('/api/admin/tools', { method: 'PUT', body: JSON.stringify({ presets: Object.fromEntries(tools.presets.map((p) => [p.id, p.on])), allow: tools.allow, deny: tools.deny, mcpOnly: [...chosen] }) }); toast('Saved. New tasks load ' + (chosen.size ? chosen.size + ' servers' : 'all servers') + '.'); renderHarness(); } catch (e) { toast(e.message, true); }
       } }, icon('check'), 'Save'), h('button', { class: 'btn ghost', onclick: () => renderHarness() }, 'Discard'));
       const order = { auth: 0, bad: 1, ok: 2, unchecked: 3 };
-      const sorted = [...info.mcp].sort((x, y) => order[srvState(x.status)] - order[srvState(y.status)] || x.name.localeCompare(y.name));
-      const grid = h('div', { class: 'sgrid' });
+      const own = info.mcp.filter((m) => m.kind !== 'connector'); const conns = info.mcp.filter((m) => m.kind === 'connector');
+      const byState = (x, y) => order[srvState(x.status)] - order[srvState(y.status)] || x.name.localeCompare(y.name);
+      const grid = h('div', { class: 'srows' });
       const sfilter = { q: '', st: S.srvFilter || '' };
-      const cardFor = (m) => {
+      S.srvOpen = S.srvOpen || new Set();
+      const rowFor = (m) => {
         const loaded = () => !chosen.size || chosen.has(m.name);
         const st = srvState(m.status);
-        const sw = info.tasksUseIt ? h('button', { type: 'button', class: 'switch', role: 'switch', 'aria-checked': String(loaded()), 'aria-label': 'Tasks load ' + m.name, 'data-name': m.name, title: 'Whether tasks load this server', onclick: (e) => { e.stopPropagation(); if (!chosen.size) for (const x of info.mcp) chosen.add(x.name); if (chosen.has(m.name)) chosen.delete(m.name); else chosen.add(m.name); if (chosen.size === info.mcp.length) chosen.clear(); syncBar(); } }, h('span', { class: 'knob' })) : null;
-        const open = () => openServerModal(agent, m, info);
-        return h('div', { class: 'scard st-' + st, role: 'button', tabindex: '0', 'data-name': m.name, 'aria-label': 'Open ' + m.name, onclick: open, onkeydown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); } } },
-          h('div', { class: 'sc-top' }, h('b', { class: 'sc-name' }, m.name), sw),
-          h('div', { class: 'sc-target faint small', title: m.target || '' }, h('span', { class: 'chip' }, m.kind === 'http' ? 'Web' : 'Program'), ' ' + srvHost(m)),
-          h('div', { class: 'row' }, h('span', { class: 'chip fs-' + (st === 'ok' ? 'good' : st === 'bad' ? 'bad' : st === 'auth' ? 'wait' : 'info') }, SRV_WORD[st]),
-            m.tools ? h('span', { class: 'chip' }, m.tools + (m.tools === 1 ? ' tool' : ' tools')) : null, m.prompts ? h('span', { class: 'chip' }, m.prompts + (m.prompts === 1 ? ' prompt' : ' prompts')) : null),
-          SRV_FIX[st] ? h('p', { class: 'sc-fix small' }, SRV_FIX[st]) : null,
-          h('span', { class: 'sc-open faint small' }, 'Open ›'));
+        const sw = info.tasksUseIt && m.kind !== 'connector' ? h('button', { type: 'button', class: 'switch', role: 'switch', 'aria-checked': String(loaded()), 'aria-label': 'Tasks load ' + m.name, 'data-name': m.name, title: 'Whether tasks load this server', onclick: (e) => { e.stopPropagation(); if (!chosen.size) for (const x of own) chosen.add(x.name); if (chosen.has(m.name)) chosen.delete(m.name); else chosen.add(m.name); if (chosen.size === own.length) chosen.clear(); syncBar(); } }, h('span', { class: 'knob' })) : null;
+        const help = srvHelp(m);
+        const detail = h('div', { class: 'sdetail', hidden: !S.srvOpen.has(m.name) },
+          h('div', { class: 'row' }, h('span', { class: 'faint small' }, (m.kind === 'http' ? 'Web address ' : m.kind === 'connector' ? '' : 'Program ') + (m.target || '')), m.headers && m.headers.length ? h('span', { class: 'faint small' }, 'Headers set: ' + m.headers.join(', ')) : null),
+          help, m.tools ? h('p', { class: 'faint small' }, m.tools + ' tools' + (m.prompts ? ' and ' + m.prompts + ' prompts' : '') + ' reported at the last check.') : null,
+          h('div', { class: 'row' }, m.kind !== 'connector' && m.tools ? h('button', { class: 'btn small', onclick: () => openServerModal(agent, m, info) }, icon('term'), 'See its tools') : null,
+            m.kind !== 'connector' && m.tools && info.tasksUseIt ? h('a', { class: 'btn ghost small', href: '#/harness/tools', onclick: (e) => { e.preventDefault(); S.toolsServer = m.name; go(agent, 'tools'); } }, 'Set Ask, Allow or Block') : null));
+        const action = st === 'auth' ? h('button', { class: 'btn small', onclick: (e) => { e.stopPropagation(); S.srvOpen.add(m.name); drawGrid(); } }, icon('lock'), 'How to sign in') : st === 'bad' || st === 'unchecked' ? h('button', { class: 'btn ghost small', onclick: async (e) => { e.stopPropagation(); e.currentTarget.disabled = true; e.currentTarget.textContent = 'Checking…'; try { await api('/api/harness/probe', { method: 'POST' }); renderHarness(); } catch (x) { toast(x.message, true); renderHarness(); } } }, icon('refresh'), st === 'bad' ? 'Check again' : 'Check') : null;
+        const toggle = () => { if (S.srvOpen.has(m.name)) S.srvOpen.delete(m.name); else S.srvOpen.add(m.name); detail.hidden = !S.srvOpen.has(m.name); row.classList.toggle('open', S.srvOpen.has(m.name)); };
+        const row = h('div', { class: 'srow st-' + st + (S.srvOpen.has(m.name) ? ' open' : ''), 'data-name': m.name },
+          h('div', { class: 'srow-main', role: 'button', tabindex: '0', 'aria-expanded': String(S.srvOpen.has(m.name)), onclick: toggle, onkeydown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } } },
+            h('span', { class: 'sdot ' + st, title: SRV_WORD[st] }), h('div', { class: 'sname' }, h('b', {}, m.name), h('span', { class: 'faint small', title: m.target || '' }, srvHost(m))),
+            h('span', { class: 'chip fs-' + (st === 'ok' ? 'good' : st === 'bad' ? 'bad' : st === 'auth' ? 'wait' : 'info') }, SRV_WORD[st]),
+            m.tools ? h('span', { class: 'chip' }, m.tools + (m.tools === 1 ? ' tool' : ' tools')) : h('span', { class: 'chip faint' }, ''), h('span', { class: 'sp' }), action, sw, h('span', { class: 'chev faint' }, '›')),
+          detail);
+        return row;
       };
       const drawGrid = () => {
         const t = sfilter.q.trim().toLowerCase();
-        const rows = sorted.filter((m) => (!sfilter.st || (sfilter.st === 'attention' ? ['auth', 'bad'].includes(srvState(m.status)) : srvState(m.status) === sfilter.st)) && (!t || (m.name + ' ' + srvHost(m)).toLowerCase().includes(t)));
-        grid.replaceChildren(...(rows.length ? rows.map(cardFor) : [h('p', { class: 'faint small' }, 'No server matches.')]));
+        const ok = (m) => (!sfilter.st || (sfilter.st === 'attention' ? ['auth', 'bad'].includes(srvState(m.status)) : srvState(m.status) === sfilter.st)) && (!t || (m.name + ' ' + srvHost(m)).toLowerCase().includes(t));
+        const mine = own.filter(ok).sort(byState);
+        const need = mine.filter((m) => ['auth', 'bad'].includes(srvState(m.status))); const rest = mine.filter((m) => !need.includes(m));
+        const cs = conns.filter(ok).sort(byState);
+        const grp = (title, sub, items, open) => items.length ? h('section', { class: 'sgroup' }, h('div', { class: 'sgroup-h' }, h('b', {}, title), h('span', { class: 'faint small' }, sub)), ...items.map(rowFor)) : null;
+        const connNeed = cs.filter((m) => srvState(m.status) === 'auth').length;
+        const connBlock = cs.length ? h('details', { class: 'sgroup', ...(t || sfilter.st ? { open: true } : {}) }, h('summary', { class: 'sgroup-h' }, h('b', {}, 'Connectors from claude.ai'), h('span', { class: 'faint small' }, cs.length + ' connectors' + (connNeed ? ', ' + connNeed + ' not connected (tasks do not need them)' : ''))), ...cs.map(rowFor)) : null;
+        const nodes = [grp('Needs you', need.length + (need.length === 1 ? ' server' : ' servers'), need), grp(need.length ? 'Working' : 'Your servers', rest.length + (rest.length === 1 ? ' server' : ' servers'), rest), connBlock].filter(Boolean);
+        grid.replaceChildren(...(nodes.length ? nodes : [h('p', { class: 'faint small' }, 'No server matches.')]));
         syncBar();
       };
-      const cnt = (f) => info.mcp.filter((m) => f(srvState(m.status))).length;
+      const cnt = (f) => own.filter((m) => f(srvState(m.status))).length;
       const sq = h('input', { type: 'search', class: 'bsearch', placeholder: 'Search servers', 'aria-label': 'Search servers', autocomplete: 'off' });
       sq.addEventListener('input', () => { sfilter.q = sq.value; drawGrid(); });
       const fchips = h('div', { class: 'row filters' });
-      const drawChips = () => fchips.replaceChildren(...[['', 'All', info.mcp.length], ['ok', 'Connected', cnt((x) => x === 'ok')], ['attention', 'Need a look', cnt((x) => x === 'auth' || x === 'bad')], ['unchecked', 'Not checked', cnt((x) => x === 'unchecked')]].filter(([k, , n]) => !k || n).map(([k, l, n]) => h('button', { type: 'button', class: 'toggle' + (sfilter.st === k ? ' on' : ''), onclick: () => { sfilter.st = k; S.srvFilter = k; drawChips(); drawGrid(); } }, l + ' ' + n)));
+      const drawChips = () => fchips.replaceChildren(...[['', 'All', own.length], ['ok', 'Connected', cnt((x) => x === 'ok')], ['attention', 'Need a look', cnt((x) => x === 'auth' || x === 'bad')], ['unchecked', 'Not checked', cnt((x) => x === 'unchecked')]].filter(([k, , n]) => !k || n).map(([k, l, n]) => h('button', { type: 'button', class: 'toggle' + (sfilter.st === k ? ' on' : ''), onclick: () => { sfilter.st = k; S.srvFilter = k; drawChips(); drawGrid(); } }, l + ' ' + n)));
       drawChips();
-      const toolsLoaded = () => info.mcp.filter((m) => !chosen.size || chosen.has(m.name)).reduce((n, m) => n + (m.tools || 0), 0);
+      const toolsLoaded = () => own.filter((m) => !chosen.size || chosen.has(m.name)).reduce((n, m) => n + (m.tools || 0), 0);
       const unchecked = info.tasksUseIt && info.mcp.length && info.mcp.every((m) => !m.status);
       const check = unchecked ? h('div', { class: 'ctxnote' }, icon('alert'), h('div', {}, h('b', {}, 'Cully has not checked these servers yet'), h('div', { class: 'faint small' }, 'Claude reports which servers connected, and what each offers, when it starts. Cully can start it once for a moment to find out; it costs a fraction of a cent.')),
         h('button', { class: 'btn small', onclick: async (e) => { e.currentTarget.disabled = true; e.currentTarget.textContent = 'Checking…'; try { const r = await api('/api/harness/probe', { method: 'POST' }); toast('Checked ' + r.servers + ' servers'); renderHarness(); } catch (x) { toast(x.message, true); renderHarness(); } } }, 'Check now')) : null;
@@ -1589,7 +1726,8 @@
       const ruleId = (srv, t) => 'mcp__' + srv + '__' + t;
       const cur = new Map(); const orig = new Map();
       for (const sv of tv.servers) for (const t of sv.tools) { const id = ruleId(sv.name, t.name); const v = pol.deny.includes(id) ? 'block' : pol.allow.includes(id) ? 'allow' : ''; cur.set(id, v); orig.set(id, v); }
-      const view = { q: '', kind: '', acc: '' };
+      const view = { q: '', kind: '', acc: '', server: S.toolsServer || '' };
+      S.toolsServer = '';
       const changed = () => [...cur].filter(([id, v]) => orig.get(id) !== v).length;
       const tiles = h('div', { class: 'kpis' });
       const bar = h('div', { class: 'savebar', hidden: true });
@@ -1619,7 +1757,7 @@
       const loadDesc = async (sv, btn) => { btn.disabled = true; btn.textContent = 'Reading ' + sv.name + '…'; try { await api('/api/harness/server/details', { method: 'POST', body: JSON.stringify({ agent, name: sv.name }) }); toast('Loaded ' + sv.name); renderHarness(); } catch (e) { toast(e.message, true); btn.disabled = false; btn.textContent = 'Load descriptions'; } };
       const drawList = () => {
         const t = view.q.trim().toLowerCase();
-        const cards = tv.servers.map((sv) => {
+        const cards = tv.servers.filter((sv) => !view.server || sv.name === view.server).map((sv) => {
           const rows = sv.tools.filter((x) => (!view.kind || toolKind(x) === view.kind) && (!view.acc || (cur.get(ruleId(sv.name, x.name)) || 'ask') === view.acc) && (!t || (sv.name + ' ' + x.name + ' ' + (x.description || '')).toLowerCase().includes(t)));
           if (!rows.length) return null;
           const bulk = (label, pick, v) => h('button', { type: 'button', class: 'btn ghost small', onclick: () => { for (const x of sv.tools) if (pick(x)) cur.set(ruleId(sv.name, x.name), v); drawTiles(); drawList(); } }, label);
@@ -1637,6 +1775,8 @@
       q.addEventListener('input', () => { view.q = q.value; drawList(); });
       const chips = h('div', { class: 'row filters' });
       const drawChips = () => chips.replaceChildren(...[['kind', '', 'All'], ['kind', 'read', 'Reads'], ['kind', 'change', 'Changes things'], ['kind', 'delete', 'Deletes'], ['acc', 'allow', 'Allowed'], ['acc', 'ask', 'Ask me'], ['acc', 'block', 'Blocked']].map(([f, v, l]) => h('button', { type: 'button', class: 'toggle' + ((f === 'kind' ? view.kind : view.acc) === v && (v || (f === 'kind' && !view.acc && !view.kind)) ? ' on' : ''), onclick: () => { if (!v) { view.kind = ''; view.acc = ''; } else view[f] = view[f] === v ? '' : v; drawChips(); drawList(); } }, l)));
+      const srvSel = h('select', { 'aria-label': 'Server' }, h('option', { value: '' }, 'All servers'), ...tv.servers.map((sv) => h('option', Object.assign({ value: sv.name }, view.server === sv.name ? { selected: true } : {}), sv.name + ' (' + sv.tools.length + ')')));
+      srvSel.addEventListener('change', () => { view.server = srvSel.value; drawList(); });
       drawChips();
       const needDesc = tv.servers.filter((sv) => sv.canLoad && !sv.detailsFrom);
       const allBtn = needDesc.length ? h('button', { class: 'btn small', title: 'Reads every server\'s tool definitions through your Claude: a few thousand tokens per server' }, icon('spark'), 'Load all descriptions (' + needDesc.length + ' servers)') : null;
@@ -1644,7 +1784,7 @@
       body.append(card('Tools', 'Every tool on the servers tasks connect to. Choose, tool by tool, whether a task may use it freely, must ask you first, or never gets it.',
         h('div', { class: 'ctxnote' }, icon('lock'), h('div', {}, h('b', {}, 'Ask, Allow or Block'), h('div', { class: 'faint small' }, 'Ask is the default: the task stops and a card in its window shows exactly what it wants to do. Allow lets it through without asking. Block is final: a blocked tool is never offered to the task.'))),
         !tv.known ? h('p', { class: 'faint small' }, 'Tool names appear after a task has started or the servers have been checked. Check them on the Connected servers page.') : null,
-        tiles, h('div', { class: 'row' }, q, allBtn), chips, list, bar,
+        tiles, h('div', { class: 'row' }, q, srvSel, allBtn), chips, list, bar,
         tv.builtin.length ? h('details', { class: 'rl' }, h('summary', {}, h('span', { class: 'rq' }, 'Built-in tools'), h('span', { class: 'faint small' }, tv.builtin.length + ' from the harness itself')), h('div', { class: 'rbody' }, h('p', { class: 'faint small' }, 'These come with the harness. The tool groups on the Permissions page decide which of them tasks may use.'), h('div', { class: 'row' }, ...tv.builtin.map((x) => h('span', { class: 'chip mono' }, x))))) : null));
       drawTiles(); drawList();
     } else if (section === 'skills') {
@@ -1660,7 +1800,17 @@
       const list = (title, items) => card(title, null, items.length ? h('div', { class: 'row' }, ...items.map((x) => h('span', { class: 'chip mono' }, x))) : h('p', { class: 'faint small' }, 'None.'));
       body.append(list('Plugins', info.plugins), list('Slash commands', info.commands), list('Subagents', info.subagents), list('Instruction files', info.instructions));
     }
-    box.replaceChildren(h('div', { class: 'bhead2' }, h('div', {}, h('h2', {}, 'Harness'), h('p', { class: 'faint' }, 'The program that runs the model. Tasks run in the one this page was opened through; sessions, the library, the advisor and the scout cover all three.'))), picker, h('div', { class: 'hlayout' }, nav, body));
+    // How fresh the server states are, with a way to check now. States older than ten minutes are
+    // checked once when the page opens (a few tokens on the smallest model), so a stale "failed" does not linger.
+    const age = info.statusAt ? Math.floor(Date.now() / 1000) - info.statusAt : null;
+    const stale = info.tasksUseIt && (age == null || age > 600);
+    if (stale && info.installed && !(S.probeTried && Date.now() - S.probeTried < 600000)) {
+      S.probeTried = Date.now();
+      api('/api/harness/probe', { method: 'POST' }).then(() => { if (S.route.name === 'harness') renderHarness(); }).catch(() => {});
+    }
+    const freshness = info.tasksUseIt ? h('div', { class: 'row fresh' }, h('span', { class: 'faint small' }, age == null ? 'Servers not checked yet' : 'Servers checked ' + (age < 60 ? 'just now' : Math.floor(age / 60) + ' min ago')),
+      (() => { const b = h('button', { class: 'btn ghost small', title: 'Start Claude once to see which servers connect. A few tokens on the smallest model.' }, icon('refresh'), 'Check now'); b.addEventListener('click', async () => { b.disabled = true; b.textContent = 'Checking…'; try { await api('/api/harness/probe', { method: 'POST' }); } catch (e) { toast(e.message, true); } renderHarness(); }); return b; })()) : null;
+    box.replaceChildren(h('div', { class: 'bhead2' }, h('div', {}, h('h2', {}, 'Harness'), h('p', { class: 'faint' }, 'The program that runs the model: its servers, tools, skills and permissions. Tasks run in the one this page was opened through.')), freshness), picker, h('div', { class: 'hlayout' }, nav, body));
   }
 
   // A server in detail: what state it is in and what to do about it, then its tools (grouped, searchable,

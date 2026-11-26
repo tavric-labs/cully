@@ -97,6 +97,9 @@ type uiStartRequest struct {
 	fork         bool            // start a new session from resumeID; the original stays as it is
 	group        string          // fan-out options share a group
 	option       string          // "A", "B", ...
+	taskRef      string          // this run continues an existing task record, adding a session to it
+	originID     string          // a session of any harness this task was started from
+	originAgent  string
 }
 
 type uiStage struct {
@@ -151,6 +154,7 @@ type uiManager struct {
 		at   time.Time
 		info uiHarnessInfo
 	}
+	lastMCPAt  int64 // when lastMCP was last reported, unix seconds
 	lastMCP    map[string]string
 	syncMu     sync.Mutex
 	initNames  *uiInitNames
@@ -392,6 +396,7 @@ func (m *uiManager) start(req uiStartRequest) (*uiAgent, error) {
 	m.agents[id] = a
 	m.order = append(m.order, id)
 	_ = m.mcp.markInUse("claude") // UI-spawned agents run Claude
+	defer m.saveTask(a)
 	go a.run(m)
 	return a, nil
 }
@@ -448,6 +453,8 @@ type uiAgent struct {
 	created                           time.Time
 	tokens                            *uiTokenPool
 	done                              chan struct{}
+	sessionID                         string      // the harness session this run is, once it has said
+	counted                           bool        // this run has been counted in its task record
 	perm                              uiPermState // questions about tools the task is not already allowed to use
 
 	mu      sync.Mutex
@@ -539,6 +546,9 @@ func (a *uiAgent) setState(s string) {
 	a.mu.Lock()
 	a.state = s
 	a.mu.Unlock()
+	if a.mgr != nil {
+		a.mgr.saveTask(a) // the task is kept in the database, so it survives a restart
+	}
 	if a.mgr != nil && (s == uiDone || s == uiFailed || s == uiStopped) {
 		go a.mgr.drainQueue()
 		a.mgr.recordUsage(a)
@@ -808,6 +818,15 @@ func (a *uiAgent) handleLine(line []byte) {
 		}
 		a.mu.Unlock()
 	}
+	if p.SessionID != "" {
+		a.mu.Lock()
+		first := a.sessionID == ""
+		a.sessionID = p.SessionID
+		a.mu.Unlock()
+		if first && a.mgr != nil {
+			a.mgr.saveTask(a)
+		}
+	}
 	if p.Model != "" || p.Context > 0 {
 		a.mu.Lock()
 		if p.Model != "" {
@@ -834,6 +853,9 @@ func (a *uiAgent) handleLine(line []byte) {
 			a.state = uiWaiting
 		}
 		a.mu.Unlock()
+		if a.mgr != nil {
+			a.mgr.saveTask(a) // a turn ended: keep what the task now looks like
+		}
 		if turnOver && a.harness != nil {
 			go a.harnessAfterTurn()
 		}
@@ -890,6 +912,9 @@ func (a *uiAgent) write(text string) error {
 		}
 	}
 	a.mu.Unlock()
+	if a.mgr != nil {
+		a.mgr.saveTask(a)
+	}
 	if stdin == nil {
 		return errors.New("agent is not running")
 	}

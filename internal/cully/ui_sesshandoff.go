@@ -99,7 +99,7 @@ func (m *uiManager) continueFromSession(id, next string) (*uiAgent, error) {
 	if err != nil || !st {
 		return nil, errors.New("the folder this session worked in is gone")
 	}
-	req := uiStartRequest{Title: "Continue: " + uiClipWords(firstNonEmpty(e.Title, e.Name), 50), Prompt: uiSessionHandoffNext(e, m.cfg.Tokens.redact(next)), Context: true}
+	req := uiStartRequest{Title: "Continue: " + uiClipWords(firstNonEmpty(e.Title, e.Name), 50), Prompt: uiSessionHandoffNext(e, m.cfg.Tokens.redact(next)), Context: true, originID: e.ID, originAgent: e.Agent}
 	if e.File != "" {
 		req.addDirs = []string{filepath.Dir(e.File)}
 	}

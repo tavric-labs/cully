@@ -16,7 +16,8 @@ import (
 // and only then does it become an agent.
 
 const (
-	uiAgentSuggestMax  = 4  // new proposals per run
+	uiAgentSuggestMax  = 1  // new proposals per run: one idea at a time
+	uiAgentWaitingMax  = 2  // no new proposal while this many wait for an answer
 	uiAgentSuggestKeep = 16 // proposals kept in all
 )
 
@@ -63,9 +64,22 @@ func uiWriteAgentSuggestions(l []uiAgentSuggestion) {
 func (m *uiManager) agentSuggestionsList() []uiAgentSuggestion {
 	uiSuggestMu.Lock()
 	defer uiSuggestMu.Unlock()
-	out := []uiAgentSuggestion{}
+	all := []uiAgentSuggestion{}
 	for _, s := range uiReadAgentSuggestions() {
-		if s.State == "new" && !uiHidden(s.Folder, m.cfg.HideSessionsIn) {
+		if s.State == "new" && !uiHidden(s.Folder, m.cfg.HideSessionsIn) && filepath.Clean(s.Folder) != filepath.Clean(ConfigDir()) {
+			all = append(all, s)
+		}
+	}
+	sort.Slice(all, func(i, j int) bool { return all[i].Created.Before(all[j].Created) })
+	// Several proposals about the same job are one idea: keep the first. And never show more than the
+	// cap, so the page does not crowd.
+	out := []uiAgentSuggestion{}
+	for _, s := range all {
+		dup := false
+		for _, o := range out {
+			dup = dup || uiAgentSame(s.Name, s.Role, s.Folder, o.Name, o.Role, o.Folder)
+		}
+		if !dup && len(out) < uiAgentWaitingMax {
 			out = append(out, s)
 		}
 	}
@@ -148,6 +162,10 @@ func (m *uiManager) agentSuggestRun() (int, error) {
 	if len(repeats) == 0 {
 		return 0, nil // nothing repeats enough to justify an agent
 	}
+	if len(m.agentSuggestionsList()) >= uiAgentWaitingMax {
+		return 0, nil // answer the ones waiting first
+	}
+	repeats = repeats[:1] // only the strongest pattern
 	folders := map[string]string{}
 	var fl, lines []string
 	for _, f := range lib.Folders {
@@ -210,11 +228,44 @@ func (m *uiManager) agentSuggestRun() (int, error) {
 
 // uiAgentSame reports whether two agents are about the same job: the same name,
 // or the same folder with mostly the same words in name and role.
+func uiNameWords(name string) map[string]bool {
+	out := map[string]bool{}
+	for _, w := range strings.FieldsFunc(strings.ToLower(name), func(r rune) bool { return !(r >= 'a' && r <= 'z' || r >= '0' && r <= '9') }) {
+		if len(w) >= 2 && w != "agent" && w != "the" && w != "and" {
+			out[w] = true
+		}
+	}
+	return out
+}
+
+func uiWordOverlap(a, b map[string]bool) float64 {
+	if len(a) == 0 || len(b) == 0 {
+		return 0
+	}
+	n := 0
+	for w := range a {
+		if b[w] {
+			n++
+		}
+	}
+	small := len(a)
+	if len(b) < small {
+		small = len(b)
+	}
+	return float64(n) / float64(small)
+}
+
+// uiAgentSame reports whether two agents are about the same job: the same name, or in the same folder
+// names that mostly share their words ("Test Guard" and "Test Run Guard", "PR Status Watcher" and
+// "Open PR Status Watcher") or a role that does.
 func uiAgentSame(nameA, roleA, folderA, nameB, roleB, folderB string) bool {
 	if strings.EqualFold(strings.TrimSpace(nameA), strings.TrimSpace(nameB)) {
 		return true
 	}
-	return folderA == folderB && uiSimilar(uiGoalWords(nameA+" "+roleA), uiGoalWords(nameB+" "+roleB))
+	if folderA != folderB {
+		return false
+	}
+	return uiWordOverlap(uiNameWords(nameA), uiNameWords(nameB)) >= 0.66 || uiSimilar(uiGoalWords(nameA+" "+roleA), uiGoalWords(nameB+" "+roleB))
 }
 
 func uiSameGroups(a, b map[string]bool) bool {

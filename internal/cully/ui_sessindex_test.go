@@ -391,3 +391,20 @@ func TestPagesForCoachEvalsRingsAndResumeSummary(t *testing.T) {
 		}
 	}
 }
+
+func TestCullysOwnThrowawayCallsAreLeftOutOfTheLibrary(t *testing.T) {
+	cfg := ConfigDir()
+	mk := func(agent, cwd string, turns, tools int) *uiIndexed {
+		e := &uiIndexed{Agent: agent, Cwd: cwd}
+		e.Turns, e.Tools = turns, tools
+		return e
+	}
+	if !uiIsCullyCall(mk("claude", cfg, 1, 0)) {
+		t.Fatal("a one-request session with no tools in the Claude folder is Cully's own call")
+	}
+	for _, e := range []*uiIndexed{mk("claude", cfg, 9, 40), mk("claude", "/tmp/project", 1, 0), mk("codex", cfg, 1, 0)} {
+		if uiIsCullyCall(e) {
+			t.Fatalf("real work was treated as a Cully call: %+v", e)
+		}
+	}
+}

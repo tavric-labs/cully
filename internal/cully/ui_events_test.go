@@ -211,3 +211,17 @@ func TestRefreshingLimitsAsksEachAccountAndTheNewestWordWins(t *testing.T) {
 }
 
 func uiItoa64(n int64) string { return strconv.FormatInt(n, 10) }
+
+func TestAnAgentsTodoListBecomesAPlanEventNotAToolCall(t *testing.T) {
+	p := parseStreamLine([]byte(`{"type":"assistant","message":{"content":[{"type":"tool_use","id":"t1","name":"TodoWrite","input":{"todos":[{"content":"Add the endpoint","status":"completed"},{"content":"Write tests","status":"in_progress"},{"content":"  ","status":"pending"},{"content":"Update docs","status":"weird"}]}}]}}`))
+	if len(p.Events) != 1 || p.Events[0].Kind != "plan" {
+		t.Fatalf("events = %+v", p.Events)
+	}
+	want := `[{"c":"Add the endpoint","s":"completed"},{"c":"Write tests","s":"in_progress"},{"c":"Update docs","s":"pending"}]`
+	if p.Events[0].Text != want {
+		t.Fatalf("plan = %s", p.Events[0].Text)
+	}
+	if bad := parseStreamLine([]byte(`{"type":"assistant","message":{"content":[{"type":"tool_use","id":"t2","name":"TodoWrite","input":{"todos":[]}}]}}`)); len(bad.Events) != 1 || bad.Events[0].Kind != "tool" {
+		t.Fatalf("an empty list should fall back to a tool row: %+v", bad.Events)
+	}
+}

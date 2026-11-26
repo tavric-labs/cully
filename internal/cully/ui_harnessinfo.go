@@ -22,12 +22,13 @@ import (
 // place, so each has its own reader.
 
 type uiInfoServer struct {
-	Name    string `json:"name"`
-	Kind    string `json:"kind"`   // http, stdio, ...
-	Target  string `json:"target"` // address without credentials, or the program's name
-	Status  string `json:"status,omitempty"`
-	Tools   int    `json:"tools,omitempty"`   // tools it offered the last time a task started
-	Prompts int    `json:"prompts,omitempty"` // prompts (slash commands) it offered
+	Name    string   `json:"name"`
+	Kind    string   `json:"kind"`   // http, stdio, ...
+	Target  string   `json:"target"` // address without credentials, or the program's name
+	Status  string   `json:"status,omitempty"`
+	Headers []string `json:"headers,omitempty"` // names of the headers set for it, never their values
+	Tools   int      `json:"tools,omitempty"`   // tools it offered the last time a task started
+	Prompts int      `json:"prompts,omitempty"` // prompts (slash commands) it offered
 }
 
 type uiInfoSkill struct {
@@ -57,9 +58,10 @@ type uiHarnessInfo struct {
 	Plugins      []string       `json:"plugins"`
 	Commands     []string       `json:"commands"`
 	Subagents    []string       `json:"subagents"`
-	Instructions []string       `json:"instructions"` // instruction files that exist
-	Notes        []string       `json:"notes"`        // what this harness does not expose
-	TasksUseIt   bool           `json:"tasksUseIt"`   // tasks started here run in this harness
+	Instructions []string       `json:"instructions"`       // instruction files that exist
+	Notes        []string       `json:"notes"`              // what this harness does not expose
+	TasksUseIt   bool           `json:"tasksUseIt"`         // tasks started here run in this harness
+	StatusAt     int64          `json:"statusAt,omitempty"` // when the servers' states were last checked, unix seconds
 }
 
 // uiHarnessVersion runs `<harness> --version`; it is a variable so tests need no real program.
@@ -226,6 +228,12 @@ func uiServersFromJSON(defs map[string]any) []uiInfoServer {
 		if t, ok := d["type"].(string); ok && t != "" {
 			s.Kind = t
 		}
+		if hd, ok := d["headers"].(map[string]any); ok {
+			for k := range hd {
+				s.Headers = append(s.Headers, k)
+			}
+			sort.Strings(s.Headers)
+		}
 		if u, ok := d["url"].(string); ok {
 			if s.Kind == "stdio" {
 				s.Kind = "http"
@@ -334,9 +342,24 @@ func (m *uiManager) harnessInfo(agent string) uiHarnessInfo {
 				info.MCP[i].Status = st
 			}
 		}
+		// Connectors added in claude.ai are not in the config file, but Claude reports them at start.
+		have := map[string]bool{}
+		for _, sv := range info.MCP {
+			have[sv.Name] = true
+		}
+		var extra []string
+		for name := range last {
+			if !have[name] {
+				extra = append(extra, name)
+			}
+		}
+		sort.Strings(extra)
+		for _, name := range extra {
+			info.MCP = append(info.MCP, uiInfoServer{Name: name, Kind: "connector", Target: "Added in claude.ai", Status: last[name]})
+		}
 		if n := m.initKnown(); n != nil {
 			for i := range info.MCP {
-				prefix := "mcp__" + info.MCP[i].Name + "__"
+				prefix := "mcp__" + uiToolNameOf(info.MCP[i].Name) + "__"
 				for _, t := range n.Tools {
 					if strings.HasPrefix(t, prefix) {
 						info.MCP[i].Tools++
@@ -352,6 +375,7 @@ func (m *uiManager) harnessInfo(agent string) uiHarnessInfo {
 		if len(last) == 0 {
 			info.Notes = append(info.Notes, "Server status shows once a task has started: Claude reports it then.")
 		}
+		info.StatusAt = m.lastMCPSeen()
 		info.Skills = uiSkillsIn(filepath.Join(ConfigDir(), "skills"), "yours")
 		info.Commands = uiMarkdownNames(filepath.Join(ConfigDir(), "commands"))
 		info.Subagents = uiMarkdownNames(filepath.Join(ConfigDir(), "agents"))
@@ -442,10 +466,26 @@ func (m *uiManager) lastMCPStatus() map[string]string {
 func (m *uiManager) rememberMCP(servers []uiMCPServer) {
 	m.infoMu.Lock()
 	defer m.infoMu.Unlock()
-	if m.lastMCP == nil {
-		m.lastMCP = map[string]string{}
-	}
+	m.lastMCP = map[string]string{} // the newest report replaces the old: a removed server must not linger
 	for _, s := range servers {
 		m.lastMCP[s.Name] = s.Status
 	}
+	m.lastMCPAt = time.Now().Unix()
+}
+
+func (m *uiManager) lastMCPSeen() int64 {
+	m.infoMu.Lock()
+	defer m.infoMu.Unlock()
+	return m.lastMCPAt
+}
+
+// uiToolNameOf is how Claude writes a server's name inside a tool name: anything but letters, digits,
+// dashes and underscores becomes an underscore ("claude.ai Claude Docs" is claude_ai_Claude_Docs).
+func uiToolNameOf(name string) string {
+	return strings.Map(func(r rune) rune {
+		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '-' || r == '_' {
+			return r
+		}
+		return '_'
+	}, name)
 }

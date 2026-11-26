@@ -363,6 +363,11 @@ func (m *uiManager) findPast(agent, id string) (uiPastSession, bool) {
 // in the folder it started in. With fork the original session is left as it
 // is and the agent works in a copy of its history.
 func (m *uiManager) resumeSession(id, prompt string, fork bool) (*uiAgent, error) {
+	return m.resumeSessionFor(id, prompt, fork, "")
+}
+
+// resumeSessionFor resumes a Claude session; taskRef, when set, is the task the new run belongs to.
+func (m *uiManager) resumeSessionFor(id, prompt string, fork bool, taskRef string) (*uiAgent, error) {
 	s, ok := m.findPast("claude", id)
 	if !ok {
 		return nil, errors.New("no such session")
@@ -388,7 +393,7 @@ func (m *uiManager) resumeSession(id, prompt string, fork bool) (*uiAgent, error
 		}
 	}
 	m.mu.Unlock()
-	req := uiStartRequest{Prompt: prompt, resumeID: id, resumeDir: s.Cwd, fork: fork}
+	req := uiStartRequest{Prompt: prompt, resumeID: id, resumeDir: s.Cwd, fork: fork, taskRef: taskRef}
 	if info, err := m.addRepo(s.Cwd); err == nil {
 		req.Repo = info.Path
 	} else if _, gitErr := uiRepoRoot(s.Cwd); gitErr != nil && !strings.Contains(err.Error(), "dubious ownership") {

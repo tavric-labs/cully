@@ -3,6 +3,7 @@ package cully
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -22,16 +23,19 @@ func TestOnlyWellFormedAgentProposalsAreKept(t *testing.T) {
 		"noise",
 	}, "\n")
 	got := uiParseAgentSuggestions(out, folders, taken)
-	if len(got) != 2 || got[0].Name != "PR watcher" || got[0].Schedule != "daily" || !got[0].Groups["commands"] || got[0].Folder != "/tmp/proj" {
+	// One idea per run, however many the advisor offers.
+	if len(got) != 1 || got[0].Name != "PR watcher" || got[0].Schedule != "daily" || !got[0].Groups["commands"] || got[0].Folder != "/tmp/proj" {
 		t.Fatalf("got = %+v", got)
 	}
-	if !got[1].Groups["web"] || got[1].Groups["nonsense"] || got[1].Schedule != "" {
-		t.Fatalf("second = %+v", got[1])
+	more := uiParseAgentSuggestions("AGENT|Tools check|Looks at things.|Careful.|nonsense,web|none|proj|why", folders, map[string]bool{})
+	if len(more) != 1 || !more[0].Groups["web"] || more[0].Groups["nonsense"] || more[0].Schedule != "" {
+		t.Fatalf("tools check = %+v", more)
 	}
 }
 
 func TestCullyProposesAgentsFromNamedSessionsAndTheUserApproves(t *testing.T) {
 	m, repo, _ := uiIndexManager(t)
+	lowEvidence(t)
 	dir := filepath.Join(ConfigDir(), "projects", "enc")
 	for i, id := range []string{uiTestSessA, uiTestSessB, uiTestSessC} {
 		uiWriteRichTranscript(t, dir, id, repo)
@@ -111,31 +115,93 @@ func TestAgentsPageShowsProposalsForApproval(t *testing.T) {
 	}
 }
 
-func TestRepeatedWorkNeedsTheSameGoalThreeTimesOnTwoDays(t *testing.T) {
+func TestRepeatedWorkNeedsStrongEvidenceAndOnlyTheStrongestIsKept(t *testing.T) {
 	now := time.Now()
 	mk := func(task string, daysAgo int, unverified bool) uiIndexed {
 		return uiIndexed{Source: "ai", Task: task, Cwd: "/p/x", Name: "x", Updated: now.AddDate(0, 0, -daysAgo), uiSessionFacts: uiSessionFacts{Unverified: unverified}}
 	}
-	same := []uiIndexed{mk("Check open pull requests and report status", 0, false), mk("Report the status of open pull requests", 1, false), mk("check the open pull requests status", 3, false)}
-	if r := uiRepeatedWork(same); len(r) != 1 || r[0].Kind != "goal" || r[0].Count != 3 || r[0].Days != 3 {
+	prs := []string{"Check open pull requests and report status", "Report the status of open pull requests", "check the open pull requests status", "Look at the open pull requests status", "Report on open pull requests and their status", "open pull requests status check"}
+	var same []uiIndexed
+	for i, task := range prs {
+		same = append(same, mk(task, i, false)) // six sessions over six days
+	}
+	if r := uiRepeatedWork(same); len(r) != 1 || r[0].Kind != "goal" || r[0].Count != 6 || r[0].Days != 6 {
 		t.Fatalf("repeats = %+v", r)
 	}
-	oneDay := []uiIndexed{mk("Check open pull requests and report status", 0, false), mk("Report the status of open pull requests", 0, false), mk("check the open pull requests status", 0, false)}
-	if r := uiRepeatedWork(oneDay); len(r) != 0 {
-		t.Fatalf("three in one day counted as repeating: %+v", r)
+	if r := uiRepeatedWork(same[:5]); len(r) != 0 {
+		t.Fatalf("five is not enough to propose a worker: %+v", r)
 	}
-	twice := same[:2]
-	if r := uiRepeatedWork(twice); len(r) != 0 {
-		t.Fatalf("two is not enough: %+v", r)
+	var oneDay []uiIndexed
+	for _, task := range prs {
+		oneDay = append(oneDay, mk(task, 0, false))
+	}
+	if r := uiRepeatedWork(oneDay); len(r) != 0 {
+		t.Fatalf("six in one day counted as repeating: %+v", r)
 	}
 	different := []uiIndexed{mk("Fix the login bug", 0, false), mk("Add a billing report page", 1, false), mk("Upgrade the database driver", 2, false)}
 	if r := uiRepeatedWork(different); len(r) != 0 {
 		t.Fatalf("unrelated tasks counted: %+v", r)
 	}
-	untested := []uiIndexed{mk("a one", 0, true), mk("b two", 1, true), mk("c three", 2, true)}
-	if r := uiRepeatedWork(untested); len(r) != 1 || r[0].Kind != "untested" {
+	var untested []uiIndexed
+	for i := 0; i < 9; i++ {
+		untested = append(untested, mk([]string{"alpha rollout plan", "beta storage migration", "gamma latency probe", "delta billing export", "epsilon queue tuning", "zeta cache warmup", "eta schema review", "theta audit trail", "iota retry policy"}[i], i, true))
+	}
+	if r := uiRepeatedWork(untested); len(r) != 0 {
+		t.Fatalf("nine untested sessions are not enough: %+v", r)
+	}
+	if r := uiRepeatedWork(append(untested, mk("kappa onboarding flow", 9, true))); len(r) != 1 || r[0].Kind != "untested" {
 		t.Fatalf("untested = %+v", r)
 	}
+	// The harness's own folder is not a project.
+	own := []uiIndexed{}
+	for i, task := range prs {
+		e := mk(task, i, false)
+		e.Cwd = ConfigDir()
+		own = append(own, e)
+	}
+	if r := uiRepeatedWork(own); len(r) != 0 {
+		t.Fatalf("the Claude folder counted as a project: %+v", r)
+	}
+	// With several patterns, the strongest comes first.
+	strong := append([]uiIndexed{}, same...)
+	for i := 0; i < 7; i++ {
+		strong = append(strong, mk("Run the nightly dependency audit and report findings "+strconv.Itoa(i%2), i, false))
+	}
+	if r := uiRepeatedWork(strong); len(r) < 2 || r[0].Count*(r[0].Days+1) < r[1].Count*(r[1].Days+1) {
+		t.Fatalf("not strongest first: %+v", r)
+	}
+}
+
+func TestSimilarAgentProposalsAreOneIdeaAndTheListNeverCrowds(t *testing.T) {
+	m, repo, _ := uiIndexManager(t)
+	mk := func(name, role, folder string, age int) uiAgentSuggestion {
+		return uiAgentSuggestion{ID: name, Name: name, Role: role, Folder: folder, State: "new", Created: time.Now().Add(-time.Duration(age) * time.Hour)}
+	}
+	for _, s := range []uiAgentSuggestion{
+		mk("Test Run Guard", "Flags changed files that have no test run after them.", repo, 5),
+		mk("Test Guard", "Runs the repository's documented test command after code changes.", repo, 4),
+		mk("Open PR Status Watcher", "Checks open pull requests.", repo, 3),
+		mk("PR Status Watcher", "Summarizes open pull requests once a day.", repo, 2),
+		mk("Scope Drift Checker", "Compares the diff with the goal.", repo, 1),
+	} {
+		uiDB().put("agentsuggest", s.ID, s)
+	}
+	l := m.agentSuggestionsList()
+	if len(l) != uiAgentWaitingMax || l[0].Name != "Open PR Status Watcher" && l[1].Name != "Open PR Status Watcher" {
+		t.Fatalf("list = %+v", l)
+	}
+	names := l[0].Name + "|" + l[1].Name
+	if strings.Contains(names, "Test Guard") || strings.Contains(names, "|PR Status Watcher") || strings.HasPrefix(names, "PR Status Watcher") {
+		t.Fatalf("near-duplicates were both shown: %s", names)
+	}
+}
+
+// lowEvidence lets a test use a few sessions where a real machine needs many.
+func lowEvidence(t *testing.T) {
+	t.Helper()
+	a, b, c := uiRepeatMin, uiRepeatMinDays, uiUntestedMin
+	uiRepeatMin, uiRepeatMinDays, uiUntestedMin = 3, 2, 3
+	t.Cleanup(func() { uiRepeatMin, uiRepeatMinDays, uiUntestedMin = a, b, c })
 }
 
 func TestNoAgentIsProposedWhenNothingRepeats(t *testing.T) {

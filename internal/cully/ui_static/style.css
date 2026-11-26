@@ -876,3 +876,56 @@ details.menu > summary { list-style: none; cursor: pointer; } details.menu > sum
 .rchips { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
 .rchip { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--line2); border-radius: 18px; padding: 4px 6px 4px 12px; background: var(--raised); font-size: 13px; }
 .rchip code { font-size: 11.5px; }
+
+/* harness servers as a list */
+.fresh { gap: 10px; align-items: center; margin-top: 6px; }
+.srows { display: flex; flex-direction: column; gap: 10px; }
+.sgroup { border: 1px solid var(--line); border-radius: 12px; background: var(--raised); overflow: hidden; }
+.sgroup-h { display: flex; gap: 10px; align-items: baseline; padding: 10px 14px; background: var(--surface2); cursor: default; list-style: none; }
+details.sgroup > summary { cursor: pointer; } details.sgroup > summary::-webkit-details-marker { display: none; }
+.srow { border-top: 1px solid var(--line); border-left: 4px solid transparent; }
+.srow.st-auth { border-left-color: var(--peach-ink, #b4690e); } .srow.st-bad { border-left-color: var(--red); } .srow.st-ok { border-left-color: var(--add-ink); }
+.srow.off .sname { opacity: .55; }
+.srow-main { display: flex; align-items: center; gap: 10px; padding: 10px 14px; cursor: pointer; flex-wrap: wrap; }
+.srow-main:hover, .srow-main:focus-visible { background: var(--surface); outline: none; }
+.sname { display: flex; flex-direction: column; min-width: 160px; } .sname b { font-size: 14.5px; }
+.sdot { width: 10px; height: 10px; border-radius: 50%; background: var(--faint); flex: none; }
+.sdot.ok { background: var(--add-ink); } .sdot.auth { background: var(--peach-ink, #b4690e); } .sdot.bad { background: var(--red); } .sdot.unchecked { background: var(--line2); }
+.chev { transition: transform .15s; font-size: 18px; } .srow.open .chev { transform: rotate(90deg); }
+.sdetail { padding: 4px 16px 14px 38px; display: flex; flex-direction: column; gap: 8px; }
+.shelp { background: var(--surface2); border-radius: 10px; padding: 8px 14px; } .shelp p { margin: 6px 0; } .shelp ol { margin: 6px 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; }
+.cmdline { background: var(--code-bg); padding: 4px 10px; border-radius: 6px; font: 12.5px var(--mono); overflow-wrap: anywhere; }
+.bhead2 { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; flex-wrap: wrap; }
+
+/* agent window: plan, live activity, tool rows */
+.plancard { border-bottom: 1px solid var(--line); background: var(--surface); padding: 6px 24px; }
+.planhead { display: flex; align-items: center; gap: 10px; width: 100%; border: 0; background: transparent; padding: 6px 0; cursor: pointer; color: var(--ink); font: inherit; text-align: left; }
+.planhead .fbar { width: 90px; flex: none; margin-left: auto; } .planhead svg { width: 15px; height: 15px; color: var(--forest-hi); }
+.planlist { list-style: none; margin: 2px 0 8px; padding: 0; display: flex; flex-direction: column; gap: 3px; font-size: 13.5px; }
+.planlist li { display: flex; gap: 10px; align-items: baseline; } .pdot { width: 16px; text-align: center; color: var(--faint); flex: none; }
+.p-completed { color: var(--soft); text-decoration: line-through; text-decoration-color: var(--line2); } .p-completed .pdot { color: var(--add-ink); }
+.p-in_progress { font-weight: 600; } .p-in_progress .pdot { color: var(--forest-hi); animation: pulse 1.2s ease-in-out infinite; }
+.activity { display: flex; align-items: center; gap: 10px; padding: 7px 24px; font-size: 13px; border-top: 1px solid var(--line); }
+.activity.off { display: none; } .activity.live { background: var(--surface); } .activity.turn { background: var(--surface2); } .activity.ask { background: var(--peach); color: var(--peach-ink); font-weight: 600; }
+.adot { width: 8px; height: 8px; border-radius: 50%; background: var(--faint); flex: none; } .activity.live .adot { background: var(--forest-hi); animation: pulse 1.1s ease-in-out infinite; } .activity.ask .adot { background: var(--peach-ink, #b4690e); } .activity.turn .adot { background: var(--add-ink); }
+.awhat { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; }
+.trow2 { display: flex; gap: 8px; align-items: baseline; font-family: var(--mono); font-size: 12px; padding: 2px 0; overflow-wrap: anywhere; }
+.trow2 svg { width: 13px; height: 13px; vertical-align: -2px; color: var(--forest-hi); } .trow2 .tsum { color: var(--soft); flex: 1; min-width: 0; }
+.trow2.run .tspin svg { animation: pulse 1s ease-in-out infinite; } .trow2.ok b { color: var(--add-ink); } .trow2.bad b { color: var(--red); }
+.tres { font-family: var(--mono); font-size: 12px; color: var(--soft); padding: 0 0 4px 21px; overflow-wrap: anywhere; } .tres.f { color: var(--red); font-weight: 600; }
+
+/* the board as a kanban: columns side by side, each scrolling on its own */
+.cols { display: flex; gap: 14px; overflow-x: auto; align-items: stretch; padding-bottom: 10px; grid-template-columns: none; }
+.bcol { flex: 1 1 290px; min-width: 270px; max-width: 400px; display: flex; flex-direction: column; border-top: 3px solid var(--line2); padding: 10px 10px 8px; }
+.bcol.queued { border-top-color: var(--line2); } .bcol.working { border-top-color: var(--forest-hi); } .bcol.waiting { border-top-color: var(--peach-ink, #b4690e); } .bcol.finished { border-top-color: var(--add-ink); }
+.bcol-h { display: flex; align-items: center; gap: 8px; padding: 2px 4px 4px; } .bcol-h h3 { margin: 0; } .bcount { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 0 8px; font-size: 12px; color: var(--soft); }
+.bcol-body { display: flex; flex-direction: column; gap: 10px; overflow-y: auto; max-height: calc(100vh - 230px); padding: 2px; min-height: 90px; }
+.bcol .bcard { margin-bottom: 0; } .bcol .card { margin-bottom: 0; }
+.addcard textarea { width: 100%; border: 1px solid var(--line2); border-radius: 10px; padding: 8px 10px; font: inherit; background: var(--raised); resize: vertical; }
+.bcard[draggable="true"]:active { opacity: .6; }
+.bcol.over { background: var(--surface); }
+
+/* tasks that outlast the page */
+.taskhist { margin-top: 22px; } .tgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 12px; }
+.tcard { border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; background: var(--raised); display: flex; flex-direction: column; gap: 8px; }
+.tcard .row { gap: 8px; align-items: center; flex-wrap: wrap; } .ttitle { font: 600 15px var(--serif); } .tcard .fprev { margin: 0; }

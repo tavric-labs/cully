@@ -30,10 +30,11 @@ import (
 // does it reach ~/.cully/jobs.json, the file the daemon runs from.
 
 const (
-	uiJobSuggestMax   = 3
+	uiJobSuggestMax   = 1 // one idea at a time
+	uiJobWaitingMax   = 1 // no new proposal while one waits
 	uiJobSuggestKeep  = 16
-	uiJobCheckEvery   = 24 * time.Hour
-	uiJobCheckNewSess = 5
+	uiJobCheckEvery   = 72 * time.Hour
+	uiJobCheckNewSess = 10
 )
 
 type uiJobSuggestion struct {
@@ -292,6 +293,10 @@ func (m *uiManager) jobSuggestRun() (int, error) {
 	if len(repeats) == 0 {
 		return 0, nil
 	}
+	if len(m.jobSuggestionsList()) >= uiJobWaitingMax {
+		return 0, nil // answer the one waiting first
+	}
+	repeats = repeats[:1] // only the strongest pattern
 	folders := map[string]string{}
 	var fl, ev []string
 	for _, f := range lib.Folders {

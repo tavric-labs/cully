@@ -271,8 +271,8 @@ func (m *uiManager) probeHarness() (int, error) {
 
 // probeIfDue checks the servers once when the page starts if nothing is known or what is known is old.
 func (m *uiManager) probeIfDue() {
-	if n := m.initKnown(); n != nil && time.Since(n.Seen) < 12*time.Hour {
-		return
+	if n := m.initKnown(); n != nil && time.Since(n.Seen) < 12*time.Hour && m.lastMCPSeen() > 0 {
+		return // known and not old; after a restart the states are unknown, so look again
 	}
 	_, _ = m.probeHarness()
 }

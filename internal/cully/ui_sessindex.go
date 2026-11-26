@@ -123,6 +123,8 @@ type uiLibrary struct {
 		ActiveSec int `json:"activeSec"`
 		Analyzed  int `json:"analyzed"`
 		Pending   int `json:"pending"`
+		Open      int `json:"open"`   // pending only because they are still in use; analysed once idle
+		Failed    int `json:"failed"` // tried and could not be analysed
 	} `json:"totals"`
 	Analysis struct {
 		On        bool      `json:"on"`
@@ -418,7 +420,7 @@ func (m *uiManager) sessionLibrary() uiLibrary {
 	lib.Folders = []uiFolderStat{}
 	byDir := map[string]*uiFolderStat{}
 	for _, e := range m.index.Sessions {
-		if uiHidden(e.Cwd, m.cfg.HideSessionsIn) {
+		if uiHidden(e.Cwd, m.cfg.HideSessionsIn) || uiIsCullyCall(e) {
 			continue
 		}
 		v := *e
@@ -431,6 +433,11 @@ func (m *uiManager) sessionLibrary() uiLibrary {
 			lib.Totals.Analyzed++
 		} else if e.Turns > 0 && e.Tries < uiAnalyzeMaxTries {
 			lib.Totals.Pending++
+			if time.Since(e.Updated) < uiOpenWindow {
+				lib.Totals.Open++
+			}
+		} else if e.Turns > 0 {
+			lib.Totals.Failed++
 		}
 		fs := byDir[e.Cwd]
 		if fs == nil {
@@ -558,7 +565,7 @@ func (m *uiManager) analyzeNext() int {
 	}
 	var pick *uiIndexed
 	for _, e := range m.index.Sessions {
-		if (e.Source == "ai" && e.Completed != "") || e.Turns == 0 || e.Tries >= uiAnalyzeMaxTries || time.Since(e.Updated) < uiOpenWindow || uiHidden(e.Cwd, m.cfg.HideSessionsIn) {
+		if (e.Source == "ai" && e.Completed != "") || e.Turns == 0 || e.Tries >= uiAnalyzeMaxTries || time.Since(e.Updated) < uiOpenWindow || uiHidden(e.Cwd, m.cfg.HideSessionsIn) || uiIsCullyCall(e) {
 			continue
 		}
 		if pick == nil || e.Updated.After(pick.Updated) {
@@ -740,4 +747,11 @@ func uiHealthOf(e uiIndexed) (int, []string) {
 		score = 0
 	}
 	return score, why
+}
+
+// uiIsCullyCall reports whether a session is one of Cully's own throwaway calls (a server check, a
+// limits check, an advisor question), which it runs from the Claude folder. They have one request and
+// no tool use, so they say nothing about your work and are left out of the library.
+func uiIsCullyCall(e *uiIndexed) bool {
+	return e.Agent == "claude" && e.Turns <= 1 && e.Tools == 0 && filepath.Clean(e.Cwd) == filepath.Clean(ConfigDir())
 }

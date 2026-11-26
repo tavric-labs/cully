@@ -1,6 +1,7 @@
 package cully
 
 import (
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -16,12 +17,19 @@ import (
 // to an observed failure mode or a task that clearly repeats, and stay with one
 // agent until a concrete reason says otherwise.
 
+// Variables so tests can ask for less evidence than a real machine should.
+var (
+	uiRepeatMin     = 6  // sessions with the same kind of goal
+	uiRepeatMinDays = 3  // on at least this many different days
+	uiUntestedMin   = 10 // sessions that changed files and never ran tests
+)
+
 const (
-	uiRepeatMin       = 3
-	uiRepeatMinDays   = 2
+	// A pattern must be strong before it is worth a worker: many sessions, over many days. Proposing
+	// less often and only the strongest keeps the list short enough to read.
 	uiRepeatSimilar   = 0.5 // share of words two goals must have in common
-	uiAgentCheckEvery = 24 * time.Hour
-	uiAgentCheckNew   = 5 // named sessions that must have appeared since the last check
+	uiAgentCheckEvery = 72 * time.Hour
+	uiAgentCheckNew   = 10 // named sessions that must have appeared since the last check
 )
 
 var uiStopWords = map[string]bool{"the": true, "a": true, "an": true, "and": true, "or": true, "to": true, "of": true, "in": true, "on": true, "for": true, "with": true, "is": true, "it": true, "this": true, "that": true, "from": true, "by": true, "as": true, "at": true, "be": true, "are": true, "my": true, "me": true, "our": true, "we": true, "you": true, "your": true, "run": false}
@@ -66,7 +74,7 @@ type uiRepeat struct {
 func uiRepeatedWork(sessions []uiIndexed) []uiRepeat {
 	byFolder := map[string][]uiIndexed{}
 	for _, s := range sessions {
-		if s.Source == "ai" && s.Task != "" {
+		if s.Source == "ai" && s.Task != "" && filepath.Clean(s.Cwd) != filepath.Clean(ConfigDir()) { // the harness's own folder is not your project
 			byFolder[s.Cwd] = append(byFolder[s.Cwd], s)
 		}
 	}
@@ -110,11 +118,12 @@ func uiRepeatedWork(sessions []uiIndexed) []uiRepeat {
 				}
 			}
 		}
-		if untested >= uiRepeatMin {
+		if untested >= uiUntestedMin {
 			out = append(out, uiRepeat{Kind: "untested", Folder: list[0].Name, Path: cwd, Count: untested, Examples: ex})
 		}
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Count > out[j].Count })
+	// The strongest first: how many times, over how many days.
+	sort.Slice(out, func(i, j int) bool { return out[i].Count*(out[i].Days+1) > out[j].Count*(out[j].Days+1) })
 	return out
 }
 

@@ -60,6 +60,7 @@ type uiParsed struct {
 	Cost         float64   // what the session has cost so far at list price, as reported
 	Limits       *uiLimits // the account's usage limits, when the agent reported them
 	Compacted    bool      // the harness compacted the history on this line
+	SessionID    string    // the harness's own session id, from its start line
 	InitTools    []string  // every tool the harness started with, as it names them
 	InitCommands []string  // its slash commands, which include MCP prompts
 }
@@ -153,6 +154,7 @@ func parseStreamLine(line []byte) uiParsed {
 		out.Events = append(out.Events, uiEvent{Kind: "system", Text: "agent " + sub})
 		if sub == "init" {
 			out.Model, _ = raw["model"].(string)
+			out.SessionID, _ = raw["session_id"].(string)
 			for _, v := range []struct {
 				key string
 				dst *[]string
@@ -268,6 +270,13 @@ func parseStreamLine(line []byte) uiParsed {
 				if id != "" {
 					out.Uses[id] = use
 				}
+				if name == "TodoWrite" {
+					// The agent's own plan: shown as a checklist that updates in place, not as a tool call.
+					if text := uiPlanText(input["todos"]); text != "" {
+						out.Events = append(out.Events, uiEvent{Kind: "plan", Text: text})
+						continue
+					}
+				}
 				out.Events = append(out.Events, uiEvent{Kind: "tool", Tool: name, Text: clipUIText(strings.TrimSpace(summary))})
 			case "tool_result":
 				id, _ := block["tool_use_id"].(string)
@@ -309,4 +318,37 @@ func uiWindowOf(v any) uiWindow {
 	}
 	w.Status, _ = m["status"].(string)
 	return w
+}
+
+// uiPlanText turns the todo list an agent keeps (Claude's TodoWrite) into compact JSON for the page:
+// [{"c": what, "s": pending, in_progress or completed}], at most 40 items of 160 characters.
+func uiPlanText(v any) string {
+	list, _ := v.([]any)
+	type item struct {
+		C string `json:"c"`
+		S string `json:"s"`
+	}
+	var out []item
+	for _, x := range list {
+		m, _ := x.(map[string]any)
+		c, _ := m["content"].(string)
+		st, _ := m["status"].(string)
+		if strings.TrimSpace(c) == "" {
+			continue
+		}
+		if st != "completed" && st != "in_progress" {
+			st = "pending"
+		}
+		if len(out) < 40 {
+			out = append(out, item{C: uiClip(strings.TrimSpace(c), 160), S: st})
+		}
+	}
+	if len(out) == 0 {
+		return ""
+	}
+	b, err := json.Marshal(out)
+	if err != nil {
+		return ""
+	}
+	return string(b)
 }

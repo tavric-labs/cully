@@ -1,6 +1,7 @@
 package cully
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -102,5 +103,27 @@ func TestHarnessPageIsInTheNavigationAndShowsServersSkillsAndHooks(t *testing.T)
 	}
 	if strings.Contains(string(b), "'Harness permissions', 'What the underlying harness may do'") {
 		t.Error("the old dashboard entry for harness permissions is still listed")
+	}
+}
+
+func TestServersShowHeaderNamesNeverValuesAndRememberedStatesReplaceOldOnes(t *testing.T) {
+	got := uiServersFromJSON(map[string]any{
+		"atlassian": map[string]any{"type": "http", "url": "https://mcp.example.com/atlassian", "headers": map[string]any{"X-Api-Token": "SECRET-VALUE", "X-Email": "me@example.com"}},
+		"gerrit":    map[string]any{"type": "http", "url": "https://mcp.example.com/gerrit"},
+	})
+	if len(got) != 2 || len(got[0].Headers) != 2 || got[0].Headers[0] != "X-Api-Token" || len(got[1].Headers) != 0 {
+		t.Fatalf("servers = %+v", got)
+	}
+	if b, _ := json.Marshal(got); strings.Contains(string(b), "SECRET-VALUE") || strings.Contains(string(b), "me@example.com") {
+		t.Fatalf("a header value leaked: %s", b)
+	}
+	m, _, _ := uiIndexManager(t)
+	m.rememberMCP([]uiMCPServer{{Name: "old", Status: "connected"}})
+	m.rememberMCP([]uiMCPServer{{Name: "new", Status: "needs-auth"}})
+	if st := m.lastMCPStatus(); len(st) != 1 || st["new"] != "needs-auth" || m.lastMCPSeen() == 0 {
+		t.Fatalf("status = %+v", st)
+	}
+	if uiToolNameOf("claude.ai Claude Docs") != "claude_ai_Claude_Docs" {
+		t.Fatalf("tool name = %q", uiToolNameOf("claude.ai Claude Docs"))
 	}
 }
