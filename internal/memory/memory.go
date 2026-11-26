@@ -119,6 +119,9 @@ type Request struct {
 	OptimizationSave   *OptimizationSaveInput   `json:"optimization_save,omitempty"`
 	OptimizationQuery  *OptimizationQueryInput  `json:"optimization_query,omitempty"`
 	OptimizationDecide *OptimizationDecideInput `json:"optimization_decide,omitempty"`
+	AgentSave          *AgentInput              `json:"agent_save,omitempty"`
+	AgentQuery         *AgentQueryInput         `json:"agent_query,omitempty"`
+	AgentRef           *AgentRefInput           `json:"agent_ref,omitempty"`
 	Workspace          *workspace.Input         `json:"workspace,omitempty"`
 	Operation          string                   `json:"operation"`
 	Session            *SessionInput            `json:"session,omitempty"`
@@ -136,6 +139,8 @@ type Result struct {
 	Session   *Session          `json:"session,omitempty"`
 	Entry     *Entry            `json:"entry,omitempty"`
 	Entries   []Entry           `json:"entries,omitempty"`
+	Agent     *AgentRecord      `json:"agent,omitempty"`
+	Agents    []AgentRecord     `json:"agents,omitempty"`
 	Deleted   bool              `json:"deleted,omitempty"`
 }
 type Repository interface {
@@ -239,13 +244,22 @@ func limit(v *int, max int) {
 }
 func (r *Request) Validate() error {
 	n := 0
-	for _, b := range []bool{r.Workspace != nil, r.Log != nil, r.Search != nil, r.Recent != nil, r.ID != nil, r.Update != nil, r.Session != nil, r.SessionGet != nil, r.OptimizationSave != nil, r.OptimizationQuery != nil, r.OptimizationDecide != nil} {
+	for _, b := range []bool{r.Workspace != nil, r.Log != nil, r.Search != nil, r.Recent != nil, r.ID != nil, r.Update != nil, r.Session != nil, r.SessionGet != nil, r.OptimizationSave != nil, r.OptimizationQuery != nil, r.OptimizationDecide != nil, r.AgentSave != nil, r.AgentQuery != nil, r.AgentRef != nil} {
 		if b {
 			n++
 		}
 	}
 	if n != 1 {
 		return fmt.Errorf("%w: provide exactly one operation input", ErrInvalid)
+	}
+	if r.Operation == "agent_save" && r.AgentSave != nil {
+		return r.AgentSave.Validate()
+	}
+	if r.Operation == "agent_list" && r.AgentQuery != nil {
+		return r.AgentQuery.Validate()
+	}
+	if r.Operation == "agent_delete" && r.AgentRef != nil {
+		return r.AgentRef.Validate()
 	}
 	if r.Operation == "optimization_save" && r.OptimizationSave != nil {
 		return r.OptimizationSave.Validate()

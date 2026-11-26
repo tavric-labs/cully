@@ -93,21 +93,26 @@ func TestParseRunFlags(t *testing.T) {
 	for _, c := range []struct {
 		args    []string
 		sidebar bool
+		ui      bool
 		rest    []string
 	}{
-		{nil, false, nil},
-		{[]string{"codex"}, false, []string{"codex"}},
-		{[]string{"--sidebar", "codex"}, true, []string{"codex"}},
-		{[]string{"--sidebar", "--sidebar", "codex", "--sidebar"}, true, []string{"codex", "--sidebar"}},
-		{[]string{"codex", "--sidebar"}, false, []string{"codex", "--sidebar"}},
+		{nil, false, false, nil},
+		{[]string{"codex"}, false, false, []string{"codex"}},
+		{[]string{"--sidebar", "codex"}, true, false, []string{"codex"}},
+		{[]string{"--sidebar", "--sidebar", "codex", "--sidebar"}, true, false, []string{"codex", "--sidebar"}},
+		{[]string{"codex", "--sidebar"}, false, false, []string{"codex", "--sidebar"}},
+		{[]string{"--ui", "claude"}, false, true, []string{"claude"}},
+		{[]string{"--ui", "--sidebar", "claude"}, true, true, []string{"claude"}},
+		{[]string{"--sidebar", "--ui", "cursor", "--ui"}, true, true, []string{"cursor", "--ui"}},
+		{[]string{"claude", "--ui"}, false, false, []string{"claude", "--ui"}},
 	} {
-		sidebar, rest := parseRunFlags(c.args)
-		if sidebar != c.sidebar || len(rest) != len(c.rest) {
-			t.Fatalf("parseRunFlags(%v) = %v,%v", c.args, sidebar, rest)
+		sidebar, ui, rest := parseRunFlags(c.args)
+		if sidebar != c.sidebar || ui != c.ui || len(rest) != len(c.rest) {
+			t.Fatalf("parseRunFlags(%v) = %v,%v,%v", c.args, sidebar, ui, rest)
 		}
 		for i := range rest {
 			if rest[i] != c.rest[i] {
-				t.Fatalf("parseRunFlags(%v) = %v,%v", c.args, sidebar, rest)
+				t.Fatalf("parseRunFlags(%v) = %v,%v,%v", c.args, sidebar, ui, rest)
 			}
 		}
 	}

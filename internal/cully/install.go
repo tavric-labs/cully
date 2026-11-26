@@ -10,6 +10,7 @@ import (
 	"time"
 
 	cullyskill "github.com/mcp-runtime/cully/skills/cully"
+	cullysetupskill "github.com/mcp-runtime/cully/skills/cully-setup"
 )
 
 // Install registers cully for one or more coding agents. With no target it
@@ -104,6 +105,13 @@ func installMemorySkill(target string) error {
 	}
 	if !wrote {
 		fmt.Printf("Preserved user-owned Cully skill -> %s\n", path)
+	}
+	// The setup skill: how an agent installs, checks or repairs Cully's memory stack.
+	setupPath := setupSkillPath(target)
+	if wroteSetup, err := writeOwnedFile(setupPath, "<!-- cully:skill:managed -->", cullysetupskill.Content); err != nil {
+		return err
+	} else if !wroteSetup {
+		fmt.Printf("Preserved user-owned Cully setup skill -> %s\n", setupPath)
 	}
 	linkWorkflowSkill(os.Stdout, dir)
 	return nil
@@ -274,7 +282,29 @@ func removeManagedMemorySkill(target string) error {
 	if err := removeCullySkillIfUnchanged(filepath.Join(configDir, "skills", "cully", "SKILL.md")); err != nil {
 		return err
 	}
+	if err := removeFileIfUnchanged(setupSkillPath(target), cullysetupskill.Content); err != nil {
+		return err
+	}
 	return removeCullySkillIfUnchanged(runtimeSkillPath(target))
+}
+
+// setupSkillPath is where the setup skill lives, beside the main Cully skill.
+func setupSkillPath(agent string) string {
+	return filepath.Join(runtimeAgentDir(agent), "skills", "cully-setup", "SKILL.md")
+}
+
+func removeFileIfUnchanged(path, want string) error {
+	content, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(string(content)) != strings.TrimSpace(want) {
+		return nil
+	}
+	return os.Remove(path)
 }
 
 // uninstallClaude removes cully's entries from settings.json and deletes

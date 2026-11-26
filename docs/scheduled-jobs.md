@@ -57,7 +57,7 @@ Set `CULLY_JOBS_DISABLE=1` to stop the daemon from starting jobs.
 
 ## Safety
 
-- Jobs come only from `~/.cully/jobs.json`. Cully itself never creates or edits it, and `cully apply` does not touch it.
+- Jobs come only from `~/.cully/jobs.json`. Cully writes to it only when you approve a job the Advisor proposed on the browser page: it adds that one job, with the exact command and time you saw, and leaves every other job as written. `cully apply` does not touch it. A proposal must be one of a few fixed shapes: `git -C DIR fetch|status`, `make -C DIR test|lint|build|check|vet|ci|fmt-check`, `go -C DIR test|build|vet ./...`, `npm --prefix DIR test|run test|lint|build`, or `pytest -q DIR`. Anything else is refused, including shells, `git -c`, `find -exec`, `go test -exec`, interpreters with inline code, wrappers and paths to other programs. `make`, `go` and `npm` still run what that folder's own Makefile, module or `package.json` says, so read the command before approving.
 - Cully refuses the file if group or others can write it, or if another user owns it, and rejects unknown fields and trailing data.
 - A job is an exact program and arguments with no shell, so nothing in the file is interpreted as a command line.
 - A job runs with your permissions. Treat the file as you would your shell profile: anything that runs as you, including a coding agent, can edit it, and these checks are not a defence against that. Review changes to it the way you would review changes to a login script.

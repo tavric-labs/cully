@@ -47,6 +47,18 @@ servers:
           description: Record an explicit user decision about a plan
           requiredTrust: medium
           sideEffect: write
+        - name: cully_agent_save
+          description: Save or update one named agent for the signed-in owner
+          requiredTrust: low
+          sideEffect: write
+        - name: cully_agents
+          description: List the signed-in owner's named agents
+          requiredTrust: low
+          sideEffect: read
+        - name: cully_agent_delete
+          description: Delete one named agent of the signed-in owner
+          requiredTrust: medium
+          sideEffect: write
         - name: cully_log
           description: cully_log tool
           requiredTrust: low
