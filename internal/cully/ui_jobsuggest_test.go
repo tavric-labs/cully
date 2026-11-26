@@ -177,3 +177,11 @@ func TestApprovingAnUpdateChangesThatJobAndKeepsItsOtherSettings(t *testing.T) {
 		t.Fatal("updated a job that does not exist")
 	}
 }
+
+func TestTipsOpenThePageTheyAreAboutOrNothing(t *testing.T) {
+	for kind, want := range map[string]string{"job": "#/dashboard/jobs", "workflow": "#/dashboard/rules", "eval": "#/dashboard/evals", "mcp": "#/harness", "skill": "#/harness", "habit": ""} {
+		if got := uiCoachHref(kind); got != want {
+			t.Errorf("uiCoachHref(%q) = %q, want %q", kind, got, want)
+		}
+	}
+}

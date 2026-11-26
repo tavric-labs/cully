@@ -54,7 +54,13 @@ func TestRunningAnAgentUsesItsIdentityToolsAndKeepsItsNotes(t *testing.T) {
 	m, repo, out := uiTestManager(t, uiWriteScript(t, body), "tok-aaa1")
 	in := uiIdentityInputFor(repo)
 	in.Groups = map[string]bool{"read": true}
-	a, _ := m.identityCreate(in)
+	a, cerr := m.identityCreate(in)
+	if cerr != nil {
+		t.Fatalf("creating the agent: %v", cerr)
+	}
+	if !uiDB().ok() {
+		t.Fatal("the database did not open")
+	}
 	run, err := m.identityRun(a.ID)
 	if err != nil || run.Status != "running" || run.TaskID == "" {
 		t.Fatalf("run = %+v, err = %v", run, err)

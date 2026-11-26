@@ -214,7 +214,7 @@
     }
     if (!kids.length) kids.push(h('div', { class: 'hint', style: null }, 'No tasks yet.'));
     rail.replaceChildren(...kids);
-    const waiting = S.agents.filter((a) => a.state === 'waiting').length;
+    const waiting = S.agents.filter((a) => a.state === 'waiting' || (a.permissions || []).length).length;
     $('badge').hidden = waiting === 0;
     $('badge').textContent = waiting;
     document.title = (waiting ? '(' + waiting + ') ' : '') + 'Cully';
@@ -449,7 +449,8 @@
       h('button', { class: 'btn round', title: 'Send', 'aria-label': 'Send', onclick: () => { const t = ta.value; ta.value = ''; ta.style.height = 'auto'; sendMessage(a.id, t); } }, icon('send'))),
       h('div', { class: 'composer-hint' }, 'Enter sends, Shift+Enter adds a line'));
     const side = h('div', { class: 'col sidecol' }, h('div', { class: 'tabs side', id: 'tabs-side' }), h('div', { class: 'sidehead', id: 'sidehead' }), h('div', { class: 'sidebody', id: 'sidebody' }));
-    const grid = h('div', { class: 'agrid', id: 'agrid', 'data-show': S.tab }, h('div', { class: 'col chatcol' }, body, quick, composer), side);
+    const permBox = h('div', { id: 'permbox' });
+    const grid = h('div', { class: 'agrid', id: 'agrid', 'data-show': S.tab }, h('div', { class: 'col chatcol' }, body, permBox, quick, composer), side);
     $('stage').replaceChildren(ahead, sub, ctxnote, stepper, tabs, grid);
     body.after(jump);
     body.addEventListener('scroll', () => { jump.hidden = body.scrollTop + body.clientHeight >= body.scrollHeight - 60; });
@@ -559,7 +560,27 @@
     document.removeEventListener('keydown', escClose);
     document.addEventListener('keydown', escClose);
   }
+  // A task asked to use something it is not allowed to yet. Nothing goes ahead until you answer; an
+  // unanswered question is refused after ten minutes. "For this task" covers only that exact call.
+  function drawPermissions(a) {
+    const box = $('permbox');
+    if (!box) return;
+    const list = a.permissions || [];
+    const sig = list.map((p) => p.id).join(',');
+    if (box.dataset.sig === sig) return;
+    box.dataset.sig = sig;
+    const answer = async (p, decision) => { try { await api('/api/agents/' + a.id + '/permissions/' + p.id, { method: 'POST', body: JSON.stringify({ decision }) }); await refresh(); } catch (e) { toast(e.message, true); } };
+    box.replaceChildren(...list.map((p) => h('section', { class: 'permcard', role: 'alertdialog', 'aria-label': 'The task asks to use ' + p.tool },
+      h('div', { class: 'row' }, icon('lock'), h('b', {}, 'The task asks to use ' + p.tool), h('span', { class: 'faint small' }, 'waiting for you since ' + clockTime(p.at))),
+      h('pre', { class: 'permcmd' }, p.summary || p.input),
+      p.input && p.input !== p.summary ? h('details', { class: 'rl' }, h('summary', {}, h('span', { class: 'rq' }, 'Everything it sent')), h('div', { class: 'rbody' }, h('pre', {}, p.input))) : null,
+      h('div', { class: 'row' },
+        h('button', { class: 'btn small', onclick: () => answer(p, 'allow') }, icon('check'), 'Allow once'),
+        h('button', { class: 'btn ghost small', title: 'Allow this exact call again without asking, for the rest of this task', onclick: () => answer(p, 'allow_always') }, 'Allow for this task'),
+        h('button', { class: 'btn ghost small', onclick: () => answer(p, 'deny') }, 'Deny')))));
+  }
   function drawAgentChrome(a) {
+    drawPermissions(a);
     if (!$('ahead')) return;
     const finished = a.state === 'done' || a.state === 'failed' || a.state === 'stopped';
     const stop = h('button', { class: 'btn danger small', onclick: (e) => {
@@ -1609,7 +1630,7 @@
     const card = (x) => {
       const acts = [];
       if (x.kind === 'job' || x.kind === 'agent') acts.push(h('a', { class: 'btn small', href: x.href }, icon('check'), x.kind === 'job' ? 'Review in Background jobs' : 'Review in Agents'));
-      else if (x.href) acts.push(h('a', { class: 'btn ghost small', href: x.href }, 'Open'));
+      else if (x.href && x.href !== '#/dashboard/advisor') acts.push(h('a', { class: 'btn ghost small', href: x.href }, 'Open ' + ({ coach: 'the page', rules: 'Workflow rules', digest: 'Scout history' }[x.kind] || '')));
       return h('li', { class: 'hrow' }, h('div', { class: 'hmain' }, h('div', { class: 'ht' }, h('span', { class: 'chip' }, SUG_LABEL[x.kind] || x.kind), ' ' + x.title),
         x.why ? h('p', { class: 'hdesc' }, x.why) : null,
         x.detail ? h('p', { class: 'faint small' }, x.detail) : null,
@@ -1974,34 +1995,71 @@
     return h('div', { class: 'timeline' }, ...blocks.map((b) => h('section', { class: 'tl-block' }, h('div', { class: 'tl-when' }, new Date(b.at).toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' })),
       h('ul', {}, ...b.items.map((e) => h('li', { class: (e.failed ? 'bad ' : '') + e.kind }, icon(e.failed ? 'x' : KIND_ICON[e.kind] || 'spark'), h('span', { class: 'tw' }, KIND_WORD[e.kind] || ''), h('span', { class: 'tl' }, e.label || ''), h('span', { class: 'tt faint small' }, new Date(e.t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }))))))));
   }
-  // The feed: what happened across Cully, newest first, grouped by day. Each row says what it was,
-  // how it went (a coloured dot), when, and opens the place with the detail.
+  // The feed: what happened across Cully, as cards grouped by day. A card shows what it was, how it went
+  // and a preview; opening it shows the full text and the facts behind it.
   const FEED_KINDS = [['', 'Everything'], ['task', 'Tasks'], ['agent', 'Agents'], ['eval', 'Evals'], ['scout', 'Scout'], ['advice', 'Advice']];
   const FEED_ICON = { task: 'term', agent: 'spark', eval: 'check', scout: 'globe', advice: 'alert' };
+  const FEED_WORD = { task: 'Task', agent: 'Agent', eval: 'Eval', scout: 'Scout', advice: 'Advice' };
+  const FEED_STATUS = { good: ['ok', 'Went well'], bad: ['problem', 'Problem'], wait: ['needs you', 'Needs you'], info: ['info', 'For your information'] };
+  const plainPreview = (t) => (t || '').replace(/\[([^\]]+)\]\([^)]*\)/g, '$1').replace(/\*\*|__|`/g, '').replace(/^\s*[-*#]+\s+/gm, '').replace(/\s+/g, ' ').trim();
+  const clockTime = (iso) => new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  function feedChip(st) { const [cls, word] = FEED_STATUS[st] || FEED_STATUS.info; return h('span', { class: 'chip fs-' + st, title: word }, cls); }
+  function openFeedItem(it) {
+    const meta = (it.meta || []).length ? h('dl', { class: 'meta' }, ...it.meta.flatMap((m) => [h('dt', {}, m.label), h('dd', {}, m.value)])) : null;
+    const modal = h('div', { class: 'modal wide', role: 'dialog', 'aria-modal': 'true', 'aria-label': it.title },
+      h('header', {}, h('h2', {}, it.title), h('button', { class: 'btn ghost small sp', onclick: closeMCP }, 'Close')),
+      h('div', { class: 'mbody' },
+        h('div', { class: 'row' }, h('span', { class: 'chip' }, icon(FEED_ICON[it.kind] || 'spark'), FEED_WORD[it.kind] || it.kind), feedChip(it.status), h('span', { class: 'faint small' }, new Date(it.at).toLocaleString([], { weekday: 'long', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }))),
+        meta,
+        it.body ? h('div', { class: 'findings' }, markdown(it.body)) : h('p', { class: 'faint' }, 'Nothing more was recorded for this.'),
+        h('div', { class: 'row' }, it.href ? h('a', { class: 'btn', href: it.href, onclick: closeMCP }, 'Open where it lives') : null, it.body ? copyBtn('Copy text', () => it.body) : null)));
+    const bg = h('div', { class: 'modal-bg', onclick: (e) => { if (e.target === bg) closeMCP(); } }, modal);
+    $('modal-root').replaceChildren(bg);
+    S.modal = { agent: 'feed' };
+    document.removeEventListener('keydown', escClose);
+    document.addEventListener('keydown', escClose);
+  }
+  function feedCard(it) {
+    const folder = it.repo ? it.repo.split('/').filter(Boolean).pop() : '';
+    const preview = plainPreview(it.detail || it.body);
+    const card = h('article', { class: 'fcard f-' + it.status + ' k-' + it.kind, tabindex: '0', role: 'button', 'aria-label': it.title + '. Open for details.' },
+      h('div', { class: 'row fhead' }, h('span', { class: 'fkind' }, icon(FEED_ICON[it.kind] || 'spark'), FEED_WORD[it.kind] || it.kind), feedChip(it.status), h('span', { class: 'sp' }), h('span', { class: 'faint small' }, clockTime(it.at))),
+      h('h4', { class: 'ftitle' }, it.title),
+      preview ? h('p', { class: 'fprev' }, preview) : null,
+      h('div', { class: 'row ffoot' }, folder ? h('span', { class: 'chip', title: it.repo }, icon('folder'), folder) : null, ...(it.meta || []).slice(0, 2).filter((m) => m.label !== 'Folder' && m.value.length < 40).map((m) => h('span', { class: 'chip', title: m.label }, m.value)), h('span', { class: 'sp' }), h('span', { class: 'faint small' }, 'Open ›')));
+    card.addEventListener('click', () => openFeedItem(it));
+    card.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openFeedItem(it); } });
+    return card;
+  }
   async function renderFeed(out, head) {
     const kind = S.feedKind || '';
-    let list = [];
-    try { list = await api('/api/feed' + (kind ? '?kind=' + kind : '')); } catch (e) { out.replaceChildren(head(), h('div', { class: 'callout' }, e.message)); return; }
+    let all = [];
+    try { all = await api('/api/feed'); } catch (e) { out.replaceChildren(head(), h('div', { class: 'callout' }, e.message)); return; }
     const again = () => renderFeed(out, head);
-    const chips = h('div', { class: 'row filters' }, ...FEED_KINDS.map(([k, l]) => h('button', { type: 'button', class: 'toggle' + (kind === k ? ' on' : ''), onclick: () => { S.feedKind = k; again(); } }, l)));
+    const list = kind ? all.filter((i) => i.kind === kind) : all;
+    const dayAgo = Date.now() - 86400000;
+    const recent = all.filter((i) => new Date(i.at).getTime() > dayAgo);
+    const count = (f) => recent.filter(f).length;
+    const tiles = h('div', { class: 'kpis' }, ...[
+      [count((i) => i.kind === 'task' && i.status === 'good'), 'Tasks finished'], [count((i) => i.kind === 'agent'), 'Agent runs'],
+      [count((i) => i.kind === 'eval' && i.status === 'good'), 'Evals passed'], [count((i) => i.kind === 'eval' && i.status === 'bad'), 'Evals failed'],
+      [count((i) => i.kind === 'scout'), 'Scouts'], [count((i) => i.status === 'wait' || i.status === 'bad'), 'Need a look'],
+    ].map(([n, l]) => h('div', { class: 'kpi' }, h('b', {}, String(n)), h('span', {}, l))));
+    const chips = h('div', { class: 'row filters' }, ...FEED_KINDS.map(([k, l]) => { const n = k ? all.filter((i) => i.kind === k).length : all.length; return h('button', { type: 'button', class: 'toggle' + (kind === k ? ' on' : ''), onclick: () => { S.feedKind = k; again(); } }, l + (n ? ' ' + n : '')); }));
+    const attention = list.filter((i) => (i.status === 'wait' || i.status === 'bad') && new Date(i.at).getTime() > Date.now() - 3 * 86400000).slice(0, 6);
     const days = [];
     for (const it of list) {
       const d = new Date(it.at).toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric' });
       if (!days.length || days[days.length - 1].d !== d) days.push({ d, items: [] });
       days[days.length - 1].items.push(it);
     }
-    const needs = list.filter((i) => i.status === 'wait' && i.kind === 'task').length;
     out.replaceChildren(head(refreshBtn(again)),
       activityTabs('feed'),
-      needs ? h('div', { class: 'callout' }, needs + (needs === 1 ? ' task needs' : ' tasks need') + ' your answer.') : null,
+      h('p', { class: 'faint small' }, 'Last 24 hours'), tiles,
       chips,
-      days.length ? h('div', { class: 'timeline' }, ...days.map((g) => h('section', { class: 'tl-block' }, h('div', { class: 'tl-when' }, g.d),
-        h('ul', {}, ...g.items.map((it) => h('li', { class: it.status === 'bad' ? 'bad' : '' },
-          icon(FEED_ICON[it.kind] || 'spark'),
-          h('a', { class: 'tw', href: it.href || '#/dashboard/activity' }, it.title),
-          it.detail ? h('span', { class: 'faint small' }, ' ' + it.detail) : null,
-          h('span', { class: 'chip run-' + (it.status === 'good' ? 'pass' : it.status === 'bad' ? 'fail' : it.status === 'wait' ? 'partial' : 'running') }, it.status === 'good' ? 'ok' : it.status === 'bad' ? 'problem' : it.status === 'wait' ? 'needs you' : 'info'),
-          h('span', { class: 'faint small' }, ' ' + new Date(it.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }))))))))
+      attention.length ? h('section', { class: 'fsec' }, h('h3', { class: 'section-h' }, 'Needs a look'), h('div', { class: 'fgrid' }, ...attention.map(feedCard))) : null,
+      days.length ? h('div', {}, ...days.map((g) => h('section', { class: 'fsec' }, h('h3', { class: 'section-h' }, g.d, h('span', { class: 'faint small' }, '  ' + g.items.length + (g.items.length === 1 ? ' item' : ' items'))),
+        h('div', { class: 'fgrid' }, ...g.items.map(feedCard)))))
         : emptyCard('Nothing has happened yet', 'Tasks, agent runs, evals, scouts and advice show up here as they happen.', 'Start a task', '#/'));
   }
   const activityTabs = (on) => h('div', { class: 'row filters' }, h('button', { type: 'button', class: 'toggle' + (on === 'feed' ? ' on' : ''), onclick: () => { S.activityTab = 'feed'; drawPanel('activity', true); } }, 'Feed'), h('button', { type: 'button', class: 'toggle' + (on === 'folder' ? ' on' : ''), onclick: () => { S.activityTab = 'folder'; drawPanel('activity', true); } }, 'This folder'));

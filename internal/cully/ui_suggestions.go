@@ -36,7 +36,7 @@ func (m *uiManager) suggestions() []uiSuggestion {
 	}
 	if c := m.coachGet(); !c.At.IsZero() {
 		for i, it := range c.Items {
-			out = append(out, uiSuggestion{ID: "coach-" + uiItoa(i), Kind: "coach", Title: uiClipWords(it.Title, 100), Why: it.Why, Detail: it.How, At: c.At, Href: "#/dashboard/advisor"})
+			out = append(out, uiSuggestion{ID: "coach-" + uiItoa(i), Kind: "coach", Title: uiClipWords(it.Title, 100), Why: it.Why, Detail: it.How, At: c.At, Href: uiCoachHref(it.Kind)})
 		}
 	}
 	if v := m.rulesView(); v.Proposal != nil && v.Proposal.State == "new" {
@@ -47,7 +47,7 @@ func (m *uiManager) suggestions() []uiSuggestion {
 		out = append(out, uiSuggestion{ID: v.Proposal.ID, Kind: "rules", Title: "Update your workflow rules", Why: why, At: v.Proposal.Created, Href: "#/dashboard/rules"})
 	}
 	for _, r := range m.researchList("digest", 1) {
-		out = append(out, uiSuggestion{ID: r.ID, Kind: "digest", Title: "Suggestions from the scouts", Detail: strings.ReplaceAll(r.Text, "**", ""), At: r.Time, Href: "#/dashboard/library"})
+		out = append(out, uiSuggestion{ID: r.ID, Kind: "digest", Title: "Suggestions from the scouts", Detail: strings.ReplaceAll(r.Text, "**", ""), At: r.Time, Href: "#/dashboard/scout"})
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].At.After(out[j].At) })
 	return out
@@ -100,4 +100,20 @@ func uiShowArgv(cmd []string) string {
 		out[i] = a
 	}
 	return strings.Join(out, " ")
+}
+
+// uiCoachHref is the page a tip is about, or "" when the tip is a habit that has no page: its full
+// text is already on the card.
+func uiCoachHref(kind string) string {
+	switch kind {
+	case "job":
+		return "#/dashboard/jobs"
+	case "workflow":
+		return "#/dashboard/rules"
+	case "eval":
+		return "#/dashboard/evals"
+	case "mcp", "skill":
+		return "#/harness"
+	}
+	return ""
 }

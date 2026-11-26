@@ -91,8 +91,11 @@ func TestFeedListsWhatHappenedNewestFirstAndFilters(t *testing.T) {
 	if len(all) != 3 || all[0].Kind != "advice" || all[0].Status != "wait" {
 		t.Fatalf("feed = %+v", all)
 	}
-	if strings.Contains(all[1].Detail, "**") {
-		t.Fatalf("digest markup leaked: %q", all[1].Detail)
+	if strings.Contains(all[1].Detail, "**") || !strings.Contains(all[1].Body, "**Tune SQLite**") {
+		t.Fatalf("the preview should be plain and the body keep its Markdown: %q / %q", all[1].Detail, all[1].Body)
+	}
+	if sc := m.feed("scout", 50); len(sc) < 1 || sc[len(sc)-1].Body != "found" || len(sc[len(sc)-1].Meta) == 0 {
+		t.Fatalf("a scout card lacks its text or facts: %+v", sc)
 	}
 	if got := m.feed("scout", 50); len(got) != 2 {
 		t.Fatalf("scout items = %+v", got)

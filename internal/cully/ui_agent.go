@@ -108,28 +108,29 @@ type uiStage struct {
 }
 
 type uiAgentView struct {
-	ID       string         `json:"id"`
-	Title    string         `json:"title"`
-	Repo     string         `json:"repo"`
-	Branch   string         `json:"branch"`
-	Worktree string         `json:"worktree"`
-	Token    int            `json:"token"` // 1-based index; the value is never exposed
-	State    string         `json:"state"`
-	Created  time.Time      `json:"created"`
-	Stages   []uiStage      `json:"stages"`
-	Events   int            `json:"events"`
-	Files    []string       `json:"files"`   // project-relative files this agent has edited
-	MCP      []uiMCPServer  `json:"mcp"`     // MCP servers as the agent saw them at start
-	Last     string         `json:"last"`    // one line describing the latest activity
-	Updated  time.Time      `json:"updated"` // when the latest activity happened
-	Harness  *uiHarnessView `json:"harness,omitempty"`
-	Usage    *uiUsageView   `json:"usage,omitempty"`
-	Context  *uiContextView `json:"context,omitempty"` // how full the model's context is
-	Cost     float64        `json:"cost,omitempty"`    // list price of the session so far, in dollars
-	Limits   *uiLimits      `json:"limits,omitempty"`  // the account's five-hour and seven-day limits
-	Run      *uiRunInfo     `json:"run,omitempty"`     // how the harness underneath was set up for this task
-	Group    string         `json:"group,omitempty"`   // fan-out: options of one task share it
-	Option   string         `json:"option,omitempty"`  // fan-out: "A", "B", ...
+	ID          string         `json:"id"`
+	Title       string         `json:"title"`
+	Repo        string         `json:"repo"`
+	Branch      string         `json:"branch"`
+	Worktree    string         `json:"worktree"`
+	Token       int            `json:"token"` // 1-based index; the value is never exposed
+	State       string         `json:"state"`
+	Created     time.Time      `json:"created"`
+	Stages      []uiStage      `json:"stages"`
+	Events      int            `json:"events"`
+	Files       []string       `json:"files"`   // project-relative files this agent has edited
+	MCP         []uiMCPServer  `json:"mcp"`     // MCP servers as the agent saw them at start
+	Last        string         `json:"last"`    // one line describing the latest activity
+	Updated     time.Time      `json:"updated"` // when the latest activity happened
+	Harness     *uiHarnessView `json:"harness,omitempty"`
+	Usage       *uiUsageView   `json:"usage,omitempty"`
+	Context     *uiContextView `json:"context,omitempty"`     // how full the model's context is
+	Cost        float64        `json:"cost,omitempty"`        // list price of the session so far, in dollars
+	Limits      *uiLimits      `json:"limits,omitempty"`      // the account's five-hour and seven-day limits
+	Run         *uiRunInfo     `json:"run,omitempty"`         // how the harness underneath was set up for this task
+	Permissions []uiPermView   `json:"permissions,omitempty"` // tool uses waiting for your answer
+	Group       string         `json:"group,omitempty"`       // fan-out: options of one task share it
+	Option      string         `json:"option,omitempty"`      // fan-out: "A", "B", ...
 }
 
 type uiManager struct {
@@ -446,6 +447,7 @@ type uiAgent struct {
 	created                           time.Time
 	tokens                            *uiTokenPool
 	done                              chan struct{}
+	perm                              uiPermState // questions about tools the task is not already allowed to use
 
 	mu      sync.Mutex
 	state   string
@@ -493,7 +495,7 @@ func (a *uiAgent) snapshot() uiAgentView {
 	return uiAgentView{
 		ID: a.id, Title: a.title, Repo: a.repo, Branch: a.branch, Worktree: a.worktree,
 		Token: a.token, State: a.state, Created: a.created,
-		Stages: a.stagesCopyLocked(), Events: len(a.events), Files: a.sortedFilesLocked(), Last: a.last, Updated: a.updated, Group: a.req.group, Option: a.req.option, Harness: a.harnessView(), Usage: usageOf(a.usage), Run: a.runInfo, Context: contextOf(a.model, a.ctx, a.window, a.compactions), Cost: a.cost, Limits: a.limitsView(), MCP: append([]uiMCPServer(nil), a.mcp...),
+		Stages: a.stagesCopyLocked(), Events: len(a.events), Files: a.sortedFilesLocked(), Last: a.last, Updated: a.updated, Group: a.req.group, Option: a.req.option, Harness: a.harnessView(), Usage: usageOf(a.usage), Run: a.runInfo, Context: contextOf(a.model, a.ctx, a.window, a.compactions), Cost: a.cost, Limits: a.limitsView(), MCP: append([]uiMCPServer(nil), a.mcp...), Permissions: a.pendingPermissions(),
 	}
 }
 
@@ -659,6 +661,10 @@ func (a *uiAgent) run(m *uiManager) {
 		"--disallowedTools", denied}
 	mcpArgs := m.mcpFilterArgs()
 	args = append(args, mcpArgs...)
+	if cfg := a.startPermServer(); cfg != "" { // ask the page instead of refusing
+		args = append(args, "--permission-prompt-tool", "mcp__"+uiPermServer+"__"+uiPermTool, "--mcp-config", cfg)
+		defer a.stopPermServer()
+	}
 	if len(mcpArgs) > 0 {
 		a.mu.Lock()
 		a.mcpFiltered = true

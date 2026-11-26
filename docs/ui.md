@@ -143,6 +143,10 @@ The **coach** reads all analysed sessions and suggests a job, skill, MCP server,
 
 Turn on **Keep going until checked** when you start an agent and, after each turn, Cully makes sure the agent ran tests after changing files, steers it when it repeats the same call or the same failing call, and judges its work against the "done when" lines you wrote. It stops after three rounds (up to six), after 200 tool calls, or after eight identical calls in a row. Every message Cully sends is shown in the feed.
 
+## Asking you before a task uses a tool
+
+A task runs without a person at a keyboard, so it used to refuse any tool use outside its allowed list. Now Cully asks you. When a task wants to use something it is not allowed to yet (a command such as `ssh`, a file outside its folder, a web fetch), the task window shows a card with the tool and exactly what it wants to do, and the task waits. **Allow once** lets that call through; **Allow for this task** lets the same exact call through again without asking, for the rest of that task; **Deny** refuses it and the task carries on without it. Nothing is allowed unless you click: an unanswered question is refused after ten minutes, and stopping the task refuses it at once. Tools on the Harness permissions always-blocked list never reach you; they are refused first. Behind the card, Claude is started with `--permission-prompt-tool` pointing at a small helper that talks to the Cully server over a private socket (mode 0600, in a private temporary folder) that exists only while the task runs.
+
 ## Any folder, with or without git
 
 A task can start in any folder you can write in. In a git repository it gets its own branch and worktree. In a folder with no git it works in the folder directly, with no branch to review; the task shows "no git" where the branch would be. Cully works out which when the task starts, so you never have to set git up first. Your home folder and `/` are refused as too broad.
@@ -209,7 +213,7 @@ An eval is a small test: a task, a few checks in plain words and a judge that sa
 
 ## Activity
 
-Activity opens on a feed, newest first and grouped by day: tasks that finished, failed or need an answer, runs of your agents, eval verdicts, and what the scout and advisor found, each linking to where the detail is. Filter by Tasks, Agents, Evals, Scout or Advice. The **This folder** tab keeps the file and command timeline of the current folder.
+Activity opens on a feed of cards, newest first and grouped by day: tasks that finished, failed or need an answer, runs of your agents, eval verdicts, and what the scout and advisor found. A strip of counts for the last 24 hours sits on top, and anything that needs a look is pulled to the front. Each card shows what it was, how it went, a preview and its folder; click it to see the full text (as formatted Markdown, with the links) and the facts behind it, with a button to the page where it lives. Filter by Tasks, Agents, Evals, Scout or Advice. The **This folder** tab keeps the file and command timeline of the current folder.
 
 ## Servers, tools and prompts
 
