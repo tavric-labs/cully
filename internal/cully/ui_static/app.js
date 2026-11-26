@@ -488,7 +488,7 @@
     const stepper = h('div', { class: 'stepper', id: 'stepper' });
     const tabs = h('div', { class: 'tabs narrow', id: 'tabs' });
     const body = h('div', { class: 'feed', id: 'feed' });
-    const jump = h('button', { class: 'btn ghost small jump', hidden: true, onclick: () => { body.scrollTop = body.scrollHeight; } }, icon('down'), 'Latest');
+    const jump = h('button', { class: 'btn small jump', hidden: true, onclick: () => { S.feed.unseen = 0; body.scrollTo({ top: body.scrollHeight, behavior: 'smooth' }); } }, icon('down'), 'Latest');
     const quick = h('div', { class: 'quick', 'aria-label': 'Suggested replies' });
     const ta = h('textarea', { rows: '1', placeholder: 'Message this task…', 'aria-label': 'Message' });
     ta.addEventListener('input', () => { ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, 160) + 'px'; ta.style.overflowY = ta.scrollHeight > 160 ? 'auto' : 'hidden'; });
@@ -500,9 +500,12 @@
     const activity = h('div', { id: 'activity', class: 'activity off', role: 'status', 'aria-live': 'polite' });
     const permBox = h('div', { id: 'permbox' });
     const grid = h('div', { class: 'agrid', id: 'agrid', 'data-show': S.tab }, h('div', { class: 'col chatcol' }, body, activity, permBox, quick, composer), side);
+    $('stage').className = 'stage agent-stage';
     $('stage').replaceChildren(ahead, sub, ctxnote, stepper, tabs, grid);
     body.after(jump);
-    body.addEventListener('scroll', () => { jump.hidden = body.scrollTop + body.clientHeight >= body.scrollHeight - 60; });
+    body.addEventListener('scroll', () => { const atEnd = body.scrollTop + body.clientHeight >= body.scrollHeight - 60; if (atEnd && S.feed) S.feed.unseen = 0; paintJump(); });
+    body.addEventListener('keydown', (e) => { if (e.key === 'End') { e.preventDefault(); body.scrollTo({ top: body.scrollHeight, behavior: 'smooth' }); } else if (e.key === 'Home') { e.preventDefault(); body.scrollTo({ top: 0, behavior: 'smooth' }); } });
+    body.tabIndex = 0;
     S.feed = { body, jump, group: null, tools: 0, typing: null, quick, composer, ta, loaded: false };
     setTimeout(() => { if (S.feed) S.feed.loaded = true; }, 900);
     drawAgentChrome(a);
@@ -678,7 +681,9 @@
       a.files && a.files.length ? h('span', { class: 'chip' }, a.files.length + (a.files.length === 1 ? ' file changed' : ' files changed')) : null,
       openAdviceFor(a.id) ? h('button', { class: 'chip warn', title: 'See and send the advisor\'s advice', onclick: () => { location.hash = '#/dashboard/advisor'; } }, icon('spark'), openAdviceFor(a.id) + (openAdviceFor(a.id) === 1 ? ' piece of advice' : ' pieces of advice')) : null,
       (a.mcp || []).some((m) => m.name === 'cully' && needsAuthStatus(m.status)) ? h('button', { class: 'chip warn', title: 'This task started without Cully MCP access', onclick: () => openMCP('claude') }, icon('alert'), 'Cully MCP needs sign-in') : null);
-    $('stepper').replaceChildren(...(a.stages || []).map((s) => {
+    const stagesMatter = (a.stages || []).some((s) => s.status === 'running' || s.status === 'failed') || a.state === 'preparing';
+    $('stepper').hidden = !stagesMatter;
+    $('stepper').replaceChildren(...(stagesMatter ? (a.stages || []) : []).map((s) => {
       const label = (({ ok: '✓ ', failed: '✗ ', skipped: '– ', running: '● ' })[s.status] || '') + s.name;
       const look = s.name === 'scout' || s.name === 'recall';
       return look && s.status !== 'skipped'
@@ -734,6 +739,7 @@
   async function sendMessage(id, text) {
     text = (text || '').trim();
     if (!text) return;
+    if (S.feed) S.feed.forceStick = true; // your own message always scrolls into view
     try { await api('/api/agents/' + id + '/message', { method: 'POST', body: JSON.stringify({ text }) }); } catch (e) { toast(e.message, true); }
   }
   async function continueFrom(a) {
@@ -784,6 +790,22 @@
     if (!f.typing) f.typing = h('div', { class: 'typing', 'aria-label': 'Agent is working' }, h('i'), h('i'), h('i'));
     f.body.append(f.typing);
   }
+  // The "Latest" button appears when you have scrolled up, and counts what arrived since.
+  function paintJump() {
+    const f = S.feed; if (!f || !f.jump) return;
+    const b = f.body; const atEnd = b.scrollTop + b.clientHeight >= b.scrollHeight - 60;
+    f.jump.hidden = atEnd;
+    f.jump.replaceChildren(icon('down'), f.unseen ? f.unseen + (f.unseen === 1 ? ' new message' : ' new messages') : 'Latest');
+  }
+  // A long reply is shown in full only on request, so one big answer does not bury the conversation.
+  function clampLong(node, text) {
+    const lines = (text.match(/\n/g) || []).length;
+    if (text.length < 2200 && lines < 32) return node;
+    node.classList.add('clamped');
+    const btn = h('button', { type: 'button', class: 'linkbtn showall', onclick: () => { const on = node.classList.toggle('clamped'); btn.textContent = on ? 'Show all (' + Math.max(lines, 1) + ' lines)' : 'Show less'; } }, 'Show all (' + Math.max(lines, 1) + ' lines)');
+    node.append(btn);
+    return node;
+  }
   function appendEvent(ev) {
     const f = S.feed;
     if (!f) return;
@@ -794,7 +816,7 @@
     if (ev.kind === 'tool' || ev.kind === 'tool_result') addToolRow(ev);
     else {
       f.group = null;
-      if (ev.kind === 'text') { const node = h('div', { class: 'msg bot', title: new Date(ev.t).toLocaleTimeString() }, markdown(ev.text)); b.append(node); attachSessionActions(node, ev.text); }
+      if (ev.kind === 'text') { const node = clampLong(h('div', { class: 'msg bot', title: new Date(ev.t).toLocaleTimeString() }, markdown(ev.text)), ev.text); b.append(node); attachSessionActions(node, ev.text); }
       else if (ev.kind === 'user') b.append(h('div', { class: 'msg you', title: new Date(ev.t).toLocaleTimeString() }, ev.text));
       else if (ev.kind === 'error') b.append(h('div', { class: 'msg error' }, ev.text));
       else if (ev.kind === 'result') b.append(h('div', { class: 'rule' }, ev.failed ? 'turn ended with an error' : 'turn done'));
@@ -804,7 +826,8 @@
     if (f.loaded && b.lastElementChild) b.lastElementChild.classList.add('fresh');
     const a = S.agents.find((x) => x.id === S.route.id);
     if (a && (a.state === 'working' || a.state === 'preparing')) setTyping(true);
-    if (stick) b.scrollTop = b.scrollHeight;
+    if (stick || f.forceStick) { b.scrollTop = b.scrollHeight; f.forceStick = false; f.unseen = 0; } else if (f.loaded && (ev.kind === 'text' || ev.kind === 'error')) f.unseen = (f.unseen || 0) + 1;
+    paintJump();
   }
   // Tool calls as typed rows: an icon for what kind of thing it did, a spinner while it runs, a tick or a
   // cross when it ends. Consecutive calls share one collapsible group so a long run stays readable.

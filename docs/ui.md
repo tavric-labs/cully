@@ -149,7 +149,9 @@ A task is the unit of work you care about, and it can be more than one session o
 
 ## The task window and the board
 
-The agent window follows what other agent front ends do: the agent's own plan (its todo list) is pinned above the chat and ticked off as it goes, a line always says what it is doing now or that it is your turn, tool calls are typed rows with an icon, a spinner while they run and a tick or cross after, and the Changes column appears when there is something to review. The **Board** is a kanban: Up next, Working, Needs you and Finished side by side, each scrolling on its own. Press + in Up next to add a task, drag one from Up next to Working to start it, and a running one to Finished to stop it.
+The agent window follows what other agent front ends do: the agent's own plan (its todo list) is pinned above the chat and ticked off as it goes, a line always says what it is doing now or that it is your turn, tool calls are typed rows with an icon, a spinner while they run and a tick or cross after, and the Changes column appears when there is something to review. Scrolling follows the same rule as other chat apps: only the conversation scrolls, never the whole page, and scrolling it does not drag the page along. It stays at the newest message while you are at the bottom; when you scroll up to read, a **Latest** button shows how many messages arrived meanwhile, and your own message always scrolls into view. A very long reply is shortened with Show all, code blocks scroll on their own, and Home and End jump to the start and end of the chat. The stage line (context, recall, scout) shows only while it is running or has failed.
+
+The **Board** is a kanban: Up next, Working, Needs you and Finished side by side, each scrolling on its own. Press + in Up next to add a task, drag one from Up next to Working to start it, and a running one to Finished to stop it.
 
 ## Tools, permissions and suggested replies
 

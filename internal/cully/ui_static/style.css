@@ -931,3 +931,17 @@ details.sgroup > summary { cursor: pointer; } details.sgroup > summary::-webkit-
 .tcard .row { gap: 8px; align-items: center; flex-wrap: wrap; } .ttitle { font: 600 15px var(--serif); } .tcard .fprev { margin: 0; }
 
 .evid { margin: 4px 0; } .evid summary { cursor: pointer; display: flex; gap: 10px; align-items: baseline; } .evlist { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: 13px; } .evlist li { display: flex; gap: 8px; align-items: center; }
+
+/* the task page: only the chat (and the side column) scroll, never the whole page */
+.stage.agent-stage { overflow: hidden; }
+.agent-stage .agrid { min-height: 0; }
+.feed { overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--line2) transparent; scroll-padding-bottom: 60px; outline: none; }
+.feed::-webkit-scrollbar { width: 9px; } .feed::-webkit-scrollbar-thumb { background: var(--line2); border-radius: 6px; } .feed::-webkit-scrollbar-track { background: transparent; }
+.sidecol .sidebody { overscroll-behavior: contain; }
+.sub2 { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding-bottom: 8px; } .sub2::-webkit-scrollbar { display: none; } .sub2 > * { flex: none; }
+.jump { position: sticky; bottom: 8px; align-self: center; box-shadow: 0 4px 14px rgba(14, 52, 41, .22); z-index: 5; }
+.msg.clamped { max-height: 24em; overflow: hidden; position: relative; }
+.msg.clamped::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 4.5em; background: linear-gradient(to bottom, transparent, var(--raised) 85%); pointer-events: none; }
+.msg.clamped .showall { position: absolute; z-index: 2; left: 14px; bottom: 8px; background: var(--raised); padding: 2px 10px; border: 1px solid var(--line2); border-radius: 12px; }
+.msg .showall { margin-top: 6px; }
+.msg pre { max-height: 340px; overflow: auto; }
