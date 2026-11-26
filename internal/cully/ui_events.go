@@ -67,6 +67,7 @@ type uiParsed struct {
 // uiWindow is one usage limit window: how much of it is used and when it resets.
 type uiWindow struct {
 	Used     int    `json:"used"`     // percent
+	Known    bool   `json:"known"`    // the harness reported a figure; without one, "0" would be a guess
 	ResetsAt int64  `json:"resetsAt"` // unix seconds
 	Status   string `json:"status"`
 }
@@ -301,7 +302,7 @@ func uiWindowOf(v any) uiWindow {
 	m, _ := v.(map[string]any)
 	w := uiWindow{}
 	if u, ok := m["utilization"].(float64); ok {
-		w.Used = int(u*100 + 0.5)
+		w.Used, w.Known = int(u*100+0.5), true
 	}
 	if r, ok := m["resetsAt"].(float64); ok {
 		w.ResetsAt = int64(r)

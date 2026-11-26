@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -274,4 +275,58 @@ func (m *uiManager) probeIfDue() {
 		return
 	}
 	_, _ = m.probeHarness()
+}
+
+// uiHarnessTools is every tool the harness has: its own built-in tools and each
+// connected server's, with descriptions where they have been loaded. The Tools
+// section of the Harness page lists them in one place so access can be set tool by tool.
+type uiHarnessToolsServer struct {
+	uiInfoServer
+	Tools       []uiToolDetail `json:"tools"`
+	DetailsFrom string         `json:"detailsFrom,omitempty"`
+	CanLoad     bool           `json:"canLoad"`
+}
+
+type uiHarnessTools struct {
+	Builtin []string               `json:"builtin"`
+	Servers []uiHarnessToolsServer `json:"servers"`
+	Known   bool                   `json:"known"` // a task has run, so tool names are known
+	Note    string                 `json:"note,omitempty"`
+}
+
+func (m *uiManager) harnessTools(agent string) uiHarnessTools {
+	out := uiHarnessTools{Builtin: []string{}, Servers: []uiHarnessToolsServer{}}
+	if agent != "claude" {
+		out.Note = "Cully lists tools only for the harness tasks run in."
+		return out
+	}
+	if n := m.initKnown(); n != nil {
+		out.Known = true
+		for _, t := range n.Tools {
+			if !strings.HasPrefix(t, "mcp__") {
+				out.Builtin = append(out.Builtin, t)
+			}
+		}
+		sort.Strings(out.Builtin)
+	}
+	for _, s := range m.harnessInfo(agent).MCP {
+		d, err := m.serverDetail(agent, s.Name)
+		if err != nil {
+			continue
+		}
+		out.Servers = append(out.Servers, uiHarnessToolsServer{uiInfoServer: d.uiInfoServer, Tools: d.Tools, DetailsFrom: d.DetailsFrom, CanLoad: d.CanLoad})
+	}
+	return out
+}
+
+func (s *uiServer) harnessToolsGet(w http.ResponseWriter, r *http.Request) {
+	agent := r.URL.Query().Get("agent")
+	if agent == "" {
+		agent = "claude"
+	}
+	if !uiKnownAgent(agent) {
+		uiError(w, http.StatusBadRequest, "unknown harness")
+		return
+	}
+	uiJSON(w, http.StatusOK, s.m.harnessTools(agent))
 }

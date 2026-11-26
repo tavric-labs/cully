@@ -440,8 +440,7 @@
     const tabs = h('div', { class: 'tabs narrow', id: 'tabs' });
     const body = h('div', { class: 'feed', id: 'feed' });
     const jump = h('button', { class: 'btn ghost small jump', hidden: true, onclick: () => { body.scrollTop = body.scrollHeight; } }, icon('down'), 'Latest');
-    const quick = h('div', { class: 'quick' }, ...['Continue', 'Run the tests', 'Summarize what you changed', 'Commit your work'].map((t) =>
-      h('button', { type: 'button', onclick: () => sendMessage(a.id, t) }, t)));
+    const quick = h('div', { class: 'quick', 'aria-label': 'Suggested replies' });
     const ta = h('textarea', { rows: '1', placeholder: 'Message this task…', 'aria-label': 'Message' });
     ta.addEventListener('input', () => { ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, 160) + 'px'; ta.style.overflowY = ta.scrollHeight > 160 ? 'auto' : 'hidden'; });
     ta.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); const t = ta.value; ta.value = ''; ta.style.height = 'auto'; sendMessage(a.id, t); } });
@@ -477,7 +476,15 @@
     return svg;
   };
   const untilReset = (unix) => { const m = Math.max(0, Math.round((unix * 1000 - Date.now()) / 60000)); return m >= 1440 ? 'resets in ' + Math.floor(m / 1440) + ' d ' + Math.floor((m % 1440) / 60) + ' h' : m >= 60 ? 'resets in ' + Math.floor(m / 60) + ' h ' + (m % 60) + ' min' : 'resets in ' + m + ' min'; };
-  const limitBar = (label, w) => h('div', { class: 'lim' }, h('div', { class: 'row' }, h('span', {}, label), h('b', { class: w.used >= 80 ? 'bad-t' : '' }, w.used + '% used')), h('span', { class: 'fbar ' + (w.used >= 80 ? 'hot' : w.used >= 60 ? 'mid' : '') }, fill(w.used)), w.resetsAt ? h('small', { class: 'faint' }, untilReset(w.resetsAt)) : null);
+  // One usage window. Claude Code reports a window's use only some of the time, so a missing figure is
+  // shown as "not reported", never as 0%, and a window whose reset time has passed says it reset.
+  const limitBar = (label, w) => {
+    const reset = w.resetsAt && w.resetsAt * 1000 < Date.now();
+    if (!w.known || reset) return h('div', { class: 'lim' }, h('div', { class: 'row' }, h('span', {}, label), h('b', { class: 'faint' }, reset ? 'Window reset' : 'Not reported')), h('small', { class: 'faint' }, reset ? 'It started again from zero. Check now for the new figure.' : 'Claude Code tells a task this only some of the time. Check now asks for it.'));
+    return h('div', { class: 'lim' }, h('div', { class: 'row' }, h('span', {}, label), h('b', { class: w.used >= 80 ? 'bad-t' : '' }, w.used + '% used')), h('span', { class: 'fbar ' + (w.used >= 80 ? 'hot' : w.used >= 60 ? 'mid' : '') }, fill(w.used)), w.resetsAt ? h('small', { class: 'faint' }, untilReset(w.resetsAt)) : null);
+  };
+  // Asks each account for its limits (a few tokens on the smallest model) and redraws.
+  const limitsCheckBtn = (seen) => { const b = h('button', { class: 'btn ghost small', title: 'Ask for the current usage limits. Costs a few tokens.' }, icon('refresh'), 'Check now'); b.addEventListener('click', async () => { b.disabled = true; b.textContent = 'Checking…'; try { await api('/api/limits/refresh', { method: 'POST' }); S.panelAt = 0; await refresh(); toast('Usage limits updated'); } catch (e) { toast(e.message, true); } b.disabled = false; }); return h('div', { class: 'row' }, b, seen ? h('small', { class: 'faint' }, 'last heard ' + ago(new Date(seen * 1000).toISOString())) : null); };
   async function panelData() {
     if (S.panelData && Date.now() - S.panelAt < 20000) return S.panelData;
     const [day, week, limits] = await Promise.all([api('/api/usage?days=1').catch(() => null), api('/api/usage?days=7').catch(() => null), api('/api/limits').catch(() => null)]);
@@ -502,7 +509,7 @@
         c && c.model ? h('div', { class: 'faint small' }, c.model) : null,
         c ? h('div', { class: 'faint small' }, c.compactions ? 'Compacted ' + c.compactions + (c.compactions === 1 ? ' time' : ' times') + ' by the harness.' : 'The harness compacts the history by itself before this fills.') : null,
         c && c.compactions >= 3 ? h('button', { class: 'btn small', onclick: () => startFromHandoff(a) }, icon('plus'), 'Start clean from a handoff') : null),
-      sec('Usage limits', lim ? [limitBar('Last 5 hours', lim.fiveHour), limitBar('Last 7 days', lim.sevenDay), h('small', { class: 'faint' }, 'Account: ' + (a.token ? 'token ' + a.token : 'ambient login') + (lim.status && lim.status !== 'allowed' ? '. ' + lim.status.replace(/_/g, ' ') : ''))] : h('p', { class: 'faint small' }, 'The harness reports these after its first reply.')),
+      sec('Usage limits', lim ? [limitBar('Last 5 hours', lim.fiveHour), limitBar('Last 7 days', lim.sevenDay), limitsCheckBtn(lim.seen), h('small', { class: 'faint' }, 'Account: ' + (a.token ? 'token ' + a.token : 'ambient login') + (lim.status && lim.status !== 'allowed' ? '. ' + lim.status.replace(/_/g, ' ') : ''))] : h('p', { class: 'faint small' }, 'The harness reports these after its first reply.')),
       sec('Tokens', u ? [kv('This task', fmtTokens(u.tokens)), kv('From cache', u.cachedShare + '%'), kv('Saved by cache', '~' + fmtTokens(u.saved))] : h('p', { class: 'faint small' }, 'Counted after each turn.'),
         d.day ? kv('Tasks today', fmtTokens(d.day.tokens)) : null, d.week ? kv('Tasks this week', fmtTokens(d.week.tokens)) : null, a.cost ? kv('List price so far', '$' + a.cost.toFixed(a.cost < 1 ? 3 : 2)) : null),
       sec('Harness', h('div', { class: 'row' }, harnessChip('claude'), run ? h('button', { class: 'linkbtn', onclick: () => openRunInfo(a) }, 'How it is set up') : null),
@@ -580,6 +587,7 @@
         h('button', { class: 'btn ghost small', title: 'Allow this exact call again without asking, for the rest of this task', onclick: () => answer(p, 'allow_always') }, 'Allow for this task'),
         h('button', { class: 'btn ghost small', onclick: () => answer(p, 'deny') }, 'Deny')))));
   }
+  document.addEventListener('click', (e) => { for (const d of document.querySelectorAll('details.menu[open]')) if (!d.contains(e.target)) d.open = false; });
   function drawAgentChrome(a) {
     drawPermissions(a);
     if (!$('ahead')) return;
@@ -589,13 +597,23 @@
       if (b.dataset.armed) { api('/api/agents/' + a.id + '/stop', { method: 'POST' }).then(refresh).catch((x) => toast(x.message, true)); return; }
       b.dataset.armed = '1'; b.replaceChildren(icon('stop'), 'Click again to stop'); setTimeout(() => { b.dataset.armed = ''; b.replaceChildren(icon('stop'), 'Stop'); }, 3000);
     } }, icon('stop'), 'Stop');
+    // The side column (changes and summary) shows only when there is something to show, or when you
+    // open it. With nothing in it, the chat takes the whole window.
+    const nChanges = a.files ? a.files.length : 0;
+    S.sidePref = S.sidePref || {};
+    const showSide = S.sidePref[a.id] ? S.sidePref[a.id] === 'open' : nChanges > 0;
+    const grid = $('agrid');
+    if (grid) grid.classList.toggle('no-side', !showSide);
+    const sideBtn = h('button', { class: 'btn ghost small sidetoggle', title: showSide ? 'Hide the changes and summary' : 'Show the changes and summary', 'aria-pressed': String(showSide), onclick: () => { S.sidePref[a.id] = showSide ? 'closed' : 'open'; S.diffKey = ''; drawAgentChrome(a); loadSide(a, true); } }, icon('branch'), showSide ? 'Hide changes' : (nChanges ? 'Changes (' + nChanges + ')' : 'Summary'));
+    const item = (ic, label, title, fn) => h('button', { type: 'button', class: 'menuitem', title, onclick: (e) => { const d = e.currentTarget.closest('details'); if (d) d.open = false; fn(); } }, icon(ic), label);
+    const more = h('details', { class: 'menu' }, h('summary', { class: 'btn ghost small', 'aria-label': 'More actions' }, 'More'),
+      h('div', { class: 'menu-pop' },
+        item('spark', 'Ask advisor', "Ask the advisor to review this agent's work", () => askAdvisor(a)),
+        item('eye', 'Review the change', 'Start a read-only review of this change', () => startReview(a)),
+        finished ? null : item('send', 'Send to another task', "Send this agent's reply or changes to another agent", () => openRelay(a)),
+        item('plus', 'Continue in a new task', 'Start a new task from where this one is', () => continueFrom(a))));
     $('ahead').replaceChildren(h('h2', {}, a.title), h('span', { class: 'pill ' + a.state }, dot(a.state), stateLabel(a.state)),
-      h('span', { class: 'sp' },
-        h('button', { class: 'btn ghost small', title: "Ask the advisor to review this agent's work", onclick: () => askAdvisor(a) }, icon('spark'), 'Ask advisor'),
-        h('button', { class: 'btn ghost small', title: 'Start a read-only review of this change', onclick: () => startReview(a) }, icon('eye'), 'Review'),
-        finished ? null : h('button', { class: 'btn ghost small', title: "Send this agent's reply or changes to another agent", onclick: () => openRelay(a) }, icon('send'), 'Send to task'),
-        h('button', { class: 'btn ghost small', onclick: () => continueFrom(a) }, icon('plus'), 'Continue in a new task'),
-        finished ? null : stop));
+      h('span', { class: 'sp' }, sideBtn, more, finished ? null : stop));
     drawContextNote(a);
     drawTaskPanel(a);
     $('sub2').replaceChildren(
@@ -625,8 +643,42 @@
     if (S.feed) {
       S.feed.composer.hidden = finished;
       S.feed.quick.hidden = finished;
+      updateQuick(a);
       setTyping(a.state === 'working' || a.state === 'preparing');
     }
+  }
+  // Replies worth sending next, worked out from this task: what its last message asked, whether files
+  // changed, whether the tests ran and how they ended, and how full its context is. All local facts: no
+  // model is asked, so suggesting costs nothing.
+  function quickReplies(a, sum) {
+    const out = []; const add = (label, text) => { if (out.length < 4 && !out.some((x) => x.label === label)) out.push({ label, text: text || label }); };
+    const last = ((sum && sum.lastReply) || a.last || '').trim();
+    const asks = /\?\s*$/.test(last) || /\b(should i|shall i|do you want|would you like|want me to|let me know|which (one|option))\b/i.test(last);
+    const changed = (sum && sum.fileCount) || (a.files ? a.files.length : 0);
+    const c = sum && sum.checks; const since = (sum && sum.editsSinceCheck) || 0;
+    if (a.state === 'done' || a.state === 'failed' || a.state === 'stopped') return [];
+    if (asks) { add('Yes, go ahead'); add('No, skip that', 'No, skip that and carry on with the rest.'); add('Explain first', 'Explain what you would change and why before doing it.'); }
+    if (c && c.last === 'failed') add('Fix the failing check', 'Fix the failing check, then run it again and show me the result.');
+    if (changed && (!c || c.last === 'none' || since > 0)) add('Run the tests', 'Run the tests and show me the output.');
+    if (changed && c && c.last === 'passed' && since === 0) { add('Commit your work', 'Commit your work with a clear message. Do not push.'); }
+    if (changed) add('Summarize what you changed', 'Summarize what you changed and why, file by file, briefly.');
+    if (a.context && a.context.near) add('Wrap up and hand off', 'You are running low on room. Summarize where we are and what is left, so I can continue in a new task.');
+    if (!changed && !asks) { add('Continue'); add('Summarize what you found', 'Summarize what you found so far, briefly.'); }
+    if (!asks && out.length < 2) add('Continue');
+    return out;
+  }
+  async function updateQuick(a) {
+    const f = S.feed;
+    if (!f || !f.quick) return;
+    const finished = a.state === 'done' || a.state === 'failed' || a.state === 'stopped';
+    if (finished || a.state === 'working' || a.state === 'preparing' || (a.permissions || []).length) { f.quick.replaceChildren(); f.quickKey = ''; return; }
+    const key = a.id + '|' + a.state + '|' + (a.events || 0) + '|' + (a.files ? a.files.length : 0);
+    if (f.quickKey === key) return;
+    f.quickKey = key;
+    let sum = null;
+    try { sum = await api('/api/agents/' + a.id + '/summary'); } catch (_) { /* suggest from what the page already knows */ }
+    if (S.feed !== f || f.quickKey !== key) return;
+    f.quick.replaceChildren(...quickReplies(a, sum).map((r) => h('button', { type: 'button', title: r.text, onclick: () => sendMessage(a.id, r.text) }, r.label)));
   }
   async function sendMessage(id, text) {
     text = (text || '').trim();
@@ -1431,7 +1483,7 @@
     return [...groups.entries()].map(([name, ts]) => ({ name, tools: ts })).sort((a, b) => b.tools.length - a.tools.length);
   }
 
-  const HARNESS_SECTIONS = [['overview', 'Overview'], ['permissions', 'Permissions'], ['servers', 'Connected servers'], ['skills', 'Skills'], ['hooks', 'Hooks'], ['more', 'Plugins and commands']];
+  const HARNESS_SECTIONS = [['overview', 'Overview'], ['permissions', 'Permissions'], ['servers', 'Connected servers'], ['tools', 'Tools'], ['skills', 'Skills'], ['hooks', 'Hooks'], ['more', 'Plugins and commands']];
   async function renderHarness() {
     const box = $('harness');
     const tasksAgent = (mcpUsed()[0] || { agent: 'claude' }).agent;
@@ -1451,7 +1503,7 @@
         a === tasksAgent ? h('span', { class: 'chip ok' }, 'Tasks run here') : null); }));
     // 2. choose a section
     const counts = { servers: info.mcp.length, skills: info.skills.length, hooks: info.hooks.length };
-    const nav = h('nav', { class: 'hnav', 'aria-label': 'Harness sections' }, ...HARNESS_SECTIONS.filter((t) => t[0] !== 'permissions' || info.tasksUseIt).map(([k, l]) => h('a', { href: '#/harness/' + k, class: k === section ? 'on' : '', 'aria-current': k === section ? 'page' : null, onclick: (e) => { e.preventDefault(); go(agent, k); } }, l, counts[k] != null ? h('span', { class: 'n' }, String(counts[k])) : null)));
+    const nav = h('nav', { class: 'hnav', 'aria-label': 'Harness sections' }, ...HARNESS_SECTIONS.filter((t) => (t[0] !== 'permissions' && t[0] !== 'tools') || info.tasksUseIt).map(([k, l]) => h('a', { href: '#/harness/' + k, class: k === section ? 'on' : '', 'aria-current': k === section ? 'page' : null, onclick: (e) => { e.preventDefault(); go(agent, k); } }, l, counts[k] != null ? h('span', { class: 'n' }, String(counts[k])) : null)));
     const body = h('div', { class: 'hbody' });
     const card = (title, sub, ...kids) => h('section', { class: 'lib-card' }, h('div', { class: 'hc-title' }, h('h3', {}, title), sub ? h('p', { class: 'faint small' }, sub) : null), ...kids);
     const tile = (n, l) => h('div', { class: 'btile' }, h('b', {}, n), h('span', {}, l));
@@ -1479,7 +1531,7 @@
         h('div', { class: 'btiles' }, tile(info.model || 'Default', 'Model'), tile(info.mode || 'Not set', 'Its permission mode'), tile(info.allow + ' / ' + info.deny, 'Allow and deny rules'), tile(String(info.mcp.length), 'Connected servers'), tile(String(info.skills.length), 'Skills'), tile(String(info.hooks.length), 'Hook events'), tile(String(info.plugins.length), 'Plugins'), tile(String(info.commands.length), 'Commands')),
         h('div', { class: 'row' }, ...info.instructions.map((x) => h('span', { class: 'chip mono' }, x))), ...info.notes.map((n) => h('p', { class: 'faint small' }, n))));
     } else if (section === 'permissions') {
-      const holder = h('div', {}); body.append(holder); renderPermissions(holder, () => null);
+      const holder = h('div', {}); body.append(holder); renderPermissions(holder, () => document.createTextNode(''));
     } else if (section === 'servers') {
       const tools = info.tasksUseIt ? await api('/api/admin/tools').catch(() => null) : null;
       const chosen = new Set(tools ? tools.mcp.only : []);
@@ -1532,6 +1584,69 @@
         h('button', { class: 'btn small', onclick: async (e) => { e.currentTarget.disabled = true; e.currentTarget.textContent = 'Checking…'; try { const r = await api('/api/harness/probe', { method: 'POST' }); toast('Checked ' + r.servers + ' servers'); renderHarness(); } catch (x) { toast(x.message, true); renderHarness(); } } }, 'Check now')) : null;
       body.append(card('Connected servers', 'Click a server to see its tools, prompts and resources. Ones that need you come first.', check, summary, info.mcp.length ? h('div', { class: 'row' }, sq, fchips) : null, info.mcp.length ? grid : h('p', { class: 'faint small' }, 'No servers are connected to ' + info.name + '.'), bar));
       drawGrid();
+    } else if (section === 'tools') {
+      const [tv, pol] = await Promise.all([api('/api/harness/tools?agent=' + agent), api('/api/admin/tools')]);
+      const ruleId = (srv, t) => 'mcp__' + srv + '__' + t;
+      const cur = new Map(); const orig = new Map();
+      for (const sv of tv.servers) for (const t of sv.tools) { const id = ruleId(sv.name, t.name); const v = pol.deny.includes(id) ? 'block' : pol.allow.includes(id) ? 'allow' : ''; cur.set(id, v); orig.set(id, v); }
+      const view = { q: '', kind: '', acc: '' };
+      const changed = () => [...cur].filter(([id, v]) => orig.get(id) !== v).length;
+      const tiles = h('div', { class: 'kpis' });
+      const bar = h('div', { class: 'savebar', hidden: true });
+      const list = h('div', { class: 'tlist' });
+      const drawTiles = () => {
+        const all = [...cur.values()]; const n = (v) => all.filter((x) => x === v).length;
+        tiles.replaceChildren(...[[all.length, 'Tools on connected servers'], [n('allow'), 'Allowed'], [n(''), 'Ask me'], [n('block'), 'Blocked']].map(([v, l]) => h('div', { class: 'kpi' }, h('b', {}, String(v)), h('span', {}, l))));
+        const c = changed(); bar.hidden = !c;
+        bar.replaceChildren(h('span', {}, c + (c === 1 ? ' change' : ' changes') + ' not saved.'), h('button', { class: 'btn', onclick: save }, icon('check'), 'Save'), h('button', { class: 'btn ghost', onclick: () => { for (const [id, v] of orig) cur.set(id, v); drawTiles(); drawList(); } }, 'Discard'));
+      };
+      const save = async () => {
+        const managed = new Set(cur.keys());
+        const allow = [...pol.allow.filter((r) => !managed.has(r)), ...[...cur].filter(([, v]) => v === 'allow').map(([id]) => id)];
+        const deny = [...pol.deny.filter((r) => !managed.has(r)), ...[...cur].filter(([, v]) => v === 'block').map(([id]) => id)];
+        try { await api('/api/admin/tools', { method: 'PUT', body: JSON.stringify({ presets: Object.fromEntries(pol.presets.map((p) => [p.id, p.on])), allow, deny, mcpOnly: pol.mcp.only }) }); toast('Saved. New tasks use these settings.'); renderHarness(); } catch (e) { toast(e.message, true); }
+      };
+      const setOne = (id, v) => { cur.set(id, v); drawTiles(); };
+      const seg = (id) => { const row = h('div', { class: 'seg acc', role: 'group', 'aria-label': 'Access' });
+        const paint = () => { for (const b of row.children) b.className = (b.dataset.v === cur.get(id) ? 'on ' : '') + 'acc-' + (b.dataset.v || 'ask'); };
+        for (const [v, l, tip] of [['', 'Ask', 'The task pauses and asks you in its window'], ['allow', 'Allow', 'The task may use it without asking'], ['block', 'Block', 'The task can never use it']]) { const b = h('button', { type: 'button', 'data-v': v, title: tip, onclick: () => { setOne(id, v); paint(); } }, l); row.append(b); }
+        paint(); return row; };
+      const toolRow = (sv, t) => { const k = toolKind(t); const id = ruleId(sv.name, t.name);
+        return h('div', { class: 'trow' }, h('details', { class: 'tool' }, h('summary', {}, h('code', {}, t.name), h('span', { class: 'chip tk-' + k }, TOOL_KIND_WORD[k]), t.description ? h('span', { class: 'td faint small' }, t.description.length > 120 ? t.description.slice(0, 120) + '…' : t.description) : null),
+          t.description ? h('p', { class: 'tdesc' }, t.description) : h('p', { class: 'faint small' }, 'No description yet. Use Load descriptions on the server.'),
+          t.params && t.params.length ? h('table', { class: 'ptable' }, h('thead', {}, h('tr', {}, ...['Parameter', 'Type', 'Needed', 'What it is'].map((c) => h('th', {}, c)))), h('tbody', {}, ...t.params.map((p) => h('tr', {}, h('td', {}, h('code', {}, p.name)), h('td', { class: 'faint' }, p.type || ''), h('td', {}, p.required ? 'Required' : 'Optional'), h('td', { class: 'faint' }, p.description || ''))))) : null),
+          seg(id)); };
+      const loadDesc = async (sv, btn) => { btn.disabled = true; btn.textContent = 'Reading ' + sv.name + '…'; try { await api('/api/harness/server/details', { method: 'POST', body: JSON.stringify({ agent, name: sv.name }) }); toast('Loaded ' + sv.name); renderHarness(); } catch (e) { toast(e.message, true); btn.disabled = false; btn.textContent = 'Load descriptions'; } };
+      const drawList = () => {
+        const t = view.q.trim().toLowerCase();
+        const cards = tv.servers.map((sv) => {
+          const rows = sv.tools.filter((x) => (!view.kind || toolKind(x) === view.kind) && (!view.acc || (cur.get(ruleId(sv.name, x.name)) || 'ask') === view.acc) && (!t || (sv.name + ' ' + x.name + ' ' + (x.description || '')).toLowerCase().includes(t)));
+          if (!rows.length) return null;
+          const bulk = (label, pick, v) => h('button', { type: 'button', class: 'btn ghost small', onclick: () => { for (const x of sv.tools) if (pick(x)) cur.set(ruleId(sv.name, x.name), v); drawTiles(); drawList(); } }, label);
+          const lb = sv.canLoad && !sv.detailsFrom ? h('button', { class: 'btn ghost small', title: 'Asks your Claude once, for this server only; uses a few thousand tokens' }, icon('spark'), 'Load descriptions') : null;
+          if (lb) lb.addEventListener('click', () => loadDesc(sv, lb));
+          const st = srvState(sv.status);
+          return h('details', { class: 'tgroup', ...(t || view.kind || view.acc || tv.servers.length <= 3 ? { open: true } : {}) },
+            h('summary', {}, h('b', {}, sv.name), h('span', { class: 'chip fs-' + (st === 'ok' ? 'good' : st === 'bad' ? 'bad' : st === 'auth' ? 'wait' : 'info') }, SRV_WORD[st]), h('span', { class: 'faint small' }, rows.length + (rows.length === sv.tools.length ? '' : ' of ' + sv.tools.length) + ' tools')),
+            h('div', { class: 'row tbulk' }, bulk('Allow all that read', (x) => toolKind(x) === 'read', 'allow'), bulk('Block all that delete', (x) => toolKind(x) === 'delete', 'block'), bulk('Ask for everything', () => true, ''), lb),
+            ...rows.map((x) => toolRow(sv, x)));
+        }).filter(Boolean);
+        list.replaceChildren(...(cards.length ? cards : [h('p', { class: 'faint small' }, tv.servers.length ? 'No tool matches.' : 'No servers are connected.')]));
+      };
+      const q = h('input', { type: 'search', class: 'bsearch', placeholder: 'Search tools by name or what they do', 'aria-label': 'Search tools', autocomplete: 'off' });
+      q.addEventListener('input', () => { view.q = q.value; drawList(); });
+      const chips = h('div', { class: 'row filters' });
+      const drawChips = () => chips.replaceChildren(...[['kind', '', 'All'], ['kind', 'read', 'Reads'], ['kind', 'change', 'Changes things'], ['kind', 'delete', 'Deletes'], ['acc', 'allow', 'Allowed'], ['acc', 'ask', 'Ask me'], ['acc', 'block', 'Blocked']].map(([f, v, l]) => h('button', { type: 'button', class: 'toggle' + ((f === 'kind' ? view.kind : view.acc) === v && (v || (f === 'kind' && !view.acc && !view.kind)) ? ' on' : ''), onclick: () => { if (!v) { view.kind = ''; view.acc = ''; } else view[f] = view[f] === v ? '' : v; drawChips(); drawList(); } }, l)));
+      drawChips();
+      const needDesc = tv.servers.filter((sv) => sv.canLoad && !sv.detailsFrom);
+      const allBtn = needDesc.length ? h('button', { class: 'btn small', title: 'Reads every server\'s tool definitions through your Claude: a few thousand tokens per server' }, icon('spark'), 'Load all descriptions (' + needDesc.length + ' servers)') : null;
+      if (allBtn) allBtn.addEventListener('click', async () => { allBtn.disabled = true; for (let i = 0; i < needDesc.length; i++) { allBtn.textContent = 'Reading ' + needDesc[i].name + ' (' + (i + 1) + ' of ' + needDesc.length + ')…'; try { await api('/api/harness/server/details', { method: 'POST', body: JSON.stringify({ agent, name: needDesc[i].name }) }); } catch (e) { toast(needDesc[i].name + ': ' + e.message, true); } } renderHarness(); });
+      body.append(card('Tools', 'Every tool on the servers tasks connect to. Choose, tool by tool, whether a task may use it freely, must ask you first, or never gets it.',
+        h('div', { class: 'ctxnote' }, icon('lock'), h('div', {}, h('b', {}, 'Ask, Allow or Block'), h('div', { class: 'faint small' }, 'Ask is the default: the task stops and a card in its window shows exactly what it wants to do. Allow lets it through without asking. Block is final: a blocked tool is never offered to the task.'))),
+        !tv.known ? h('p', { class: 'faint small' }, 'Tool names appear after a task has started or the servers have been checked. Check them on the Connected servers page.') : null,
+        tiles, h('div', { class: 'row' }, q, allBtn), chips, list, bar,
+        tv.builtin.length ? h('details', { class: 'rl' }, h('summary', {}, h('span', { class: 'rq' }, 'Built-in tools'), h('span', { class: 'faint small' }, tv.builtin.length + ' from the harness itself')), h('div', { class: 'rbody' }, h('p', { class: 'faint small' }, 'These come with the harness. The tool groups on the Permissions page decide which of them tasks may use.'), h('div', { class: 'row' }, ...tv.builtin.map((x) => h('span', { class: 'chip mono' }, x))))) : null));
+      drawTiles(); drawList();
     } else if (section === 'skills') {
       const q = h('input', { type: 'search', class: 'bsearch', placeholder: 'Search skills', 'aria-label': 'Search skills', autocomplete: 'off' });
       const list = h('div', { class: 'kgrid' });
@@ -1606,39 +1721,65 @@
   // ---------- harness permissions ----------
   async function renderPermissions(out, head) {
     const v = await api('/api/admin/tools');
+    const tv = await api('/api/harness/tools?agent=claude').catch(() => ({ servers: [] }));
     const state = { presets: Object.fromEntries(v.presets.map((p) => [p.id, p.on])), allow: [...v.allow], deny: [...v.deny], mcp: [...v.mcp.only] };
-    const save = async (deny) => {
-      try {
-        const r = await api('/api/admin/tools', { method: 'PUT', body: JSON.stringify({ presets: state.presets, allow: state.allow, deny, mcpOnly: state.mcp }) });
-        toast('Saved. New tasks use these settings.');
-        return r;
-      } catch (e) { toast(e.message, true); return null; }
+    const orig = JSON.stringify(state);
+    const bar = h('div', { class: 'savebar', hidden: true });
+    const save = async () => {
+      try { await api('/api/admin/tools', { method: 'PUT', body: JSON.stringify({ presets: state.presets, allow: state.allow, deny: state.deny, mcpOnly: state.mcp }) }); toast('Saved. New tasks use these settings.'); renderPermissions(out, head); } catch (e) { toast(e.message, true); }
     };
-    const listEditor = (kind, items, placeholder) => {
-      const ul = h('ul', { class: 'rules' });
+    const summary = h('div', { class: 'permsum' });
+    const touch = () => {
+      const changed = JSON.stringify(state) !== orig;
+      bar.hidden = !changed;
+      bar.replaceChildren(h('span', {}, 'You have unsaved changes.'), h('button', { class: 'btn', onclick: save }, icon('check'), 'Save'), h('button', { class: 'btn ghost', onclick: () => renderPermissions(out, head) }, 'Discard'));
+      const on = v.presets.filter((p) => state.presets[p.id]).map((p) => p.label.toLowerCase());
+      summary.replaceChildren(h('p', {}, h('b', {}, 'In plain words: '), 'a task may ' + (on.length ? on.join(', ') : 'do nothing on its own') + (state.allow.length ? ', and use ' + state.allow.length + ' more ' + (state.allow.length === 1 ? 'thing' : 'things') + ' you allowed' : '') + '. For anything else it stops and asks you in its window. It can never use the ' + state.deny.length + ' ' + (state.deny.length === 1 ? 'thing' : 'things') + ' blocked below.'));
+    };
+    // A rule in words: Bash(git push:*) is "any command starting with git push".
+    const ruleWords = (r) => {
+      let m = /^Bash\((.+?)(?::\*)?\)$/.exec(r); if (m) return 'Commands starting with ' + m[1];
+      m = /^mcp__([^_]+(?:_[^_]+)*?)__(.+)$/.exec(r); if (m) return 'The ' + m[2] + ' tool on ' + m[1];
+      m = /^mcp__(.+)$/.exec(r); if (m) return 'Every tool on ' + m[1];
+      return r;
+    };
+    const RISK = { read: ['Safe', 'ok'], edit: ['Changes files', 'warn'], bash: ['Runs commands', 'warn'], web: ['Reaches the web', 'warn'], memory: ['Safe', 'ok'], memsave: ['Writes memory', 'warn'] };
+    const risk = (p) => RISK[p.id] || (/web/i.test(p.id + p.label) ? RISK.web : /edit|write/i.test(p.id + p.label) ? RISK.edit : /command|bash/i.test(p.id + p.label) ? RISK.bash : null);
+    // 1. what a task may do on its own
+    const cards = h('div', { class: 'pcards' }, ...v.presets.map((p) => {
+      const r = risk(p);
+      const sw = h('button', { type: 'button', class: 'switch', role: 'switch', 'aria-checked': String(!!state.presets[p.id]), 'aria-label': p.label, onclick: (e) => { e.stopPropagation(); state.presets[p.id] = !state.presets[p.id]; sw.setAttribute('aria-checked', String(state.presets[p.id])); card.classList.toggle('on', !!state.presets[p.id]); touch(); } }, h('span', { class: 'knob' }));
+      const card = h('div', { class: 'pcard' + (state.presets[p.id] ? ' on' : ''), onclick: () => sw.click() }, h('div', { class: 'row' }, h('b', {}, p.label), r ? h('span', { class: 'chip ' + (r[1] === 'ok' ? 'fs-good' : 'fs-wait') }, r[0]) : null, h('span', { class: 'sp' }), sw), h('p', { class: 'faint small' }, p.description));
+      return card;
+    }));
+    // a list of rules as chips, with a box to add one and ready-made suggestions
+    const chipList = (kind, items, placeholder, suggestions) => {
+      const wrap = h('div', {}); const chips = h('div', { class: 'rchips' });
       const input = h('input', { type: 'text', placeholder, 'aria-label': 'Add to the ' + kind + ' list', autocomplete: 'off', spellcheck: 'false' });
-      const draw = () => ul.replaceChildren(...(items.length ? items.map((t, i) => h('li', {}, h('code', {}, t), h('button', { class: 'iconbtn', title: 'Remove', 'aria-label': 'Remove ' + t, onclick: () => { items.splice(i, 1); draw(); } }, icon('x')))) : [h('li', { class: 'faint' }, 'Nothing here.')]));
-      const add = () => { const t = input.value.trim(); if (t && !items.includes(t)) { items.push(t); input.value = ''; draw(); } };
+      const sug = h('div', { class: 'row filters' });
+      const draw = () => {
+        chips.replaceChildren(...(items.length ? items.map((t, i) => h('span', { class: 'rchip', title: t }, h('span', {}, ruleWords(t)), h('code', { class: 'faint' }, t), h('button', { class: 'iconbtn', title: 'Remove', 'aria-label': 'Remove ' + t, onclick: () => { items.splice(i, 1); draw(); touch(); } }, icon('x')))) : [h('p', { class: 'faint small' }, 'Nothing here.')]));
+        sug.replaceChildren(...suggestions.filter((x) => !items.includes(x[0])).slice(0, 6).map(([rule, words]) => h('button', { type: 'button', class: 'toggle', title: rule, onclick: () => { items.push(rule); draw(); touch(); } }, icon('plus'), words)));
+      };
+      const add = () => { const t = input.value.trim(); if (t && !items.includes(t)) { items.push(t); input.value = ''; draw(); touch(); } };
       input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); add(); } });
       draw();
-      return h('div', {}, ul, h('div', { class: 'row' }, input, h('button', { class: 'btn ghost small', onclick: add }, icon('plus'), 'Add')));
+      return h('div', {}, chips, suggestions.length ? h('div', {}, h('span', { class: 'opt-label' }, 'Quick add'), sug) : null, h('div', { class: 'row' }, input, h('button', { class: 'btn ghost small', onclick: add }, icon('plus'), 'Add')));
     };
-    const groups = h('div', { class: 'toolgroups' }, ...v.presets.map((p) => {
-      const cb = h('input', Object.assign({ type: 'checkbox', id: 'tg-' + p.id, onchange: (e) => { state.presets[p.id] = e.target.checked; } }, p.on ? { checked: true } : {}));
-      return h('label', { class: 'toolgroup', for: 'tg-' + p.id }, cb, h('span', {}, h('b', {}, p.label), h('small', {}, p.description)));
-    }));
-    const denyBox = h('div', {});
-    const drawDeny = () => denyBox.replaceChildren(listEditor('blocked', state.deny, 'For example Bash(rm:*)'));
+    const allowSug = [['Bash(go test:*)', 'Run go test'], ['Bash(npm test:*)', 'Run npm test'], ['Bash(make test:*)', 'Run make test'], ['Bash(pytest:*)', 'Run pytest'], ['Bash(git status:*)', 'git status'], ['Bash(git diff:*)', 'git diff'], ['Bash(git log:*)', 'git log']];
+    const denySug = [['Bash(rm -rf:*)', 'Delete recursively'], ['Bash(sudo:*)', 'Use sudo'], ['Bash(docker:*)', 'Run docker'], ['Bash(chmod:*)', 'Change permissions'], ['WebFetch', 'Fetch web pages']];
+    const denyBox = h('div', {}); const drawDeny = () => denyBox.replaceChildren(chipList('blocked', state.deny, 'For example Bash(rm:*)', denySug));
     drawDeny();
     out.replaceChildren(head(),
-      h('p', { class: 'faint' }, 'The harness is the program that runs the model (Claude Code). Tasks Cully starts run on their own, so nothing can answer a permission question: these settings decide what the harness lets them do. They apply to tasks you start after saving.'),
-      h('section', { class: 'group' }, h('header', {}, h('span', { class: 'gt' }, 'What the harness may do')), groups),
-      h('section', { class: 'group' }, h('header', {}, h('span', { class: 'gt' }, 'Extra tools to allow')),
-        h('p', { class: 'faint small' }, 'Add a tool by name, for example mcp__gitlab__get_issue for one tool of a connected server, or Bash(go test:*) for one kind of command.'), listEditor('allowed', state.allow, 'mcp__server__tool')),
-      h('section', { class: 'group' }, h('header', {}, h('span', { class: 'gt' }, 'Always blocked'), h('button', { class: 'linkbtn sp', onclick: () => { state.deny = [...v.defaultDeny]; drawDeny(); } }, 'Reset to defaults')),
-        h('p', { class: 'faint small' }, 'Blocked tools stay blocked even when allowed above. The defaults stop agents from pushing code or sending data out.'), denyBox),
-      h('div', { class: 'row' }, h('button', { class: 'btn', onclick: async () => { const r = await save(state.deny); if (r) renderPermissions(out, head); } }, icon('check'), 'Save'),
-        h('button', { class: 'btn ghost', onclick: () => renderPermissions(out, head) }, 'Discard changes')));
+      h('p', { class: 'faint' }, 'Tasks Cully starts run on their own. A task may use what is allowed here without asking. For anything else it stops, and a card in its window shows exactly what it wants to do so you can allow or deny it. What is blocked here is never offered at all.'),
+      summary,
+      h('section', { class: 'group' }, h('header', {}, h('span', { class: 'gt' }, 'What a task may do on its own')), cards),
+      h('section', { class: 'group' }, h('header', {}, h('span', { class: 'gt' }, 'Allowed without asking'), h('a', { class: 'linkbtn sp', href: '#/harness/tools' }, 'Choose connected tools one by one')),
+        h('p', { class: 'faint small' }, 'Extra things a task may use freely, such as one kind of command. For the tools of a connected server, the Tools page lets you pick Ask, Allow or Block for each.'), chipList('allowed', state.allow, 'Bash(go test:*)', allowSug)),
+      h('section', { class: 'group' }, h('header', {}, h('span', { class: 'gt' }, 'Never allowed'), h('button', { class: 'linkbtn sp', onclick: () => { state.deny = [...v.defaultDeny]; drawDeny(); touch(); } }, 'Reset to defaults')),
+        h('p', { class: 'faint small' }, 'Blocked even when allowed above. The defaults stop a task from pushing code or sending data out.'), denyBox),
+      bar);
+    touch();
   }
 
   // ---------- dashboard ----------
@@ -1972,7 +2113,7 @@
     const mix = mixTotal ? h('div', {}, h('span', { class: 'opt-label' }, 'Sessions by harness, 7 days'), h('div', { class: 'stackbar' }, ...Object.entries(byHarness).map(([k, v]) => { const i = h('i', { class: 'seg-' + k, title: (AGENT_LABEL[k] || k) + ': ' + v }); i.style.width = (v / mixTotal * 100) + '%'; return i; })),
       h('div', { class: 'row legend' }, ...Object.entries(byHarness).map(([k, v]) => h('span', { class: 'chip harness h-' + k }, (AGENT_LABEL[k] || k) + ' ' + v)))) : null;
     const limitsCard = h('section', { class: 'lib-card' }, h('b', {}, 'Usage limits'),
-      ...((limitsAll && limitsAll.claude.length) ? limitsAll.claude.map((l) => h('div', { class: 'lim-acct' }, h('span', { class: 'chip harness h-claude' }, 'Claude'), h('span', { class: 'faint small' }, l.account), limitBar('Last 5 hours', l.limits.fiveHour), limitBar('Last 7 days', l.limits.sevenDay))) : [h('p', { class: 'faint small' }, 'Claude reports its limits when a task runs; none has run since this page started.')]),
+      ...((limitsAll && limitsAll.claude.length) ? limitsAll.claude.map((l) => h('div', { class: 'lim-acct' }, h('span', { class: 'chip harness h-claude' }, 'Claude'), h('span', { class: 'faint small' }, l.account), limitBar('Last 5 hours', l.limits.fiveHour), limitBar('Last 7 days', l.limits.sevenDay), limitsCheckBtn(l.limits.seen))) : [h('p', { class: 'faint small' }, 'Claude reports its limits when a task runs; none has run since this page started.'), limitsCheckBtn(0)]),
       limitsAll && limitsAll.codex && limitsAll.codex.limits ? h('div', { class: 'lim-acct' }, h('span', { class: 'chip harness h-codex' }, 'Codex'), limitBar('Primary window', limitsAll.codex.limits.fiveHour), limitBar('Secondary window', limitsAll.codex.limits.sevenDay)) : h('p', { class: 'faint small' }, 'Codex has not reported limits in its recent sessions.'),
       h('p', { class: 'faint small' }, 'Cursor does not record usage limits.'));
     const approved = agents.filter((x) => x.approved);

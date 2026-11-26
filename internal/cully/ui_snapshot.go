@@ -238,7 +238,11 @@ func (m *uiManager) limitsAll() uiLimitsView {
 	sort.Ints(tokens)
 	for _, t := range tokens {
 		l := m.accountLimits[t]
-		v.Claude = append(v.Claude, uiAccountLimit{Account: "token " + uiItoa(t), Limits: &l})
+		name := "token " + uiItoa(t)
+		if t == 0 {
+			name = "this machine's own login"
+		}
+		v.Claude = append(v.Claude, uiAccountLimit{Account: name, Limits: &l})
 	}
 	m.limitMu.Unlock()
 	// Codex: the newest rollout that has any limits in it.

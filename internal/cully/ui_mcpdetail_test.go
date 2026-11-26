@@ -124,3 +124,18 @@ func TestTheHarnessIsProbedOnceToLearnItsServersAndNotRepeatedWhileFresh(t *test
 		t.Fatal("a probe that reported no servers was treated as success")
 	}
 }
+
+func TestHarnessToolsListsBuiltinsAndEachServersTools(t *testing.T) {
+	m, _, _ := uiIndexManager(t)
+	uiDB().put("cache", "init", uiInitNames{Tools: []string{"Bash", "Read", "mcp__gitlab__get_issue", "mcp__gitlab__delete_branch"}})
+	m.infoMu.Lock()
+	m.initNames = nil
+	m.infoMu.Unlock()
+	got := m.harnessTools("claude")
+	if !got.Known || len(got.Builtin) != 2 || got.Builtin[0] != "Bash" {
+		t.Fatalf("builtin = %+v", got)
+	}
+	if n := m.harnessTools("codex").Note; n == "" {
+		t.Fatal("another harness should say it is not listed")
+	}
+}

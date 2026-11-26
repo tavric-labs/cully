@@ -91,6 +91,14 @@ func (p *uiTokenPool) take() (int, string) {
 	return i + 1, p.vals[i]
 }
 
+// at returns the token with the given 1-based index, or "".
+func (p *uiTokenPool) at(i int) string {
+	if p == nil || i < 1 || i > len(p.vals) {
+		return ""
+	}
+	return p.vals[i-1]
+}
+
 // redact removes every token value from s.
 func (p *uiTokenPool) redact(s string) string {
 	if p.count() == 0 {

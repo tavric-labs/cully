@@ -1,8 +1,10 @@
 package cully
 
 import (
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestParseAssistantText(t *testing.T) {
@@ -167,3 +169,45 @@ func TestACompactionIsCountedAndAHandoffIsOnlySuggestedWhenItMatters(t *testing.
 		t.Fatalf("context = %+v", c)
 	}
 }
+
+func TestAWindowWithNoFigureIsUnknownNotZeroAndAnEarlierFigureIsKept(t *testing.T) {
+	soon := time.Now().Add(2 * time.Hour).Unix()
+	none := parseStreamLine([]byte(`{"type":"rate_limit_event","rate_limit_info":{"status":"allowed","unifiedWindows":{"five_hour":{"resetsAt":` + uiItoa64(soon) + `,"status":"allowed"}}}}`))
+	if none.Limits == nil || none.Limits.FiveHour.Known || none.Limits.FiveHour.Used != 0 {
+		t.Fatalf("a report with no figure was read as a real zero: %+v", none.Limits)
+	}
+	old := uiLimits{FiveHour: uiWindow{Used: 62, Known: true, ResetsAt: soon}, SevenDay: uiWindow{Used: 26, Known: true, ResetsAt: soon + 86400}}
+	got := uiMergeLimits(old, *none.Limits)
+	if !got.FiveHour.Known || got.FiveHour.Used != 62 {
+		t.Fatalf("the earlier figure was lost: %+v", got.FiveHour)
+	}
+	// Once the window has reset, an old figure no longer applies.
+	past := uiLimits{FiveHour: uiWindow{Used: 90, Known: true, ResetsAt: time.Now().Add(-time.Hour).Unix()}}
+	if got := uiMergeLimits(past, *none.Limits); got.FiveHour.Known {
+		t.Fatalf("a figure from a window that has reset was kept: %+v", got.FiveHour)
+	}
+}
+
+func TestRefreshingLimitsAsksEachAccountAndTheNewestWordWins(t *testing.T) {
+	soon := time.Now().Add(3 * time.Hour).Unix()
+	body := "#!/bin/sh\necho '{\"type\":\"rate_limit_event\",\"rate_limit_info\":{\"status\":\"allowed\",\"unifiedWindows\":{\"five_hour\":{\"utilization\":0.31,\"resetsAt\":" + uiItoa64(soon) + ",\"status\":\"allowed\"},\"seven_day\":{\"utilization\":0.12,\"resetsAt\":" + uiItoa64(soon+86400) + ",\"status\":\"allowed\"}}}}'\necho '{\"type\":\"result\",\"result\":\"OK\"}'\n"
+	m, _, _ := uiTestManager(t, uiWriteScript(t, body), "tok-aaa1", "tok-bbb2")
+	n, err := m.refreshLimits()
+	if err != nil || n != 2 {
+		t.Fatalf("heard %d, %v", n, err)
+	}
+	all := m.limitsAll()
+	if len(all.Claude) != 2 || all.Claude[0].Limits.FiveHour.Used != 31 || !all.Claude[0].Limits.FiveHour.Known {
+		t.Fatalf("limits = %+v", all.Claude)
+	}
+	// A task that heard older limits at its start shows the newer account figure.
+	a := &uiAgent{token: 1, mgr: m, limits: &uiLimits{FiveHour: uiWindow{Used: 5, Known: true}, Seen: 1}}
+	a.mu.Lock()
+	v := a.limitsView()
+	a.mu.Unlock()
+	if v == nil || v.FiveHour.Used != 31 {
+		t.Fatalf("limitsView = %+v", v)
+	}
+}
+
+func uiItoa64(n int64) string { return strconv.FormatInt(n, 10) }

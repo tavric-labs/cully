@@ -352,7 +352,7 @@ func (m *uiManager) start(req uiStartRequest) (*uiAgent, error) {
 	}
 	title := strings.TrimSpace(req.Title)
 	if title == "" {
-		title = req.Prompt
+		title = uiTaskTitle(req.Prompt)
 	}
 	if r := []rune(title); len(r) > 60 {
 		title = string(r[:60]) + "…"
@@ -798,8 +798,11 @@ func (a *uiAgent) handleLine(line []byte) {
 		}
 		if p.Limits != nil {
 			p.Limits.Seen = time.Now().Unix()
+			if a.limits != nil {
+				*p.Limits = uiMergeLimits(*a.limits, *p.Limits)
+			}
 			a.limits = p.Limits
-			if a.mgr != nil && a.token > 0 {
+			if a.mgr != nil {
 				a.mgr.setLimits(a.token, *p.Limits)
 			}
 		}
@@ -1097,16 +1100,22 @@ func contextOf(model string, used, reported, compactions int) *uiContextView {
 // limitsView is the latest limits heard on this task, or on any task that used the same account.
 // The caller holds the agent's lock.
 func (a *uiAgent) limitsView() *uiLimits {
+	var own, acct *uiLimits
 	if a.limits != nil {
 		l := *a.limits
-		return &l
+		own = &l
 	}
-	if a.mgr != nil && a.token > 0 {
+	if a.mgr != nil {
 		if l, ok := a.mgr.limitsFor(a.token); ok {
-			return &l
+			acct = &l
 		}
 	}
-	return nil
+	// The newest word wins: another task on the same account, or a refresh, may have heard more
+	// recently than this task did at its start.
+	if acct != nil && (own == nil || acct.Seen >= own.Seen) {
+		return acct
+	}
+	return own
 }
 
 func (m *uiManager) setLimits(token int, l uiLimits) {
@@ -1115,7 +1124,27 @@ func (m *uiManager) setLimits(token int, l uiLimits) {
 	if m.accountLimits == nil {
 		m.accountLimits = map[int]uiLimits{}
 	}
+	if old, ok := m.accountLimits[token]; ok {
+		l = uiMergeLimits(old, l)
+	}
 	m.accountLimits[token] = l
+}
+
+// uiMergeLimits keeps a figure heard earlier when the new report leaves it out and its window has not
+// reset: Claude Code reports a window's use only some of the time, and a missing figure is not zero.
+func uiMergeLimits(old, nw uiLimits) uiLimits {
+	now := time.Now().Unix()
+	keep := func(o, n uiWindow) uiWindow {
+		if !n.Known && o.Known && o.ResetsAt > now && (n.ResetsAt == 0 || n.ResetsAt == o.ResetsAt) {
+			n.Used, n.Known = o.Used, true
+			if n.ResetsAt == 0 {
+				n.ResetsAt = o.ResetsAt
+			}
+		}
+		return n
+	}
+	nw.FiveHour, nw.SevenDay = keep(old.FiveHour, nw.FiveHour), keep(old.SevenDay, nw.SevenDay)
+	return nw
 }
 
 func (m *uiManager) limitsFor(token int) (uiLimits, bool) {
