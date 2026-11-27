@@ -2,6 +2,7 @@ package cully
 
 import (
 	"encoding/json"
+	"path/filepath"
 	"strings"
 )
 
@@ -10,16 +11,76 @@ import (
 // whether the sandbox is read only, and everything Cully cannot see is said so in the task.
 const uiCodexLimits = "Codex asks Cully only before it leaves its sandbox, so your block list applies to those requests. Inside the sandbox it acts on its own and has no network. The MCP servers set up in Codex load unfiltered."
 
-// uiRuleBlocksCommand returns the first rule of the form Bash(prefix:*), Bash(command) or Bash that
-// matches any part of a shell command line, or "".
-func uiRuleBlocksCommand(rules []string, command string) string {
-	repl := strings.NewReplacer("&&", "\n", "||", "\n", ";", "\n", "|", "\n", "`", "\n", "$(", "\n", ")", "\n")
-	var parts []string
+// uiCommandParts splits a shell command line into the simple commands it runs, with quotes and extra
+// spaces removed, leading variable assignments and wrappers (env, sudo, command, exec, nohup, time,
+// nice, xargs) stripped, and the text after sh -c, bash -c or eval treated as a command line of its own.
+func uiCommandParts(command string, depth int) []string {
+	if depth > 3 {
+		return nil
+	}
+	repl := strings.NewReplacer("&&", "\n", "||", "\n", ";", "\n", "|", "\n", "`", "\n", "$(", "\n", ")", "\n", "(", "\n", "{", "\n", "}", "\n", "&", "\n")
+	var out []string
 	for _, seg := range strings.Split(repl.Replace(command), "\n") {
-		if seg = strings.TrimSpace(seg); seg != "" {
-			parts = append(parts, seg)
+		fields := strings.Fields(strings.NewReplacer("'", "", `"`, "", "\\", "").Replace(seg))
+		for len(fields) > 0 {
+			f := fields[0]
+			if i := strings.Index(f, "="); i > 0 && !strings.ContainsAny(f[:i], "/-.") { // NAME=value
+				fields = fields[1:]
+				continue
+			}
+			switch f {
+			case "env", "sudo", "command", "exec", "nohup", "time", "nice", "xargs", "builtin", "doas", "stdbuf":
+				fields = fields[1:]
+				for len(fields) > 0 && strings.HasPrefix(fields[0], "-") { // the wrapper's own flags
+					fields = fields[1:]
+				}
+				continue
+			}
+			break
+		}
+		if len(fields) == 0 {
+			continue
+		}
+		if i := strings.LastIndex(fields[0], "/"); i >= 0 && i < len(fields[0])-1 {
+			fields[0] = fields[0][i+1:] // /usr/bin/git is git
+		}
+		out = append(out, strings.Join(fields, " "))
+		// sh -c "...", bash -c "...", eval ...: look inside as well
+		base := fields[0]
+		if i := strings.LastIndex(base, "/"); i >= 0 {
+			base = base[i+1:]
+		}
+		switch base {
+		case "sh", "bash", "zsh", "dash", "ksh":
+			for i, f := range fields {
+				if f == "-c" || (strings.HasPrefix(f, "-") && strings.HasSuffix(f, "c") && !strings.HasPrefix(f, "--")) {
+					out = append(out, uiCommandParts(strings.Join(fields[i+1:], " "), depth+1)...)
+					break
+				}
+			}
+		case "eval":
+			out = append(out, uiCommandParts(strings.Join(fields[1:], " "), depth+1)...)
 		}
 	}
+	return out
+}
+
+// uiCommandOpaque is true when the program to run is not written out, as in $CMD push or ${X}, so no
+// rule can be matched against it.
+func uiCommandOpaque(command string) bool {
+	for _, p := range uiCommandParts(command, 0) {
+		if strings.HasPrefix(p, "$") {
+			return true
+		}
+	}
+	return false
+}
+
+// uiRuleBlocksCommand returns the first rule of the form Bash(prefix:*), Bash(command) or Bash that
+// matches any simple command in a shell command line, or "". It is a first line of defence only: a
+// command it cannot see through still reaches the permission card, where you decide.
+func uiRuleBlocksCommand(rules []string, command string) string {
+	parts := uiCommandParts(command, 0)
 	for _, rule := range rules {
 		rule = strings.TrimSpace(rule)
 		if rule == "Bash" {
@@ -31,7 +92,7 @@ func uiRuleBlocksCommand(rules []string, command string) string {
 		}
 		inner = strings.TrimSuffix(inner, ")")
 		prefix, wild := strings.CutSuffix(inner, ":*")
-		prefix = strings.TrimSpace(prefix)
+		prefix = strings.Join(strings.Fields(prefix), " ")
 		if prefix == "" {
 			continue
 		}
@@ -74,6 +135,10 @@ func uiCodexFileRisk(paths []string, grantRoot, worktree string) (risk, why stri
 		return uiRiskHigh, "did not say which files it will change"
 	}
 	for _, p := range paths {
+		if !filepath.IsAbs(p) && worktree != "" {
+			p = filepath.Join(worktree, p) // a relative path is relative to the worktree; ../ then shows as outside it
+		}
+		p = filepath.Clean(p)
 		pj, _ := json.Marshal(map[string]string{"file_path": p})
 		r, w := uiToolRisk("Edit", pj, worktree)
 		if rank[r] > rank[risk] {

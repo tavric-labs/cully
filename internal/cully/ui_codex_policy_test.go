@@ -37,9 +37,21 @@ func TestCodexFileChangesAreRatedByEveryPathAndFolderGrants(t *testing.T) {
 		{[]string{"/work/tree/a.go", "/work/tree/.env"}, "", uiRiskHigh},
 		{[]string{"/work/tree/a.go"}, "/work", uiRiskHigh},
 		{nil, "", uiRiskHigh},
+		{[]string{"a.go"}, "", uiRiskMedium},
+		{[]string{"../../etc/hosts"}, "", uiRiskHigh},
+		{[]string{"sub/../../outside.txt"}, "", uiRiskHigh},
+		{[]string{".env"}, "", uiRiskHigh},
 	} {
 		if got, _ := uiCodexFileRisk(c.paths, c.grant, wt); got != c.want {
 			t.Errorf("%v grant %q: got %s, want %s", c.paths, c.grant, got, c.want)
+		}
+	}
+}
+
+func TestACommandWhoseProgramIsAVariableIsOpaque(t *testing.T) {
+	for cmd, want := range map[string]bool{"$CMD push": true, "FOO=1 ${X} y": true, "git push": false, "echo $HOME": false} {
+		if got := uiCommandOpaque(cmd); got != want {
+			t.Errorf("%q: got %v, want %v", cmd, got, want)
 		}
 	}
 }

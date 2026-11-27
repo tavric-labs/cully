@@ -521,6 +521,11 @@ func (r *uiCodexRunner) serverRequest(m uiRPC) {
 	case "item/commandExecution/requestApproval":
 		tool = "Bash"
 		cmd := uiCodexCommand(m.Params)
+		if len(r.deny) > 0 && uiCommandOpaque(cmd) {
+			reply(map[string]any{"decision": "decline"})
+			r.a.add(uiEvent{Kind: "note", Text: "Declined a command Codex asked to run: the program is a variable, so your block list cannot be checked against it."})
+			return
+		}
 		if rule := uiRuleBlocksCommand(r.deny, cmd); rule != "" {
 			reply(map[string]any{"decision": "decline"})
 			r.a.add(uiEvent{Kind: "note", Text: "Declined a command Codex asked to run: it matches your block list (" + rule + ")."})
@@ -555,8 +560,10 @@ func (r *uiCodexRunner) serverRequest(m uiRPC) {
 	case "allow":
 		reply(map[string]any{"decision": "accept"})
 	case "allow_always":
-		if grantRoot != "" {
-			reply(map[string]any{"decision": "accept"}) // a folder grant is never kept for the session
+		if grantRoot != "" || (tool == "Bash" && len(r.deny) > 0) {
+			// a folder grant is never kept for the session, and while block rules exist every command
+			// is asked about again so each one is checked
+			reply(map[string]any{"decision": "accept"})
 		} else {
 			reply(map[string]any{"decision": "acceptForSession"})
 		}
