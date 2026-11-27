@@ -27,6 +27,21 @@ const (
 
 var uiTaskSecretLike = regexp.MustCompile(`(?i)\b(?:password|secret|api[_-]?key|access[_-]?token)\s*[:=]\s*\S{8,}|\bgh[pousr]_[A-Za-z0-9_]{20,}|-----BEGIN [A-Z ]*PRIVATE KEY-----`)
 
+// cleanOut prepares any text that leaves this machine for Cully memory: token values and anything shaped
+// like a credential are removed, and it is shortened. Every outbound field goes through it.
+func (m *uiManager) cleanOut(s string, n int) string {
+	return uiClipWords(uiTaskSecretLike.ReplaceAllString(m.cfg.Tokens.redact(s), "[removed]"), n)
+}
+
+// outboundOK is the last check before a call: no argument may still hold a token value or a credential.
+// It refuses the whole call rather than send it.
+func (m *uiManager) outboundOK(argsJSON string) bool {
+	if uiTaskSecretLike.MatchString(argsJSON) {
+		return false
+	}
+	return m.cfg.Tokens.redact(argsJSON) == argsJSON
+}
+
 // uiSessionRef is the stable reference memory uses for one session of one task.
 func uiSessionRef(taskID, sessionID string) string {
 	sum := sha256.Sum256([]byte(taskID + "\x00" + sessionID))
@@ -140,12 +155,12 @@ func (m *uiManager) syncTasks() int {
 			}
 			ref := uiSessionRef(r.ID, s.ID)
 			last = ref
-			args := map[string]any{"session_ref": ref, "assistant": s.Agent, "agent_session_id": s.ID, "task": uiClipWords(r.Title, 120)}
+			args := map[string]any{"session_ref": ref, "assistant": s.Agent, "agent_session_id": s.ID, "task": m.cleanOut(r.Title, 120)}
 			if r.Branch != "" && r.Branch != "no git" {
-				args["branch"] = r.Branch
+				args["branch"] = m.cleanOut(r.Branch, 120)
 			}
 			b, _ := json.Marshal(args)
-			if uiCullyToolCall(cwd, "cully_session", string(b)) != nil {
+			if !m.outboundOK(string(b)) || uiCullyToolCall(cwd, "cully_session", string(b)) != nil {
 				ok = false
 				break
 			}
@@ -162,7 +177,7 @@ func (m *uiManager) syncTasks() int {
 			args["session_ref"] = last
 		}
 		b, _ := json.Marshal(args)
-		if uiCullyToolCall(cwd, "cully_log", string(b)) != nil {
+		if !m.outboundOK(string(b)) || uiCullyToolCall(cwd, "cully_log", string(b)) != nil {
 			continue
 		}
 		uiTaskMu.Lock()
@@ -247,7 +262,7 @@ func (m *uiManager) syncSessions() int {
 			args["learning"] = clean(s.Different, 300)
 		}
 		a, _ := json.Marshal(args)
-		if uiCullyToolCall(cwd, "cully_log", string(a)) != nil {
+		if !m.outboundOK(string(a)) || uiCullyToolCall(cwd, "cully_log", string(a)) != nil {
 			continue
 		}
 		m.idxMu.Lock()

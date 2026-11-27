@@ -195,3 +195,25 @@ func TestAnalysedSessionsOutsideTasksDripIntoMemoryOnceEach(t *testing.T) {
 		t.Fatalf("a session was saved twice: %d", n)
 	}
 }
+
+func TestEveryOutboundFieldIsCleanedAndASecretBlocksTheCall(t *testing.T) {
+	m, _, _ := uiTestManager(t, uiWriteScript(t, fakeClaude), "tok-aaa1")
+	calls := uiCaptureCullyCalls(t, true)
+	rec := uiSettledTask("task9", uiTaskSession{ID: "c2016c6b-76c9-4297-9a2b-50b5f3154641", Agent: "claude", Role: "run"})
+	rec.Title, rec.Branch = "Fix login with tok-aaa1", "cully/use-password=hunter2hunter2-now"
+	uiDB().put("task", rec.ID, rec)
+	if n := m.syncTasks(); n != 1 {
+		t.Fatalf("saved %d", n)
+	}
+	for _, c := range *calls {
+		for _, bad := range []string{"tok-aaa1", "hunter2hunter2"} {
+			if strings.Contains(c.args, bad) {
+				t.Errorf("%s call holds %q: %s", c.tool, bad, c.args)
+			}
+		}
+	}
+	// The last guard refuses a call that still holds a secret, whatever put it there.
+	if m.outboundOK(`{"summary":"x tok-aaa1 y"}`) || m.outboundOK(`{"summary":"password=abcdefgh12345"}`) || !m.outboundOK(`{"summary":"fine"}`) {
+		t.Fatal("the outbound guard is wrong")
+	}
+}
