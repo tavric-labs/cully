@@ -1660,3 +1660,22 @@ mark { background: rgba(255, 200, 40, .38); color: inherit; border-radius: 3px; 
 .tp-hint { font: 400 12px var(--sans); color: var(--faint); text-align: right; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tp-sec[open] .tp-hint { display: none; }
 .tp-lastfull { margin: 0; max-height: 220px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font: 12px/1.5 var(--mono); background: var(--code-bg); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+
+/* Advisor board */
+.advboard { display: grid; gap: 12px; }
+.advhead { display: grid; gap: 10px; }
+.advlist { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: var(--raised); }
+.advrow { display: flex; gap: 16px; align-items: flex-start; justify-content: space-between; padding: 14px 16px; border-top: 1px solid var(--line); }
+.advrow:first-child { border-top: 0; }
+.advmain { min-width: 0; flex: 1; display: grid; gap: 4px; }
+.advtitle { font-size: 14.5px; }
+.advwhy { margin: 0; color: var(--soft); font-size: 13.5px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.advmore { margin-top: 2px; }
+.advmore > summary, .advhowto > summary { cursor: pointer; color: var(--forest-hi); font-size: 12.5px; }
+.advmore[open] ~ .advwhy { -webkit-line-clamp: unset; }
+.advhow { margin: 6px 0; font-size: 13.5px; }
+.advact { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; flex: none; max-width: 240px; }
+.advkind { font-size: 11.5px; }
+.advmenu { position: relative; }
+.advmenu .pop-card { right: 0; left: auto; min-width: 280px; }
+@media (max-width: 800px) { .advrow { flex-direction: column; } .advact { justify-content: flex-start; max-width: none; } }

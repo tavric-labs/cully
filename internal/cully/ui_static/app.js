@@ -2887,6 +2887,55 @@
       h('p', { class: 'faint small' }, 'The Advisor makes every suggestion, from your analysed sessions and what you ask Claude to do again and again, and sends each to where it belongs: agents to Agents, background jobs to Background jobs, rules to Workflow rules. A background job is one fixed command that runs by itself at a time you choose, with no model and no tokens, for chores like running the tests overnight. An agent is for work that needs reading and judgement. Nothing starts until you approve it.'),
       list.length ? h('ul', { class: 'hrows' }, ...list.map(card)) : null);
   }
+  // The Advisor board: one list of everything Cully suggests, tips and proposals together, with a filter,
+  // short rows that open for the detail, and a button that says what it does.
+  async function adviceBoard(again) {
+    let list = []; let c = { items: [], at: '', based: 0 };
+    const archived = !!S.inboxArchived;
+    try { list = await api('/api/suggestions' + (archived ? '?archived=1' : '')); } catch (_) { return null; }
+    try { c = await api('/api/coach'); } catch (_) { /* optional */ }
+    const coachOf = (x) => { const m = /^coach-(\d+)$/.exec(x.id); return m ? c.items[Number(m[1])] : null; };
+    const labelOf = (x) => { const it = coachOf(x); return it ? (COACH_KIND[it.kind] || it.kind) : (SUG_LABEL[x.kind] || x.kind); };
+    // Proposals you can act on come first, then tips, then the scouts' digest.
+    const rank = (x) => (x.kind === 'agent' || x.kind === 'job' || x.kind === 'rules' ? 0 : x.kind === 'coach' ? 1 : 2);
+    const sorted = list.slice().sort((a, b) => rank(a) - rank(b));
+    const labels = [...new Set(sorted.map(labelOf))];
+    const filter = labels.includes(S.adviceFilter) ? S.adviceFilter : '';
+    const shown = filter ? sorted.filter((x) => labelOf(x) === filter) : sorted;
+    const run = async (btn, path, done) => { btn.disabled = true; try { const r = await api(path, { method: 'POST' }); toast(done(r)); again(); } catch (e) { toast(e.message, true); btn.disabled = false; } };
+    const more = h('details', { class: 'menu advmenu' }, h('summary', { class: 'btn ghost small', 'aria-label': 'More actions' }, 'More', icon('down')),
+      h('div', { class: 'menu-pop pop-card' }, h('div', { class: 'popcol' },
+        h('button', { type: 'button', class: 'folderrow', onclick: (e) => run(e.currentTarget, '/api/coach/run', () => 'The coach has new suggestions') }, icon('refresh'), h('span', { class: 'fr-main' }, h('b', {}, 'Ask the coach again'), h('small', { class: 'faint' }, c.at ? 'Last read ' + c.based + ' sessions, ' + ago(c.at) : 'Reads your analysed sessions'))),
+        h('button', { type: 'button', class: 'folderrow', onclick: (e) => run(e.currentTarget, '/api/job-suggestions/run', (r) => (r.added ? r.added + ' background job ' + (r.added === 1 ? 'proposal' : 'proposals') : 'Nothing repeats enough to need a background job yet.')) }, icon('spark'), h('span', { class: 'fr-main' }, h('b', {}, 'Look for background jobs'), h('small', { class: 'faint' }, 'Chores one fixed command can do'))),
+        h('button', { type: 'button', class: 'folderrow', onclick: () => { S.inboxArchived = !archived; again(); } }, icon('folder'), h('span', { class: 'fr-main' }, h('b', {}, archived ? 'Show waiting' : 'Show archived')),),
+        h('a', { class: 'folderrow', href: '#/dashboard/history' }, icon('clock'), h('span', { class: 'fr-main' }, h('b', {}, 'History of changes'), h('small', { class: 'faint' }, 'Every change, with undo'))))));
+    const chip = (v, label, n) => h('button', { type: 'button', class: 'ssf' + (filter === v ? ' on' : ''), 'aria-pressed': String(filter === v), onclick: () => { S.adviceFilter = v; again(); } }, label, h('span', { class: 'ssn' }, String(n)));
+    const row = (x) => {
+      const it = coachOf(x);
+      const acts = [];
+      if (x.kind === 'job' || x.kind === 'agent') acts.push(h('a', { class: 'btn small', href: x.href }, icon('check'), x.kind === 'job' ? 'Review job' : 'Review agent'));
+      else if (it) acts.push(h('button', { class: 'btn small', onclick: () => pushSuggestion(it) }, icon('send'), 'Apply'));
+      else if (x.href && x.href !== '#/dashboard/advisor') acts.push(h('a', { class: 'btn small', href: x.href }, x.kind === 'rules' ? 'Review rules' : 'Open'));
+      const extra = [];
+      if (it) extra.push(h('button', { class: 'btn ghost small', onclick: () => writeClip('Suggestion from Cully: ' + it.title + '. ' + it.how).then(() => toast('Copied. Paste it into a session.')).catch(() => showCommand('Suggestion from Cully: ' + it.title + '. ' + it.how)) }, icon('copy'), 'Copy'));
+      const proposalBtns = x.kind === 'job' || x.kind === 'agent' ? window.CullyLedger.proposalButtons(x, again, archived) : [];
+      const doThis = it ? it.how : x.detail;
+      const hasDetail = !!(doThis || x.command || (x.evidence && x.evidence.length) || x.preview);
+      return h('li', { class: 'advrow' },
+        h('div', { class: 'advmain' }, h('div', { class: 'row' }, h('span', { class: 'chip advkind k-' + (it ? it.kind : x.kind) }, labelOf(x)), h('b', { class: 'advtitle' }, x.title)),
+          x.why ? h('p', { class: 'advwhy' }, x.why) : null,
+          hasDetail ? h('details', { class: 'advmore' }, h('summary', {}, 'What to do and where it came from'),
+            doThis ? h('p', { class: 'advhow' }, h('b', {}, 'What to do: '), doThis) : null,
+            x.command ? h('p', { class: 'small' }, h('span', { class: 'faint' }, 'It will run: '), h('code', {}, x.command)) : null,
+            evidenceBlock(x), window.CullyLedger.preview(x.preview)) : null),
+        h('div', { class: 'advact' }, ...acts, ...extra, ...proposalBtns));
+    };
+    const head = h('div', { class: 'advhead' }, h('div', { class: 'row' }, h('b', {}, archived ? 'Archived' : sorted.length ? sorted.length + (sorted.length === 1 ? ' suggestion' : ' suggestions') + ' waiting for you' : 'Nothing waiting'), h('span', { class: 'sp' }), more),
+      sorted.length > 1 ? h('div', { class: 'ssgroup', role: 'group', 'aria-label': 'Filter suggestions' }, chip('', 'All', sorted.length), ...labels.map((l) => chip(l, l, sorted.filter((x) => labelOf(x) === l).length))) : null);
+    const how = h('details', { class: 'advhowto' }, h('summary', {}, 'How the Advisor works'),
+      h('p', { class: 'faint small' }, 'It reads your analysed sessions and what you keep asking your agents to do, then sends each idea where it belongs: agents to Agents, background jobs to Background jobs, rules to Rules. A background job is one fixed command that runs on its own at a time you choose, with no model and no tokens. Nothing starts until you approve it.'));
+    return h('section', { class: 'lib-card advboard' }, head, shown.length ? h('ul', { class: 'advlist' }, ...shown.map(row)) : emptyCard(archived ? 'No archived suggestions' : 'Nothing to suggest yet', archived ? 'Dismissed and approved suggestions appear here.' : 'Once a few sessions are analysed, Cully looks for patterns worth acting on. You can also ask it now from More.', '', ''), how);
+  }
   // Background job proposals, shown on the Background jobs page where they are approved. Each shows
   // the exact command, and the time can be changed before approving.
   async function jobProposals(again) {
@@ -3711,7 +3760,7 @@
           let body;
           if (tab === 'terminal') { const text = await api('/api/panel/suggestions?repo=' + encodeURIComponent(S.opts.repo || '')); body = renderText('suggestions', text); } else body = renderAdvisor(data);
           if (!live()) return;
-          out.replaceChildren(head(tabs, refreshBtn(again)), tab === 'agents' ? await suggestionInbox(again) : null, tab === 'agents' ? await coachCard(again, true) : null, body);
+          out.replaceChildren(head(tabs, refreshBtn(again)), tab === 'agents' ? await adviceBoard(again) : null, tab === 'agents' && !data.length ? null : body);
         } else out.replaceChildren(head(refreshBtn(again)), await scoutAuto(again), renderScout(data, runs), await scoutHistory());
         return;
       }
@@ -4706,7 +4755,7 @@
     const live = () => S.route.name === 'improve' && (S.route.tab || 'ideas') === tab;
     const again = () => renderImprove();
     try {
-      if (tab === 'ideas') { const a = await suggestionInbox(again); const c = await coachCard(again, true); if (live()) body.replaceChildren(...[a, c].filter(Boolean)); }
+      if (tab === 'ideas') { const a = await adviceBoard(again); if (live()) body.replaceChildren(...[a].filter(Boolean)); }
       else if (tab === 'rules') { await renderRules(body, (...x) => h('div', { class: 'row' }, ...x)); }
       else if (tab === 'skills') {
         const infos = await Promise.all(['claude', 'codex', 'cursor'].map((a) => api('/api/harness?agent=' + a).catch(() => null)));
