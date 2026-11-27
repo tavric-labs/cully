@@ -143,12 +143,12 @@ func TestAdvisorPageCanApplySuggestionsAndShowsWhereSessionsStarted(t *testing.T
 	}
 }
 
-// A fake that behaves as a reviewer when it is started with an identity (it gets --append-system-prompt)
+// A fake that behaves as a reviewer when it is started with an identity (its system prompt begins "You are")
 // and as the working agent otherwise.
 func uiHelperFake(verdict string) string {
 	return `#!/bin/bash
 echo "$@" >> "$FAKE_OUT/args.log"
-case "$*" in *--append-system-prompt*) ROLE=reviewer;; *) ROLE=worker;; esac
+case "$*" in *"--append-system-prompt You are "*) ROLE=reviewer;; *) ROLE=worker;; esac
 echo "$ROLE" >> "$FAKE_OUT/roles.log"
 echo '{"type":"system","subtype":"init"}'
 while IFS= read -r line; do

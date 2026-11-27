@@ -27,6 +27,7 @@
   const ICONS = {
     plug: 'M9 3v5M15 3v5M6 8h12v4a6 6 0 0 1-12 0zM12 18v3',
     mic: 'M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3zM5 11a7 7 0 0 0 14 0M12 18v3',
+    clock: 'M12 7v5l3 2M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18z',
     plus: 'M12 5v14M5 12h14', send: 'M12 19V5M5 12l7-7 7 7', stop: 'M7 7h10v10H7z', copy: 'M9 9h11v11H9zM5 15V4h11',
     refresh: 'M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7', check: 'M5 12l5 5L20 7', down: 'M12 5v14M5 12l7 7 7-7',
     lock: 'M7 11V8a5 5 0 0 1 10 0v3M5 11h14v10H5z', external: 'M14 4h6v6M20 4l-9 9M18 14v5H5V6h5',
@@ -1424,27 +1425,54 @@
     try { [list, tools, proposals] = await Promise.all([api('/api/identities'), api('/api/admin/tools'), api('/api/agent-suggestions').catch(() => [])]); } catch (e) { box.replaceChildren(h('div', { class: 'err' }, e.message)); return; }
     const again = () => renderTeam();
     const live = list.some((a) => a.runs.some((r) => r.status === 'running'));
+    const hue = (name) => { let n = 0; for (const c of name) n = (n * 31 + c.codePointAt(0)) % 360; return n; };
+    const initials = (name) => name.split(/[\s._-]+/).filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join('') || '?';
+    const stateOf = (a) => { const last = a.runs[0]; if (last && last.status === 'running') return 'running'; if (!a.approved) return 'draft'; if (a.enabled) return 'scheduled'; return 'idle'; };
+    const STATE_WORD = { running: 'Running now', draft: 'Draft', scheduled: 'Scheduled', idle: 'On demand' };
+    const avatar = (a) => { const el = h('div', { class: 'avatar st-' + stateOf(a), 'aria-hidden': 'true' }, h('span', {}, initials(a.name)), h('i', { class: 'pulse' })); el.style.setProperty('--hue', String(hue(a.name))); return el; };
+    const runBars = (a) => { const rs = a.runs.slice(0, 12).reverse(); if (!rs.length) return h('div', { class: 'runbars empty' }, 'No runs yet'); return h('div', { class: 'runbars', role: 'img', 'aria-label': 'The last ' + rs.length + ' runs, oldest first' }, ...rs.map((r) => { const b = h('i', { class: 'rb rb-' + r.status, title: r.status + ', ' + ago(r.started) }); b.style.height = (r.status === 'running' ? 60 : 40 + Math.min(60, Math.round((r.seconds || 0) / 6))) + '%'; return b; })); };
+    const okRate = (a) => { const done = a.runs.filter((r) => r.status !== 'running'); return done.length ? Math.round((100 * done.filter((r) => r.status === 'done').length) / done.length) : null; };
+    const runNow = async (a) => { try { await api('/api/identities/' + a.id + '/run', { method: 'POST' }); toast(a.name + ' is running. See it on the Tasks tab.'); again(); } catch (e) { toast(e.message, true); } };
+    const approve = async (a) => { try { await api('/api/identities/' + a.id + '/approve', { method: 'POST' }); toast(a.name + ' is now one of your agents'); again(); } catch (e) { toast(e.message, true); } };
+    const remove = (a) => confirmDialog({ title: 'Remove ' + a.name + '?', body: ['Its notes and run history are deleted. Tasks it already ran stay on the Tasks tab.'], confirmLabel: 'Remove', onConfirm: async () => { await api('/api/identities/' + a.id, { method: 'DELETE' }); again(); } });
     const card = (a) => {
-      const last = a.runs[0]; const groups = tools.presets.filter((p) => a.groups[p.id]).map((p) => p.label);
-      return h('section', { class: 'lib-card agentcard' },
-        h('div', { class: 'row' }, h('b', { class: 'an' }, a.name), a.approved ? h('span', { class: 'chip ok' }, 'Approved') : h('span', { class: 'chip warn' }, 'Draft'),
-          h('span', { class: 'chip' }, a.scope === 'global' ? 'All projects' : 'Project'),
-          a.approved ? (a.enabled ? h('span', { class: 'chip ok' }, 'Runs ' + a.schedule) : h('span', { class: 'chip' }, a.schedule ? 'Schedule paused' : 'On demand')) : null,
-          h('span', { class: 'chip' }, icon('folder'), a.folder ? a.folder.split('/').pop() : 'Its own workspace'), h('span', { class: 'chip' }, a.mode === 'plan' ? 'Read only' : 'Can edit'),
-          h('span', { class: 'sp row' },
-            a.approved
-              ? h('button', { class: 'btn small', title: 'Start one run of this agent now', disabled: !!(last && last.status === 'running'), onclick: async () => { try { await api('/api/identities/' + a.id + '/run', { method: 'POST' }); toast(a.name + ' is running. See it on the Tasks tab.'); again(); } catch (e) { toast(e.message, true); } } }, icon('send'), last && last.status === 'running' ? 'Running' : 'Run once')
-              : h('button', { class: 'btn small', title: 'Make this part of your agents, so it can run and be scheduled', onclick: async () => { try { await api('/api/identities/' + a.id + '/approve', { method: 'POST' }); toast(a.name + ' is now one of your agents'); again(); } catch (e) { toast(e.message, true); } } }, icon('check'), 'Approve as agent'),
-            h('button', { class: 'btn ghost small', onclick: () => openAgentForm(a, tools, again) }, 'Edit'),
-            h('button', { class: 'btn ghost small', onclick: () => confirmDialog({ title: 'Remove ' + a.name + '?', body: ['Its notes and run history are deleted. Tasks it already ran stay on the Tasks tab.'], confirmLabel: 'Remove', onConfirm: async () => { await api('/api/identities/' + a.id, { method: 'DELETE' }); again(); } }) }, icon('x'), 'Remove'))),
-        h('p', { class: 'hdesc' }, a.role),
-        h('div', { class: 'row' }, ...groups.map((g) => h('span', { class: 'chip' }, g))),
+      const last = a.runs[0]; const groups = tools.presets.filter((p) => a.groups[p.id]).map((p) => p.label); const st = stateOf(a); const rate = okRate(a);
+      const card = h('section', { class: 'agentcard2 st-' + st },
+        h('div', { class: 'ac-head' }, avatar(a),
+          h('div', { class: 'ac-id' }, h('div', { class: 'ac-name' }, a.name, h('span', { class: 'ac-state st-' + st }, STATE_WORD[st])),
+            h('div', { class: 'ac-meta' }, h('span', {}, icon('folder'), a.folder ? a.folder.split('/').pop() : 'Own workspace'), h('span', {}, a.scope === 'global' ? 'All projects' : 'One project'), h('span', {}, a.mode === 'plan' ? 'Read only' : 'Can edit'), a.approved && a.schedule ? h('span', {}, icon('clock'), (a.enabled ? 'Runs ' : 'Paused, ') + a.schedule) : null))),
+        h('p', { class: 'ac-role' }, a.role),
+        groups.length ? h('div', { class: 'ac-tools' }, ...groups.map((g) => h('span', { class: 'tg' }, g))) : null,
+        h('div', { class: 'ac-runs' }, runBars(a),
+          h('div', { class: 'ac-runtext' },
+            last ? h('div', { class: 'row' }, h('span', { class: 'chip run-' + (last.status === 'done' ? 'pass' : last.status === 'failed' ? 'fail' : 'running') }, last.status === 'done' ? 'Last run finished' : last.status === 'failed' ? 'Last run failed' : 'Running now'), h('span', { class: 'faint small' }, ago(last.started) + (last.seconds ? ', ' + dur(last.seconds) : '')), rate != null && a.runs.length > 1 ? h('span', { class: 'faint small' }, rate + '% finished') : null) : h('span', { class: 'faint small' }, 'Has not run yet.'))),
+        last && last.summary ? h('div', { class: 'quote ac-quote' }, markdown(last.summary)) : null,
         !a.approved ? h('p', { class: 'faint small' }, 'A draft does not run and is not scheduled. Approve it to make it one of your agents.') : null,
-        last ? h('div', { class: 'agentlast' }, h('div', { class: 'row' }, h('span', { class: 'chip run-' + (last.status === 'done' ? 'pass' : last.status === 'failed' ? 'fail' : 'running') }, last.status === 'done' ? 'Last run finished' : last.status === 'failed' ? 'Last run failed' : 'Running now'), h('span', { class: 'faint small' }, ago(last.started)), last.seconds ? h('span', { class: 'faint small' }, dur(last.seconds)) : null, last.taskId ? h('a', { class: 'linkbtn', href: '#/task/' + last.taskId }, 'Open the task') : null),
-          last.summary ? h('div', { class: 'quote' }, markdown(last.summary)) : null) : h('p', { class: 'faint small' }, 'Has not run yet.'),
+        h('div', { class: 'ac-foot' },
+          a.approved
+            ? h('button', { class: 'btn small', title: 'Start one run of this agent now', disabled: st === 'running', onclick: () => runNow(a) }, icon('send'), st === 'running' ? 'Running' : 'Run once')
+            : h('button', { class: 'btn small', title: 'Make this part of your agents, so it can run and be scheduled', onclick: () => approve(a) }, icon('check'), 'Approve as agent'),
+          last && last.taskId ? h('a', { class: 'btn ghost small', href: '#/task/' + last.taskId }, 'Open the task') : null,
+          h('span', { class: 'sp' }),
+          h('button', { class: 'btn ghost small', onclick: () => openAgentForm(a, tools, again) }, 'Edit'),
+          h('button', { class: 'btn ghost small', 'aria-label': 'Remove ' + a.name, onclick: () => remove(a) }, icon('x'))),
         a.memory ? h('details', { class: 'rl' }, h('summary', {}, h('span', { class: 'rq' }, 'Its notes'), h('span', { class: 'faint small' }, a.memory.length + ' of 2200 characters')), h('div', { class: 'rbody' }, markdown(a.memory))) : null,
-        a.runs.length > 1 ? h('details', { class: 'rl' }, h('summary', {}, h('span', { class: 'rq' }, 'Earlier runs'), h('span', { class: 'faint small' }, String(a.runs.length - 1))), h('ul', { class: 'hrows' }, ...a.runs.slice(1, 8).map((r) => h('li', { class: 'hrow' }, h('div', { class: 'hmain' }, h('div', { class: 'row' }, h('span', { class: 'chip run-' + (r.status === 'done' ? 'pass' : 'fail') }, r.status), h('span', { class: 'faint small' }, ago(r.started))), r.summary ? h('p', { class: 'hdesc' }, uiShort(r.summary, 220)) : null)))) ) : null);
+        a.runs.length > 1 ? h('details', { class: 'rl' }, h('summary', {}, h('span', { class: 'rq' }, 'Earlier runs'), h('span', { class: 'faint small' }, String(a.runs.length - 1))), h('ul', { class: 'hrows' }, ...a.runs.slice(1, 8).map((r) => h('li', { class: 'hrow' }, h('div', { class: 'hmain' }, h('div', { class: 'row' }, h('span', { class: 'chip run-' + (r.status === 'done' ? 'pass' : 'fail') }, r.status), h('span', { class: 'faint small' }, ago(r.started))), r.summary ? h('p', { class: 'hdesc' }, uiShort(r.summary, 220)) : null))))) : null);
+      card.dataset.state = st;
+      return card;
     };
+    const counts = { running: 0, scheduled: 0, draft: 0, idle: 0 }; for (const a of list) counts[stateOf(a)]++;
+    const weekAgo = Date.now() - 7 * 864e5; const weekRuns = list.flatMap((a) => a.runs).filter((r) => new Date(r.started).getTime() > weekAgo);
+    const weekOk = weekRuns.filter((r) => r.status === 'done').length;
+    const stat = (n, label, tone) => h('div', { class: 'astat' + (tone ? ' ' + tone : '') }, h('b', {}, String(n)), h('span', {}, label));
+    const filters = [['all', 'All', list.length], ['running', 'Running', counts.running], ['scheduled', 'Scheduled', counts.scheduled], ['idle', 'On demand', counts.idle], ['draft', 'Drafts', counts.draft]];
+    const grid = h('div', { class: 'agentgrid' }, ...list.map(card));
+    let want = 'all';
+    try { want = sessionStorage.getItem('cully.agentfilter') || 'all'; } catch (_) { /* private window */ }
+    const pills = h('div', { class: 'pills', role: 'tablist', 'aria-label': 'Filter agents' });
+    const applyFilter = (f) => { want = f; try { sessionStorage.setItem('cully.agentfilter', f); } catch (_) { /* ignore */ } for (const b of pills.children) b.setAttribute('aria-selected', b.dataset.f === f ? 'true' : 'false'); for (const c of grid.children) c.hidden = f !== 'all' && c.dataset.state !== f; };
+    for (const [f, label, n] of filters) { if (f !== 'all' && !n) continue; pills.append(h('button', { class: 'pill', role: 'tab', 'data-f': f, onclick: () => applyFilter(f) }, label, h('span', { class: 'pn' }, String(n)))); }
+    if (![...pills.children].some((b) => b.dataset.f === want)) want = 'all';
     const askNow = async (btn) => { btn.disabled = true; try { const r = await api('/api/agent-suggestions/run', { method: 'POST' }); toast(r.added ? r.added + ' new ' + (r.added === 1 ? 'proposal' : 'proposals') : 'Nothing new to propose right now'); again(); } catch (e) { toast(e.message, true); btn.disabled = false; } };
     const askBtn = h('button', { class: 'btn ghost small sp' }, icon('spark'), proposals.length ? 'Look again' : 'Ask Cully for ideas');
     askBtn.addEventListener('click', () => askNow(askBtn));
@@ -1467,7 +1495,10 @@
       h('section', { class: 'lib-card' }, h('div', { class: 'row' }, h('b', {}, 'Suggested for you'), askBtn),
         proposals.length ? h('ul', { class: 'hrows' }, ...proposals.map(proposalCard))
           : h('p', { class: 'faint small' }, 'Cully reads your analysed sessions and proposes agents for work you repeat or skip, such as watching pull requests or running the tests. You review each one before it exists. It looks again about once an hour while naming is on.')),
-      list.length ? h('div', { class: 'groups' }, ...list.map(card)) : emptyCard('No agents yet', 'Create one for work you repeat: watching pull requests, guarding the tests, checking dependencies.', null, null));
+      list.length ? h('div', { class: 'astats' }, stat(list.length, list.length === 1 ? 'agent' : 'agents'), stat(counts.running, 'running now', counts.running ? 'hot' : ''), stat(counts.scheduled, 'on a schedule'), stat(weekRuns.length, 'runs this week'), stat(weekRuns.length ? Math.round((100 * weekOk) / weekRuns.length) + '%' : 'none', 'finished well')) : null,
+      list.length ? pills : null,
+      list.length ? grid : emptyCard('No agents yet', 'Create one for work you repeat: watching pull requests, guarding the tests, checking dependencies.', null, null));
+    if (list.length) applyFilter(want);
     if (live) setTimeout(() => { if (S.route.name === 'team') again(); }, 4000);
   }
   const uiShort = (t, n) => (t.length > n ? t.slice(0, n) + '…' : t);

@@ -29,7 +29,10 @@ var uiStaticFS embed.FS
 
 const (
 	uiCSP = "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; " +
-		"frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
+		"frame-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
+	// the diagram frame runs Mermaid, which styles itself inline; it is sandboxed, has no network
+	// and no access to the page, and may be framed only by this site
+	uiDiagramCSP  = "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src data:; font-src data:; frame-ancestors 'self'; base-uri 'none'; form-action 'none'"
 	uiBodyLimit   = 1 << 20
 	uiCookieName  = "cully_ui"
 	uiPanelBudget = 25 * time.Second
@@ -144,6 +147,8 @@ func newUIServer(m *uiManager, token string, loopback bool) http.Handler {
 	mux.Handle("POST /api/identities", s.api(s.identityCreateH))
 	mux.Handle("PUT /api/identities/{id}", s.api(s.identityUpdateH))
 	mux.Handle("DELETE /api/identities/{id}", s.api(s.identityDeleteH))
+	mux.Handle("POST /api/identities/draft", s.api(s.agentDraftH))
+	mux.Handle("GET /api/identities/{id}/export", s.api(s.identityExportH))
 	mux.Handle("POST /api/identities/{id}/run", s.api(s.identityRunH))
 	mux.Handle("POST /api/identities/{id}/approve", s.api(s.identityApproveH))
 	mux.Handle("GET /api/identities/{id}/evals", s.api(s.agentEvalsGet))
@@ -201,6 +206,10 @@ func newUIServer(m *uiManager, token string, loopback bool) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()
 		h.Set("Content-Security-Policy", uiCSP)
+		if strings.HasPrefix(r.URL.Path, "/diagram/") {
+			h.Set("Content-Security-Policy", uiDiagramCSP)
+			h.Set("Cache-Control", "public, max-age=3600")
+		}
 		h.Set("X-Content-Type-Options", "nosniff")
 		h.Set("Referrer-Policy", "no-referrer")
 		h.Set("Cache-Control", "no-store")

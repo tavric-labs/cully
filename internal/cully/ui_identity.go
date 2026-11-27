@@ -26,8 +26,6 @@ const (
 	uiIdentityRunLimit = 15 * time.Minute
 )
 
-var uiIdentitySchedules = map[string]time.Duration{"": 0, "hourly": time.Hour, "daily": 24 * time.Hour}
-
 type uiIdentityRun struct {
 	ID      string    `json:"id"`
 	Started time.Time `json:"started"`
@@ -187,8 +185,9 @@ func (m *uiManager) validateIdentity(in uiIdentityInput) (uiIdentityInput, error
 	if in.Mode != "edit" && in.Mode != "plan" {
 		return in, errors.New(`mode must be "edit" or "plan"`)
 	}
-	if _, ok := uiIdentitySchedules[in.Schedule]; !ok {
-		return in, errors.New(`schedule must be empty, "hourly" or "daily"`)
+	in.Schedule = strings.ToLower(strings.TrimSpace(in.Schedule))
+	if _, ok := uiScheduleInterval(in.Schedule); !ok {
+		return in, errors.New(`schedule must be empty, "hourly", "daily", "weekdays", or "every 30m" to "every 168h" (15 minutes at the least)`)
 	}
 	valid := map[string]bool{}
 	for _, p := range uiToolPresets {
@@ -497,8 +496,8 @@ done:
 // at a time and only when there is room.
 func (m *uiManager) identitiesDue() {
 	for _, id := range m.identityList() {
-		d := uiIdentitySchedules[id.Schedule]
-		if !id.Approved || !id.Enabled || d == 0 || (!id.LastRun.IsZero() && time.Since(id.LastRun) < d) || !m.hasRoom() {
+		d, _ := uiScheduleInterval(id.Schedule)
+		if !id.Approved || !id.Enabled || d == 0 || uiScheduleSkips(id.Schedule, time.Now()) || id.busy() || (!id.LastRun.IsZero() && time.Since(id.LastRun) < d) || !m.hasRoom() {
 			continue
 		}
 		_, _ = m.identityRun(id.ID)
@@ -519,4 +518,9 @@ func (m *uiManager) identityApprove(id string) (uiIdentity, error) {
 		}
 	}
 	return uiIdentity{}, errors.New("no such agent")
+}
+
+// busy is true while one of the agent's runs is still going, so a schedule never starts a second.
+func (id uiIdentity) busy() bool {
+	return len(id.Runs) > 0 && id.Runs[0].Status == "running"
 }

@@ -718,8 +718,8 @@ func (a *uiAgent) run(m *uiManager) {
 	a.mu.Lock()
 	a.runInfo = m.describeRun(a, permission, allowed, denied, mcpArgs, asks)
 	a.mu.Unlock()
-	if a.req.appendSystem != "" {
-		args = append(args, "--append-system-prompt", a.req.appendSystem)
+	if sys := strings.TrimSpace(a.req.appendSystem + "\n\n" + uiDiagramHint()); sys != "" {
+		args = append(args, "--append-system-prompt", sys)
 	}
 	if a.req.resumeID != "" {
 		args = append(args, "--resume", a.req.resumeID)

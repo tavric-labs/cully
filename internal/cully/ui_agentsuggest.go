@@ -128,7 +128,7 @@ func uiParseAgentSuggestions(out string, folders map[string]string, taken map[st
 		if sched == "none" {
 			sched = ""
 		}
-		if _, ok := uiIdentitySchedules[sched]; !ok || !uiIdentityName.MatchString(name) || taken[strings.ToLower(name)] || !okFolder || len(res) >= uiAgentSuggestMax {
+		if _, ok := uiScheduleInterval(sched); !ok || !uiIdentityName.MatchString(name) || taken[strings.ToLower(name)] || !okFolder || len(res) >= uiAgentSuggestMax {
 			continue
 		}
 		groups := map[string]bool{}

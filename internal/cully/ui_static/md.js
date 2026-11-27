@@ -109,7 +109,39 @@
   function diffLines(source) {
     return source.split('\n').flatMap((l, i, a) => [el('span', l.startsWith('+') && !l.startsWith('+++') ? 'dl-add' : l.startsWith('-') && !l.startsWith('---') ? 'dl-del' : l.startsWith('@@') ? 'dl-hunk' : '', l), i < a.length - 1 ? '\n' : '']);
   }
-  function codeBlock(source, lang) {
+  // A ```mermaid block is drawn as a diagram in a sandboxed frame (/diagram/frame.html), which has
+  // its own relaxed style rules. The source stays one click away, and it is what shows if the
+  // diagram cannot be drawn. A reply that is still streaming is drawn only once it settles.
+  const isDark = () => { const m = /\d+/g; const c = (getComputedStyle(document.body).backgroundColor.match(m) || [255, 255, 255]).map(Number); return 0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2] < 128; };
+  function diagramBlock(source) {
+    const src = source.trim();
+    const frame = el('iframe', 'dg-frame');
+    frame.setAttribute('sandbox', 'allow-scripts');
+    frame.setAttribute('title', 'Diagram');
+    frame.setAttribute('loading', 'lazy');
+    frame.src = '/diagram/frame.html';
+    const note = el('div', 'dg-note', 'Drawing the diagram');
+    const code = codeBlock(src, 'mermaid', true); code.hidden = true;
+    const toggle = el('button', 'btn ghost small', 'Source'); toggle.type = 'button';
+    toggle.addEventListener('click', () => { code.hidden = !code.hidden; toggle.textContent = code.hidden ? 'Source' : 'Hide source'; });
+    const box = el('div', 'diagram', el('div', 'cb-head', el('span', 'cb-lang', 'diagram'), toggle), el('div', 'dg-stage', frame, note), code);
+    let timer = 0; let done = false;
+    const failed = (why) => { done = true; frame.hidden = true; note.hidden = false; note.textContent = 'Could not draw this diagram' + (why ? ': ' + why : '') + '. The source is below.'; note.classList.add('bad'); code.hidden = false; toggle.hidden = true; };
+    const onMsg = (e) => {
+      if (e.source !== frame.contentWindow || !e.data) return;
+      if (e.data.type === 'ready') { clearTimeout(timer); timer = setTimeout(() => { try { frame.contentWindow.postMessage({ type: 'render', src, dark: isDark() }, '*'); } catch (_) { failed(''); } }, 350); }
+      else if (e.data.type === 'size' && typeof e.data.h === 'number') { done = true; note.hidden = true; frame.style.height = Math.min(Math.max(e.data.h + 8, 60), 900) + 'px'; }
+      else if (e.data.type === 'error') failed(String(e.data.msg || ''));
+    };
+    window.addEventListener('message', onMsg);
+    // stop listening once the block has been on the page and left it, as a streaming reply re-renders
+    let seen = false;
+    const gone = setInterval(() => { if (box.isConnected) seen = true; else if (seen) { clearInterval(gone); clearTimeout(timer); window.removeEventListener('message', onMsg); } }, 3000);
+    setTimeout(() => { if (!done && box.isConnected) failed('it took too long'); }, 15000);
+    return box;
+  }
+  function codeBlock(source, lang, plain) {
+    if (lang === 'mermaid' && !plain) return diagramBlock(source);
     const btn = el('button', 'cb-copy', 'Copy');
     btn.type = 'button';
     btn.addEventListener('click', async () => { try { await copyText(source); btn.textContent = 'Copied'; } catch (_) { btn.textContent = 'Select and copy'; } setTimeout(() => { btn.textContent = 'Copy'; }, 1400); });
