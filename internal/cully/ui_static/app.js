@@ -515,7 +515,27 @@
     // One large rounded prompt, with every option as a small pill under it (the way Omnigent lays it out):
     // the folder and mode stay in view, and the rest open from a pill.
     const pop = (label, ic, ...kids) => h('details', { class: 'menu pillpop' }, h('summary', { class: 'pillbtn' }, icon(ic), label, icon('down')), h('div', { class: 'menu-pop pop-card' }, ...kids));
-    const folderPill = repo ? h('label', { class: 'pillbtn static', title: 'The folder the task works in' }, icon('folder'), repo) : null;
+    // The folder is a choice, not a fixed line. It starts as the folder Cully was opened from, any folder
+    // can be picked, and the task says which folder it is changing once it starts.
+    if (!S.opts.repo && S.info && (S.info.repos || []).length) S.opts.repo = S.info.repos[0];
+    const folderName = (p) => { const r = ((S.info && S.info.repoInfo) || []).find((x) => x.path === p); return r ? r.name : (p ? p.split('/').filter(Boolean).pop() : 'Pick a folder'); };
+    const folderLabel = h('span', {}, folderName(S.opts.repo));
+    const folderSum = h('summary', { class: 'pillbtn', title: S.opts.repo || 'No folder yet' }, icon('folder'), folderLabel, icon('down'));
+    const folderList = h('div', { class: 'popcol folderlist' });
+    const folderPill = h('details', { class: 'menu pillpop' });
+    const pickFolder = async (f) => {
+      try {
+        const known = ((S.info && S.info.repoInfo) || []).some((x) => x.path === f.path);
+        if (known) S.opts.repo = f.path; else await addFolder(f.path, false);
+        folderLabel.textContent = folderName(S.opts.repo); folderSum.title = S.opts.repo; folderPill.open = false; drawFolders();
+      } catch (e) { toast(e.message, true); }
+    };
+    const drawFolders = () => folderList.replaceChildren(...recentFolders(8).map((f) => h('button', { type: 'button', class: 'folderrow' + (f.path === S.opts.repo ? ' on' : ''), title: f.path, onclick: () => pickFolder(f) },
+      icon(f.path === S.opts.repo ? 'check' : 'folder'), h('span', { class: 'fr-main' }, h('b', {}, f.name || f.path.split('/').filter(Boolean).pop()), h('small', { class: 'faint' }, f.path)))));
+    drawFolders();
+    folderPill.append(folderSum, h('div', { class: 'menu-pop pop-card folder-pop' },
+      h('p', { class: 'faint small' }, 'Where the task works. In a git folder it gets its own worktree and branch, and the task shows which folder it changed.'),
+      folderList, h('button', { type: 'button', class: 'btn ghost small', onclick: () => { folderPill.open = false; openFolderChooser(); } }, icon('folder'), 'Choose another folder')));
     start.className = 'btn round send'; start.setAttribute('aria-label', 'Start task'); start.title = 'Start the task'; start.replaceChildren(icon('send'));
     const voiceRef = { form: null }; const voiceEl = voiceControls(ta, { requestSubmit: () => voiceRef.form && voiceRef.form.requestSubmit() });
     const form = h('form', { class: 'composer-card hero-composer' }, ta, loopBox,
@@ -546,15 +566,12 @@
         location.hash = '#/task/' + view.id;
       } catch (x) { err.textContent = x.message; err.hidden = false; } finally { start.disabled = false; }
     });
-    const ri = (S.info.repoInfo || []).find((r) => r.path === (S.opts.repo || S.info.repos[0])) || (S.info.repoInfo || [])[0];
-    const repoLine = h('div', { class: 'repo-line' }, ...(ri ? [icon('branch'), 'Agents work in ', h('b', {}, ri.name), ri.remote ? h('span', { class: 'faint' }, ' (' + ri.remote + ')') : null] : ['No folder yet.']),
-      h('button', { class: 'linkbtn', onclick: () => openAddFolder() }, ri ? 'Use another folder' : 'Add a git folder to start agents'));
     const fleet = h('div', { id: 'fleet' });
     $('stage').className = 'stage home-bg';
     $('stage').replaceChildren(h('div', { class: 'home' },
       h('div', { class: 'herohead' }, h('span', { class: 'heromark', 'aria-hidden': 'true' }, icon('spark')), h('h1', {}, 'What should we do?')),
       h('p', { class: 'sub' }, 'Describe a task. Cully gathers context, then runs it in its own worktree. Cmd or Ctrl+Enter starts it.'),
-      h('div', { id: 'mcpbanner' }), form, pills, repoLine, fleet));
+      h('div', { id: 'mcpbanner' }), form, pills, fleet));
     renderFleet();
     drawMCPBanner();
     const welcomeBox = h('div', { class: 'welcomebox' }); const tasksBox = h('div', { class: 'taskhist' }); $('stage').firstChild.append(welcomeBox, tasksBox); renderWelcome(welcomeBox); renderTaskHistory(tasksBox);
@@ -830,6 +847,7 @@
     drawContextNote(a);
     drawTaskPanel(a);
     $('sub2').replaceChildren(
+      a.repo ? h('span', { class: 'chip', title: a.repo + (a.run && a.run.isolation === 'in place' ? ' (the task works directly in this folder)' : ' (the task works on a copy in its own worktree, so this folder is untouched until you merge)') }, icon('folder'), a.repo.split('/').filter(Boolean).pop() + (a.run && a.run.isolation === 'in place' ? ', in place' : ', own worktree')) : null,
       h('button', { class: 'chip mono', title: 'Copy branch name', onclick: () => copy(a.branch, 'branch') }, icon('branch'), a.branch),
       a.agent ? harnessChip(a.agent) : null,
       a.token ? h('span', { class: 'chip' }, 'token ' + a.token) : h('span', { class: 'chip' }, 'ambient login'),

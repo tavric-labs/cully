@@ -1491,3 +1491,11 @@ details.pillpop > summary::-webkit-details-marker { display: none; }
 .gw-nb .gf-node { margin: 0; flex: none; }
 .gf-show { margin-top: 8px; }
 @media (max-width: 860px) { .gw-body-wrap { grid-template-columns: 1fr; grid-template-rows: minmax(240px, 1fr) minmax(0, 1fr); } .gw-panel { border-left: 0; border-top: 1px solid var(--line); } }
+.folder-pop { min-width: 320px; max-width: min(420px, 90vw); }
+.folderlist { align-items: stretch; width: 100%; max-height: 260px; overflow: auto; }
+.folderrow { display: flex; gap: 10px; align-items: center; text-align: left; border: 1px solid transparent; background: transparent; border-radius: 10px; padding: 7px 9px; cursor: pointer; width: 100%; }
+.folderrow:hover { background: var(--surface2); }
+.folderrow.on { border-color: var(--forest-hi); background: color-mix(in srgb, var(--add-bg) 45%, var(--raised)); }
+.folderrow svg { width: 15px; height: 15px; flex: none; color: var(--forest-hi); }
+.fr-main { display: flex; flex-direction: column; min-width: 0; }
+.fr-main small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
