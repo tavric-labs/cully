@@ -82,3 +82,16 @@ func TestDiagramHintCanBeTurnedOff(t *testing.T) {
 		t.Error("CULLY_DIAGRAMS=0 should turn the hint off")
 	}
 }
+
+func TestApprovalShortcutsAreGuardedAndApprovalsAlertUrgently(t *testing.T) {
+	b, _ := uiStaticFS.ReadFile("ui_static/app.js")
+	js := string(b)
+	for _, want := range []string{"e.repeat || S.permBusy", "< 800", "never a single key", "Alert for approval requests", "Still waiting for your approval"} {
+		if !strings.Contains(js, want) {
+			t.Errorf("app.js lacks %q", want)
+		}
+	}
+	if strings.Contains(js, "a: first.p.risk") {
+		t.Error("allow for this task must not be a single key")
+	}
+}

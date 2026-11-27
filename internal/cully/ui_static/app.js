@@ -712,7 +712,9 @@
     if (box.dataset.sig === sig) return;
     box.dataset.sig = sig;
     const answer = async (p, decision) => { try { await api('/api/agents/' + a.id + '/permissions/' + p.id, { method: 'POST', body: JSON.stringify({ decision, hash: p.hash }) }); await refresh(); } catch (e) { toast(e.message, true); } };
-    if (S.feed) S.feed.permKeys = list.map((p) => ({ p, answer }));
+    // a question counts for a shortcut key only after it has been on screen for a moment, so a key
+    // pressed for something else, or a dialog that appears under your fingers, answers nothing
+    if (S.feed) { const seen = S.feed.permShown = S.feed.permShown || {}; for (const p of list) if (!seen[p.id]) seen[p.id] = Date.now(); S.feed.permKeys = list.map((p) => ({ p, answer })); }
     const kb = (k) => h('kbd', {}, k);
     // A dialog in the terminal style. What you allow is exactly the input shown in full, and the answer
     // quotes the hash of that input, so a call that changed since you looked is refused.
@@ -725,7 +727,7 @@
       h('pre', { class: 'permcmd' }, p.input),
       h('div', { class: 'dlg-keys' },
         h('button', { class: 'btn small', onclick: () => answer(p, 'allow') }, icon('check'), 'Allow once', i === 0 ? kb('y') : null),
-        p.risk === 'high' ? null : h('button', { class: 'btn ghost small', title: 'Allow this exact call again without asking, for the rest of this task', onclick: () => answer(p, 'allow_always') }, 'Allow for this task', i === 0 ? kb('a') : null),
+        p.risk === 'high' ? null : h('button', { class: 'btn ghost small', title: 'Allow this exact call again without asking, for the rest of this task', onclick: () => answer(p, 'allow_always') }, 'Allow for this task'),
         h('button', { class: 'btn ghost small', onclick: () => answer(p, 'deny') }, 'Deny', i === 0 ? kb('n') : null)))));
   }
   // Single-key answers for the first question waiting, only when you are not typing in a field.
@@ -735,9 +737,14 @@
       const f = S.feed; if (!f || !S.route || S.route.name !== 'agent' || e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return;
       const t = e.target; if (t && (/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) || t.isContentEditable)) return;
       if (S.modal) return;
+      if (e.repeat || S.permBusy) return;
       const first = f.permKeys && f.permKeys[0]; if (!first) return;
-      const d = { y: 'allow', a: first.p.risk === 'high' ? null : 'allow_always', n: 'deny' }[e.key];
-      if (d) { e.preventDefault(); first.answer(first.p, d); }
+      const d = { y: 'allow', n: 'deny' }[e.key]; // "for this task" is never a single key
+      if (!d) return;
+      e.preventDefault();
+      if (Date.now() - ((f.permShown || {})[first.p.id] || Date.now()) < 800) return;
+      S.permBusy = true;
+      Promise.resolve(first.answer(first.p, d)).finally(() => { S.permBusy = false; });
     });
   }
   document.addEventListener('click', (e) => { for (const d of document.querySelectorAll('details.menu[open]')) if (!d.contains(e.target)) d.open = false; });
@@ -3367,7 +3374,7 @@
   // ---------- notifications ----------
   const NOTIFY_KEY = 'cully-notify';
   function notifyPrefs() {
-    const base = { desktop: false, sound: false, flash: true };
+    const base = { desktop: false, sound: false, flash: true, approvals: true };
     try { return { ...base, ...JSON.parse(localStorage.getItem(NOTIFY_KEY) || '{}') }; } catch (_) { return base; }
   }
   function saveNotifyPrefs(p) { try { localStorage.setItem(NOTIFY_KEY, JSON.stringify(p)); } catch (_) { /* storage blocked */ } }
@@ -3393,12 +3400,20 @@
     flashTimer = setInterval(() => { on = !on; document.title = on ? '• ' + msg : base; }, 1000);
   }
   document.addEventListener('visibilitychange', () => { if (!document.hidden && flashTimer) { clearInterval(flashTimer); flashTimer = null; renderRail(); } });
-  function notifyUser(title, body, href) {
-    toast(body ? title + ': ' + body : title);
+  // urgent is a request to approve a tool call. It is told even with the tab open, with a tone unless
+  // you switched approval alerts off, and it stays on screen until it is answered.
+  function notifyUser(title, body, href, urgent) {
     const p = notifyPrefs();
-    if (p.sound) beep();
-    if (document.hidden && p.desktop && !desktopProblem() && Notification.permission === 'granted') {
-      const n = new Notification(title, { body, tag: 'cully' });
+    if (urgent && p.approvals) {
+      const t = h('div', { class: 'toast urgent', role: 'alert' }, h('b', {}, title), body ? h('div', { class: 'small' }, body) : null,
+        h('button', { class: 'btn small', onclick: () => { if (href) location.hash = href; t.remove(); } }, 'Review'),
+        h('button', { class: 'btn ghost small', onclick: () => t.remove() }, 'Later'));
+      t.dataset.urgent = '1'; $('toasts').append(t);
+      beep();
+    } else toast(body ? title + ': ' + body : title);
+    if (p.sound && !(urgent && p.approvals)) beep();
+    if ((document.hidden || urgent) && p.desktop && !desktopProblem() && Notification.permission === 'granted') {
+      const n = new Notification(title, { body, tag: 'cully', requireInteraction: !!urgent });
       n.onclick = () => { window.focus(); if (href) location.hash = href; n.close(); };
     }
     if (document.hidden && p.flash) startFlash(title);
@@ -3415,12 +3430,20 @@
   function checkAttention() {
     const keys = attentionKeys();
     if (!S.attnSeen) S.attnSeen = new Set();
+    if (!S.permSince) S.permSince = new Map();
     for (const [k, [t, b, href]] of keys) {
-      if (S.attnSeen.has(k)) continue;
+      const urgent = k.startsWith('perm:');
+      if (S.attnSeen.has(k)) {
+        // an unanswered approval is refused after ten minutes, so say so again every two minutes
+        if (urgent && S.attnReady && Date.now() - (S.permSince.get(k) || 0) >= 120000) { S.permSince.set(k, Date.now()); notifyUser('Still waiting for your approval', t.replace(/^.* asks to use /, 'Use ') + ' (refused if unanswered for ten minutes)', href, true); }
+        continue;
+      }
       S.attnSeen.add(k);
-      if (S.attnReady) notifyUser(t, b, href);
+      if (urgent) S.permSince.set(k, Date.now());
+      if (S.attnReady) notifyUser(t, b, href, urgent);
     }
-    for (const k of [...S.attnSeen]) if (!keys.has(k)) S.attnSeen.delete(k);
+    for (const k of [...S.attnSeen]) if (!keys.has(k)) { S.attnSeen.delete(k); S.permSince.delete(k); }
+    if (![...keys.keys()].some((k) => k.startsWith('perm:'))) for (const t of document.querySelectorAll('#toasts .toast.urgent')) t.remove();
     maybeNudge(keys.size);
   }
   function toastAction(msg, label, fn) {
@@ -3456,6 +3479,7 @@
       } }, icon(p[key] ? 'check' : 'bell'), h('span', {}, h('b', {}, name), h('small', {}, desc)));
       const el = h('div', { class: 'thememenu notifymenu', role: 'menu' },
         h('div', { class: 'menu-note' }, 'Get told when a task needs you, advice arrives, or sign-in is needed.'),
+        row('approvals', 'Alert for approval requests', 'A tone and a message that stays until you answer, even with this tab open'),
         row('flash', 'Flash the tab title', 'Works everywhere'),
         row('sound', 'Play a sound', 'A short tone'),
         row('desktop', 'Desktop notifications', problem ? 'Not available here' : 'Alerts when this tab is in the background', !!problem && Notification && Notification.permission !== 'default'),

@@ -1132,3 +1132,5 @@ details.sgroup > summary { cursor: pointer; } details.sgroup > summary::-webkit-
   .agent-stage .feed { padding: 10px 12px; } .agent-stage .permcard.tui-dialog { margin: 8px 12px; } .agent-stage .statusline, .agent-stage .composer, .agent-stage .composer-hint, .agent-stage .quick { padding-left: 12px; padding-right: 12px; }
   .agent-stage .dlg-keys kbd { display: none; }
 }
+.toast.urgent { border-color: var(--amber); background: var(--peach); color: var(--peach-ink); display: flex; flex-direction: column; align-items: flex-start; gap: 6px; max-width: 360px; }
+.toast.urgent .btn { margin-right: 6px; }
