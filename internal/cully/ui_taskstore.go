@@ -65,6 +65,8 @@ type uiTaskRecord struct {
 	Synced   string          `json:"synced,omitempty"`   // fingerprint of what was last saved to Cully memory
 	SyncedAt time.Time       `json:"syncedAt,omitempty"` // when
 	Entries  int             `json:"entries,omitempty"`  // summaries of it saved to memory
+
+	Checkpoints []uiCheckpoint `json:"checkpoints,omitempty"` // Cully's per-turn snapshots of the worktree; old records have none
 }
 
 var uiTaskMu sync.Mutex

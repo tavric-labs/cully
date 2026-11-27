@@ -200,6 +200,10 @@ A task runs without a person at a keyboard, so it used to refuse any tool use ou
 
 A task can start in any folder you can write in. In a git repository it gets its own branch and worktree. In a folder with no git it works in the folder directly, with no branch to review; the task shows "no git" where the branch would be. Cully works out which when the task starts, so you never have to set git up first. Your home folder and `/` are refused as too broad.
 
+## Checkpoints
+
+Cully snapshots every task's files before its first turn and after each turn that changed something, whatever harness runs the task. The Changes tab lists them newest first, each with its turn, time, file count and the first line of the agent's last message. Expand one to see its files and what that turn changed, or press **Revert files to here** to put the task's files back as they were: edited files are restored and files created later are deleted. Cully takes a "before revert" safety checkpoint first, so a revert can be undone from the same list. Revert is refused while the task is working; stop it first. Snapshots are kept as private git refs under `refs/cully/checkpoints/<task>/<n>` (untracked files included, ignored files not), so the branch, your commits and your staged changes are never touched; the last 100 per task are kept. A folder with no git has no checkpoints, and the tab says so. API: `GET /api/agents/{id}/checkpoints`, `GET|POST .../checkpoints/{n}/diff`, `POST .../checkpoints/{n}/revert`.
+
 ## Voice
 
 The **Speak** button beside the task box starts a task by voice. Click it, say the task, and stop talking: it stops after 1.6 seconds of quiet (or click again, or press Escape; it gives up after 10 seconds of silence and stops at two minutes). The audio goes to the Cully server, which turns it into text with a speech model on that machine, and the text becomes the task. With **Start when I stop talking** on (the default) the task starts at once; turn it off to check the text first.

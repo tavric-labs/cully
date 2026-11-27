@@ -507,6 +507,7 @@ type uiAgent struct {
 	files         map[string]struct{}
 	base          string // commit the worktree started from
 	mgr           *uiManager
+	cpMu          sync.Mutex // one checkpoint or revert at a time
 
 	advice       []uiAdvice
 	adviceStatus string
@@ -681,6 +682,7 @@ func (a *uiAgent) run(m *uiManager) {
 		a.setState(uiStopped)
 		return
 	}
+	a.checkpointBefore()
 	bin := m.cfg.ClaudeBin
 	if bin == "" {
 		bin = claudeExecutable()
@@ -885,6 +887,10 @@ func (a *uiAgent) handleLine(line []byte) {
 	}
 	a.enforceLimits()
 	if p.TurnDone {
+		a.mu.Lock()
+		turnNo := a.doneTurns + 1
+		a.mu.Unlock()
+		a.checkpointTurn(turnNo) // before the state leaves working, so a revert cannot race it
 		a.mu.Lock()
 		a.doneTurns++
 		if a.pending > 0 {

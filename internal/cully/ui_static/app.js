@@ -1117,8 +1117,9 @@
         body.replaceChildren(h('div', { class: 'toolbar slim' }, h('div', { class: 'actions' }, copyBtn('Copy for another agent', () => api('/api/agents/' + a.id + '/handoff')))), renderSummary(sum, { agent: a }));
         return;
       }
+      const cpNode = await checkpointSection(a);
       const d = parseDiff(await api('/api/agents/' + a.id + '/diff'));
-      if (!d.files.length && !d.head) { body.replaceChildren(h('div', { class: 'empty' }, 'No changes yet.')); return; }
+      if (!d.files.length && !d.head) { body.replaceChildren(cpNode, h('div', { class: 'empty' }, 'No changes yet.')); return; }
       const nodes = [];
       const notes = (S.notes[a.id] = S.notes[a.id] || []);
       const bar = h('div', { class: 'notebar', hidden: !notes.length });
@@ -1151,8 +1152,45 @@
           }
           return line;
         })))));
-      body.replaceChildren(...nodes);
+      body.replaceChildren(cpNode, ...nodes);
     } catch (e) { body.replaceChildren(h('div', { class: 'err' }, e.message)); }
+  }
+
+  // ---------- checkpoints ----------
+  // Cully's own snapshots of the task's files, one per turn. Newest first.
+  async function checkpointSection(a) {
+    let v;
+    try { v = await api('/api/agents/' + a.id + '/checkpoints'); } catch (e) { return h('section', { class: 'cpsec' }, h('div', { class: 'err' }, e.message)); }
+    const sec = h('section', { class: 'cpsec' }, h('h3', {}, 'Checkpoints'));
+    if (!v.available) { sec.append(h('p', { class: 'faint small' }, v.reason || 'Checkpoints are not available for this task.')); return sec; }
+    if (!v.checkpoints.length) { sec.append(h('p', { class: 'faint small' }, 'No checkpoints yet. One is taken before the first turn and after every turn that changes files.')); return sec; }
+    const when = (t) => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const list = h('div', { class: 'cptl' });
+    v.checkpoints.slice().reverse().forEach((c) => {
+      const what = c.safety ? 'Safety checkpoint' : c.turn === 0 ? 'Start' : 'Turn ' + c.turn;
+      const head = what + ', ' + when(c.time) + ', ' + c.total + (c.total === 1 ? ' file' : ' files') + (c.label && !c.safety ? ', ' + c.label : '');
+      const diffBox = h('pre', { class: 'cpdiff', hidden: true });
+      const revert = h('button', { class: 'btn small', disabled: !v.canRevert, title: v.canRevert ? 'Put the task files back as they were at this checkpoint' : v.revertBlock, onclick: () => confirmDialog({
+        title: 'Revert files to ' + what.toLowerCase(),
+        body: ['Files in this task change back to how they were at ' + when(c.time) + '. Edits made after that are lost from the folder, and files created after that are deleted. The branch, your commits and ignored files are not touched.',
+          'Cully takes a safety checkpoint of the current state first, so you can undo this revert from the list.'],
+        confirmLabel: 'Revert files',
+        onConfirm: async () => { const r = await api('/api/agents/' + a.id + '/checkpoints/' + c.n + '/revert', { method: 'POST' }); toast('Reverted: ' + r.restored + ' restored, ' + r.removed + ' removed.'); loadSide(a, true); },
+      }) }, 'Revert files to here');
+      const row = h('details', { class: 'cprow' },
+        h('summary', {}, h('span', { class: 'cpdot' }), head),
+        h('ul', { class: 'files' }, ...(c.files || []).map((f) => h('li', { class: 'mono' }, f.replace('\t', ' '))), c.total > (c.files || []).length ? h('li', {}, 'and ' + (c.total - c.files.length) + ' more') : null),
+        diffBox, revert);
+      row.addEventListener('toggle', async () => {
+        if (!row.open || diffBox.dataset.loaded) return;
+        diffBox.dataset.loaded = '1';
+        try { diffBox.textContent = await api('/api/agents/' + a.id + '/checkpoints/' + c.n + '/diff'); diffBox.hidden = false; } catch (e) { diffBox.textContent = e.message; diffBox.hidden = false; }
+      });
+      list.append(row);
+    });
+    sec.append(list);
+    if (!v.canRevert) sec.append(h('p', { class: 'faint small' }, v.revertBlock));
+    return sec;
   }
 
   // ---------- board ----------
