@@ -1499,3 +1499,11 @@ details.pillpop > summary::-webkit-details-marker { display: none; }
 .folderrow svg { width: 15px; height: 15px; flex: none; color: var(--forest-hi); }
 .fr-main { display: flex; flex-direction: column; min-width: 0; }
 .fr-main small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Switch harness and the out-of-tokens note (ui_switch.go, ui_exhausted.go) */
+.hnote { display: flex; flex-direction: column; gap: 2px; margin: 4px 0 0; }
+.switchlist { display: flex; flex-direction: column; gap: 6px; margin: 8px 0; }
+.switchrow { display: flex; align-items: baseline; gap: 10px; padding: 9px 12px; border: 1px solid var(--line2); border-radius: 10px; background: var(--raised); color: var(--ink); text-align: left; cursor: pointer; }
+.switchrow:hover:not(:disabled) { background: var(--surface2); }
+.switchrow.on { border-color: var(--forest-hi); cursor: default; }
+button.chip.harness { cursor: pointer; }

@@ -421,7 +421,7 @@ func (a *uiAgent) graphLoad() {
 	a.graph.mu.Lock()
 	if len(a.graph.g.Nodes) > 0 && a.graph.firstCall == "" {
 		a.graph.firstCall = "resumed"
-		if a.req.originID != "" && a.req.originAgent != "" && a.req.originAgent != "claude" {
+		if a.req.originID != "" && a.req.originAgent != "" && a.req.originAgent != uiHarnessID(a.req.Harness) {
 			a.graph.firstCall = "resumed-on-other-harness"
 		}
 	}

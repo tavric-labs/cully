@@ -180,6 +180,7 @@ func newUIServer(m *uiManager, token string, loopback bool) http.Handler {
 	mux.Handle("GET /api/pause", s.api(s.pauseGet))
 	mux.Handle("POST /api/pause", s.api(s.pauseSet))
 	mux.Handle("GET /api/harness/available", s.api(s.harnessAvailable))
+	mux.Handle("POST /api/tasks/{id}/switch", s.api(s.taskSwitchH))
 	mux.Handle("GET /api/tasks", s.api(s.tasksGet))
 	mux.Handle("POST /api/tasks/{id}/continue", s.api(s.taskContinueH))
 	mux.Handle("POST /api/tasks/{id}/close", s.api(s.taskCloseH))

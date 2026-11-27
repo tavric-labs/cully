@@ -101,6 +101,11 @@ func (m *uiManager) taskSummary(r uiTaskRecord) (summary, outcome, next string) 
 		b.WriteString(" (" + strings.Join(names, ", ") + ")")
 	}
 	b.WriteString(", " + strconv.Itoa(r.Files) + " files changed.")
+	for _, s := range r.Sessions {
+		if s.Role == "handoff" {
+			b.WriteString(" Handed off to " + uiHarnessName(s.Agent) + " mid-task.")
+		}
+	}
 	lines := 0
 	for _, s := range r.Sessions {
 		e, ok := by[s.ID]

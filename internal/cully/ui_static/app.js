@@ -481,15 +481,22 @@
     // Which harness runs the task: only installed ones are offered, and what each can do comes from the capability matrix.
     const hbox = h('div', { class: 'seg harnesspick', role: 'group', 'aria-label': 'Harness' });
     const hgroup = h('div', { class: 'og', hidden: true }, h('span', { class: 'opt-label' }, 'Harness'), h('div', { class: 'row' }, hbox));
+    const hnote = h('p', { class: 'faint small hnote', hidden: true });
+    hgroup.append(hnote);
     api('/api/harness/available').then((list) => {
-      const shown = (list || []).filter((x) => x.installed);
-      if (shown.length < 2) return;
-      if (!shown.some((x) => x.id === (S.opts.harness || 'claude') && x.available)) S.opts.harness = 'claude';
+      const installed = (list || []).filter((x) => x.installed);
+      const shown = installed.filter((x) => !x.exhausted);
+      const gone = installed.filter((x) => x.exhausted);
+      hnote.replaceChildren(...gone.map((x) => h('span', {}, exhaustedLine(x))));
+      hnote.hidden = !gone.length;
+      if (shown.length < 2 && !gone.length) return;
+      if (!shown.some((x) => x.id === (S.opts.harness || 'claude') && x.available)) S.opts.harness = (shown.find((x) => x.available) || { id: 'claude' }).id;
       hbox.replaceChildren(...shown.map((x) => {
         const b = h('button', { type: 'button', class: (S.opts.harness || 'claude') === x.id ? 'on' : '', disabled: !x.available, title: x.available ? (x.version || x.name) : x.name + ': ' + x.reason }, x.name + (x.available ? '' : ' (' + x.reason + ')'));
         b.addEventListener('click', () => { S.opts.harness = x.id; for (const c of hbox.children) c.classList.toggle('on', c === b); });
         return b;
       }));
+      hbox.parentNode.hidden = shown.length < 2;
       hgroup.hidden = false;
     }).catch(() => {});
     const repo = S.info && S.info.repos.length > 1 ? h('select', { 'aria-label': 'Repository' }, ...S.info.repos.map((r) => h('option', { value: r, ...(r === S.opts.repo ? { selected: true } : {}) }, r.split('/').pop()))) : null;
@@ -804,6 +811,40 @@
     });
   }
   document.addEventListener('click', (e) => { for (const d of document.querySelectorAll('details.menu[open]')) if (!d.contains(e.target)) d.open = false; });
+  // Switching a task to another harness, and the quiet note when a harness is out of tokens.
+  const clockOf = (unix) => new Date(unix * 1000).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  const exhaustedLine = (x) => (x.id === 'claude' ? x.name + ' is out of tokens until ' + clockOf(x.until) : x.name + ' hit its limit; back about ' + clockOf(x.until));
+  function switchHarnessDialog(a) {
+    const err = h('div', { class: 'err', hidden: true });
+    const body = h('div', { class: 'mbody' }, h('p', { class: 'faint small' }, 'Loading the harnesses'));
+    const modal = h('div', { class: 'modal', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Switch harness' },
+      h('header', {}, h('h2', {}, 'Switch harness'), h('button', { class: 'btn ghost small sp', onclick: closeMCP }, 'Cancel')), body);
+    const bg = h('div', { class: 'modal-bg', onclick: (e) => { if (e.target === bg) closeMCP(); } }, modal);
+    $('modal-root').replaceChildren(bg);
+    S.modal = { agent: 'switch' };
+    document.removeEventListener('keydown', escClose);
+    document.addEventListener('keydown', escClose);
+    const confirmStep = (x) => {
+      const note = h('textarea', { rows: '2', 'aria-label': 'What to do next', placeholder: 'Anything it should do next? Optional.' });
+      const go = h('button', { class: 'btn', onclick: async () => {
+        go.disabled = true; err.hidden = true; go.replaceChildren('Switching, this can take up to a minute');
+        try { const v = await api('/api/tasks/' + a.id + '/switch', { method: 'POST', body: JSON.stringify({ harness: x.id, note: note.value }) }); closeMCP(); await refresh(); location.hash = '#/task/' + v.id; }
+        catch (e) { err.textContent = e.message; err.hidden = false; go.disabled = false; go.replaceChildren(icon('send'), 'Switch to ' + x.name); }
+      } }, icon('send'), 'Switch to ' + x.name);
+      body.replaceChildren(h('p', {}, 'Cully will wait for the current step to finish (up to one minute), save where the work stands, and continue this task in ' + x.name + ' in the same worktree. Everything stays in this task.'),
+        note, err, h('div', { class: 'row' }, go, h('button', { class: 'btn ghost', onclick: () => listStep(S.switchList) }, 'Back')));
+    };
+    const listStep = (list) => {
+      const cur = a.agent || 'claude';
+      const rows = (list || []).filter((x) => x.installed && (x.id === cur || (x.available && !x.exhausted)));
+      const gone = (list || []).filter((x) => x.installed && x.exhausted && x.id !== cur);
+      body.replaceChildren(h('p', { class: 'faint small' }, 'Choose the harness that carries this task from here.'),
+        h('div', { class: 'switchlist' }, ...rows.map((x) => h('button', { type: 'button', class: 'switchrow' + (x.id === cur ? ' on' : ''), disabled: x.id === cur, onclick: () => confirmStep(x) }, h('b', {}, x.name), h('span', { class: 'faint small' }, x.id === cur ? 'Running now' : (x.version || ''))))),
+        rows.filter((x) => x.id !== cur).length ? null : h('p', { class: 'faint small' }, 'No other harness is available right now.'),
+        gone.length ? h('p', { class: 'faint small hnote' }, ...gone.map((x) => h('span', {}, exhaustedLine(x)))) : null);
+    };
+    api('/api/harness/available').then((list) => { S.switchList = list; listStep(list); }).catch((e) => body.replaceChildren(h('div', { class: 'err' }, e.message)));
+  }
   function drawAgentChrome(a) {
     drawPermissions(a);
     updateActivity();
@@ -838,6 +879,7 @@
         finished ? null : item('send', 'Send to another task', "Send this agent's reply or changes to another agent", () => openRelay(a)),
         item('copy', 'Open a shareable report', 'A one-page summary: goal, plan, files, checks, cost. No file contents or secrets.', () => window.open('/api/agents/' + a.id + '/report', '_blank', 'noopener')),
         item('down', 'Download the report', 'Save the report as a single HTML file to attach to a pull request or send to a teammate', () => { location.href = '/api/agents/' + a.id + '/report?download=1'; }),
+        item('branch', 'Switch harness', 'Continue this task in another harness, in the same worktree', () => switchHarnessDialog(a)),
         item('plus', 'Continue in a new task', 'Start a new task from where this one is', () => continueFrom(a))));
     const railHidden = (() => { try { return localStorage.getItem('cully-rail-hidden') === '1'; } catch (_) { return false; } })();
     $('view-agents').classList.toggle('rail-hidden', railHidden);
@@ -849,7 +891,7 @@
     $('sub2').replaceChildren(
       a.repo ? h('span', { class: 'chip', title: a.repo + (a.run && a.run.isolation === 'in place' ? ' (the task works directly in this folder)' : ' (the task works on a copy in its own worktree, so this folder is untouched until you merge)') }, icon('folder'), a.repo.split('/').filter(Boolean).pop() + (a.run && a.run.isolation === 'in place' ? ', in place' : ', own worktree')) : null,
       h('button', { class: 'chip mono', title: 'Copy branch name', onclick: () => copy(a.branch, 'branch') }, icon('branch'), a.branch),
-      a.agent ? harnessChip(a.agent) : null,
+      a.agent ? h('button', { class: 'chip harness h-' + a.agent, title: 'The harness this task runs in. Click to switch to another.', onclick: () => switchHarnessDialog(a) }, AGENT_LABEL[a.agent] || a.agent) : null,
       a.token ? h('span', { class: 'chip' }, 'token ' + a.token) : h('span', { class: 'chip' }, 'ambient login'),
       h('span', { class: 'chip' }, 'started ' + ago(a.created)), h('span', { class: 'chip' }, 'active ' + ago(a.updated || a.created)),
       a.run ? h('button', { class: 'chip', title: 'How the harness underneath this task is set up', onclick: () => openRunInfo(a) }, icon('term'), a.run.harness + ', ' + (a.run.permission === 'plan' ? 'read only' : 'can edit') + ', ' + (a.run.mcpMode === 'chosen' ? a.run.mcpChosen.length + ' servers' : 'all servers')) : null,
@@ -2246,10 +2288,11 @@
       const st = taskPair(x);
       const when = x.ended && !x.ended.startsWith('0001') ? 'Started ' + shortDate(x.at) + ', ended ' + shortDate(x.ended) : 'Started ' + shortDate(x.at);
       const known = x.run && S.agents.some((a) => a.id === x.run);
-      return h('li', { class: 'tsess' }, harnessChip(x.agent), h('code', { title: x.id }, (x.id || '').slice(0, 8)),
+      return h('li', { class: 'tsess' }, harnessChip(x.agent), x.role === 'handoff' ? h('span', { class: 'chip' }, 'Handoff') : null, h('code', { title: x.id }, (x.id || '').slice(0, 8)),
         x.state ? h('span', { class: 'chip fs-' + st[1] }, st[0]) : null, h('span', { class: 'faint small' }, when),
         x.turns ? h('span', { class: 'faint small' }, x.turns + (x.turns === 1 ? ' turn' : ' turns')) : null,
         x.cost ? h('span', { class: 'faint small' }, '$' + x.cost.toFixed(2)) : null,
+        x.reason ? h('span', { class: 'faint small' }, 'Ended: ' + x.reason) : null,
         known ? h('a', { class: 'btn ghost small', href: '#/task/' + x.run }, 'Open') : null);
     };
     async function draw() {
