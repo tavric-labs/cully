@@ -2263,6 +2263,126 @@
       h('p', { class: 'faint small' }, 'A background job is one fixed command that runs by itself at a time you choose, with no model and no tokens. The Advisor proposes one for a chore you repeat that a single command can do. Nothing is added until you approve it.'),
       list.length ? h('ul', { class: 'hrows' }, ...list.map(card)) : null);
   }
+  // The Background jobs page: cards in the look of the agents page, a box that turns a sentence into
+  // an unsaved job, and the Advisor's proposals. Nothing is saved until you approve it.
+  const JOB_STATE_WORD = { running: 'Running now', scheduled: 'Scheduled', paused: 'Paused', done: 'Finished' };
+  const JOB_FORMS = [['daily', 'Every day'], ['weekdays', 'Weekdays'], ['hourly', 'Every hour'], ['every', 'Every so often'], ['in', 'Once, from now']];
+  // A control for when a job runs. value() gives { schedule, after, maxRuns } as the server takes them.
+  function scheduleEditor(init) {
+    const m = /^(every|in) (\d+)(m|h)$/.exec(init.schedule || '');
+    const kind0 = !init.schedule ? 'daily' : m ? m[1] : init.schedule;
+    const kind = h('select', { 'aria-label': 'How often', class: 'jsel' }, ...JOB_FORMS.map(([k, l]) => h('option', { value: k }, l)));
+    kind.value = kind0;
+    const time = h('input', { type: 'time', value: init.after || '02:00', 'aria-label': 'Time of day', class: 'timein' });
+    const num = h('input', { type: 'number', min: '1', max: '999', value: m ? m[2] : '6', 'aria-label': 'How many', class: 'jnum' });
+    const unit = h('select', { 'aria-label': 'Minutes or hours', class: 'jsel' }, h('option', { value: 'm' }, 'minutes'), h('option', { value: 'h' }, 'hours'));
+    unit.value = m ? m[3] : 'h';
+    const limit = h('input', { type: 'number', min: '1', max: '1000', value: init.maxRuns ? String(init.maxRuns) : '', placeholder: 'No limit', 'aria-label': 'Stop after this many runs', class: 'jnum' });
+    const dayRow = h('span', { class: 'row' }, h('span', { class: 'faint small' }, 'after'), time);
+    const everyLabel = h('span', { class: 'faint small' }, 'every');
+    const everyRow = h('span', { class: 'row' }, everyLabel, num, unit);
+    const limitRow = h('span', { class: 'row' }, h('span', { class: 'faint small' }, 'Stop after'), limit, h('span', { class: 'faint small' }, 'runs'));
+    const sync = () => {
+      const k = kind.value;
+      dayRow.hidden = !(k === 'daily' || k === 'weekdays');
+      everyRow.hidden = !(k === 'every' || k === 'in');
+      limitRow.hidden = k === 'in';
+      everyLabel.textContent = k === 'in' ? 'in' : 'every';
+    };
+    kind.addEventListener('change', sync); sync();
+    const value = () => {
+      const k = kind.value;
+      const schedule = k === 'daily' ? '' : k === 'every' || k === 'in' ? k + ' ' + num.value + unit.value : k;
+      return { schedule, after: k === 'daily' || k === 'weekdays' ? time.value : '', maxRuns: k === 'in' || !limit.value ? 0 : Number(limit.value) };
+    };
+    return { el: h('div', { class: 'row jsched' }, kind, dayRow, everyRow, limitRow), value };
+  }
+  async function renderJobs(out, head, again, live) {
+    const [jobs, props] = await Promise.all([api('/api/jobs').catch(() => []), jobProposals(again)]);
+    if (!live()) return;
+    const hue = (name) => { let n = 0; for (const c of name) n = (n * 31 + c.codePointAt(0)) % 360; return n; };
+    const initials = (name) => name.split(/[\s._-]+/).filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join('') || '?';
+    const when = (iso) => (iso ? new Date(iso).toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' }) : '');
+    const secs = (n) => (n < 90 ? n + ' s' : Math.round(n / 60) + ' min');
+    const act = async (fn, msg) => { try { await fn(); if (msg) toast(msg); again(); } catch (e) { toast(e.message, true); } };
+    const avatar = (name, st) => { const el = h('div', { class: 'avatar st-' + st, 'aria-hidden': 'true' }, h('span', {}, initials(name)), h('i', { class: 'pulse' })); el.style.setProperty('--hue', String(hue(name))); return el; };
+    const bars = (j) => {
+      const rs = j.history.slice(0, 20).reverse();
+      if (!rs.length) return h('div', { class: 'runbars empty' }, 'No runs yet');
+      return h('div', { class: 'runbars', role: 'img', 'aria-label': 'The last ' + rs.length + ' runs, oldest first' }, ...rs.map((r) => {
+        const b = h('i', { class: 'rb rb-' + (r.status === 'ok' ? 'done' : 'failed'), title: (r.status === 'ok' ? 'Finished' : r.status === 'timeout' ? 'Timed out' : 'Failed') + ', ' + ago(r.start) });
+        b.style.height = (40 + Math.min(60, Math.round(r.seconds / 6))) + '%';
+        return b;
+      }));
+    };
+    const editor = (j) => {
+      const ed = scheduleEditor({ schedule: j.schedule, after: j.after, maxRuns: j.maxRuns });
+      const box = h('div', { class: 'jedit', hidden: true },
+        h('p', { class: 'faint small' }, 'Change when it runs. The command stays as it is; to change the command, remove the job and describe it again.'), ed.el,
+        h('div', { class: 'row' },
+          h('button', { class: 'btn small', onclick: () => act(() => api('/api/jobs/' + encodeURIComponent(j.name), { method: 'PUT', body: JSON.stringify(ed.value()) }), 'Saved ' + j.name) }, icon('check'), 'Save'),
+          h('button', { class: 'btn ghost small', onclick: () => { box.hidden = true; } }, 'Cancel')));
+      return box;
+    };
+    const remove = (j) => confirmDialog({ title: 'Remove ' + j.name + '?', body: ['It stops running and its run history is deleted. Its log file stays in ~/.cully/jobs.'], confirmLabel: 'Remove', onConfirm: async () => { await api('/api/jobs/' + encodeURIComponent(j.name), { method: 'DELETE' }); again(); } });
+    const card = (j) => {
+      const last = j.history[0]; const ed = editor(j);
+      return h('section', { class: 'agentcard2 st-' + j.state },
+        h('div', { class: 'ac-head' }, avatar(j.name, j.state),
+          h('div', { class: 'ac-id' }, h('div', { class: 'ac-name' }, j.name, h('span', { class: 'ac-state st-' + j.state }, JOB_STATE_WORD[j.state] || j.state)),
+            h('div', { class: 'ac-meta' }, h('span', {}, icon('clock'), j.when), j.folder ? h('span', {}, icon('folder'), j.folder) : null, h('span', {}, 'Runs ' + j.program),
+              j.maxRuns ? h('span', {}, 'Run ' + Math.min(j.runs, j.maxRuns) + ' of ' + j.maxRuns) : null,
+              j.next && j.state === 'scheduled' ? h('span', {}, 'Next ' + when(j.next)) : null))),
+        h('div', { class: 'ac-runs' }, bars(j),
+          h('div', { class: 'ac-runtext' }, last
+            ? h('div', { class: 'row' }, h('span', { class: 'chip run-' + (last.status === 'ok' ? 'pass' : 'fail') }, last.status === 'ok' ? 'Last run finished' : last.status === 'timeout' ? 'Last run timed out' : 'Last run failed'),
+              h('span', { class: 'faint small' }, ago(last.start) + ', ' + secs(last.seconds)),
+              j.streak > 1 ? h('span', { class: 'chip run-fail' }, j.streak + ' failures in a row') : null)
+            : h('span', { class: 'faint small' }, 'Has not run yet.'))),
+        last && last.tail ? h('div', { class: 'quote ac-quote jtail', title: 'The end of the last run output, secrets removed' }, last.tail) : null,
+        h('div', { class: 'ac-foot' },
+          h('button', { class: 'btn small', disabled: j.state === 'running', title: 'Start one run now, even when paused', onclick: () => act(() => api('/api/jobs/' + encodeURIComponent(j.name) + '/run', { method: 'POST' }), 'Started ' + j.name) }, icon('send'), j.state === 'running' ? 'Running' : 'Run now'),
+          h('button', { class: 'btn ghost small', onclick: () => act(() => api('/api/jobs/' + encodeURIComponent(j.name) + '/' + (j.paused ? 'resume' : 'pause'), { method: 'POST' }), j.paused ? 'Resumed ' + j.name : 'Paused ' + j.name) }, j.paused ? 'Resume' : 'Pause'),
+          h('span', { class: 'sp' }),
+          h('button', { class: 'btn ghost small', onclick: () => { ed.hidden = !ed.hidden; } }, 'Edit'),
+          h('button', { class: 'btn ghost small', 'aria-label': 'Remove ' + j.name, onclick: () => remove(j) }, icon('x'))),
+        ed,
+        j.history.length > 1 ? h('details', { class: 'rl' }, h('summary', {}, h('span', { class: 'rq' }, 'Run history'), h('span', { class: 'faint small' }, 'the last ' + j.history.length)),
+          h('ul', { class: 'hrows' }, ...j.history.map((r) => h('li', { class: 'hrow' }, h('div', { class: 'hmain' },
+            h('div', { class: 'row' }, h('span', { class: 'chip run-' + (r.status === 'ok' ? 'pass' : 'fail') }, r.status === 'ok' ? 'finished' : r.status), h('span', { class: 'faint small' }, ago(r.start) + ', ' + secs(r.seconds) + (r.manual ? ', started by you' : ''))),
+            r.tail ? h('p', { class: 'hdesc jtail' }, r.tail) : null))))) : null);
+    };
+    // Describe a job: the advisor writes a draft, shown here for review. Nothing is saved yet.
+    const text = h('textarea', { rows: '2', maxlength: '1000', 'aria-label': 'Describe the job', placeholder: 'Run the tests in my api folder every weekday at 7am', class: 'jtext' });
+    const draftBox = h('div', {});
+    const draftCard = (d) => {
+      const ed = scheduleEditor({ schedule: d.schedule, after: d.after, maxRuns: d.maxRuns });
+      return h('section', { class: 'agentcard2 st-draft' },
+        h('div', { class: 'ac-head' }, avatar(d.name, 'draft'),
+          h('div', { class: 'ac-id' }, h('div', { class: 'ac-name' }, d.name, h('span', { class: 'ac-state' }, 'Draft, not saved')), h('div', { class: 'ac-meta' }, h('span', {}, icon('folder'), d.folder)))),
+        h('p', { class: 'ac-role' }, d.why),
+        h('p', { class: 'small' }, h('span', { class: 'faint' }, 'It will run: '), h('code', {}, d.display)),
+        ed.el,
+        h('p', { class: 'faint small' }, 'A draft does not run. Check the command and the schedule, then approve it, or change the sentence and draft again.'),
+        h('div', { class: 'ac-foot' },
+          h('button', { class: 'btn small', onclick: () => act(() => api('/api/jobs', { method: 'POST', body: JSON.stringify({ name: d.name, folder: d.folder, command: d.command, ...ed.value() }) }), 'Added ' + d.name) }, icon('check'), 'Approve and add'),
+          h('button', { class: 'btn ghost small', onclick: () => draftBox.replaceChildren() }, 'Discard')));
+    };
+    const draftBtn = h('button', { class: 'btn', onclick: async () => {
+      draftBtn.disabled = true;
+      try { const d = await api('/api/jobs/draft', { method: 'POST', body: JSON.stringify({ text: text.value }) }); draftBox.replaceChildren(draftCard(d)); } catch (e) { toast(e.message, true); }
+      draftBtn.disabled = false;
+    } }, icon('spark'), 'Draft a job');
+    const describe = h('section', { class: 'lib-card' }, h('b', {}, 'Describe a job'),
+      h('p', { class: 'faint small' }, 'Say what should run and when, in a sentence. Cully turns it into one fixed command in a folder it knows, such as running the tests or fetching git remotes, and shows it here for you to review. Schedules can be daily, weekdays, hourly, every 15 minutes to 168 hours, or once from now, and a job can stop after a number of runs.'),
+      text, h('div', { class: 'row' }, draftBtn), draftBox);
+    const count = (st) => jobs.filter((j) => j.state === st).length;
+    const stat = (n, label, tone) => h('div', { class: 'astat' + (tone ? ' ' + tone : '') }, h('b', {}, String(n)), h('span', {}, label));
+    const failing = jobs.filter((j) => j.streak > 0).length;
+    out.replaceChildren(head(refreshBtn(again)), describe, props,
+      jobs.length ? h('div', { class: 'astats' }, stat(jobs.length, jobs.length === 1 ? 'job' : 'jobs'), stat(count('running'), 'running now', count('running') ? 'hot' : ''), stat(count('paused'), 'paused'), stat(failing, 'failing')) : null,
+      jobs.length ? h('div', { class: 'agentgrid' }, ...jobs.map(card)) : emptyCard(EMPTY_TEXT.jobs[0], EMPTY_TEXT.jobs[1], null, null));
+  }
   function renderAdvisor(list) {
     if (!list.length) return emptyCard('No tasks yet', 'The advisor reviews what a running agent is doing and suggests what to fix or check. Start a task to get advice.', 'Start a task', '#/');
     return h('div', { class: 'groups' }, ...list.map((g) => {
@@ -2718,17 +2838,7 @@
       if (name === 'permissions') { if (live()) await renderPermissions(out, head); return; }
       if (name === 'savings') { const d = arg || S.savingsDays || 14; S.savingsDays = d; if (live()) await renderSavings(out, head, d); return; }
       if (name === 'activity') { await renderActivity(out, head, S.activityFilter || 'all'); return; }
-      if (name === 'jobs') {
-        const jobs = await api('/api/jobs').catch(() => []);
-        if (jobs.length) {
-          const props = await jobProposals(again);
-          if (live()) out.replaceChildren(head(refreshBtn(again)), props, h('div', { class: 'groups' }, ...jobs.map((j) => h('section', { class: 'group' },
-            h('header', {}, h('span', { class: 'gt' }, j.name), j.running ? h('span', { class: 'pill working' }, 'Running') : null, h('span', { class: 'faint small' }, 'runs after ' + j.after + ' each day, with ' + j.program),
-              h('button', { class: 'btn small sp', disabled: j.running, onclick: async () => { try { await api('/api/jobs/' + encodeURIComponent(j.name) + '/run', { method: 'POST' }); toast('Started ' + j.name); setTimeout(again, 1500); } catch (e) { toast(e.message, true); } } }, icon('refresh'), 'Run now'))))));
-          return;
-        }
-      }
-      if (name === 'jobs') { const props = await jobProposals(again); if (live()) out.replaceChildren(head(refreshBtn(again)), props, emptyCard(EMPTY_TEXT.jobs[0], EMPTY_TEXT.jobs[1], null, null)); return; }
+      if (name === 'jobs') { await renderJobs(out, head, again, live); return; }
       const text = await api('/api/panel/' + name + '?repo=' + encodeURIComponent(S.opts.repo || ''));
       if (live()) out.replaceChildren(head(refreshBtn(again), copyBtn('Copy', () => text)), renderText(name, text));
     } catch (e) {
