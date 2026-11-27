@@ -4162,10 +4162,11 @@
     if (!S.searchFilters) return;
     const harnessCount = (a) => sessions.filter((x) => !a || x.agent === a).length;
     const hs = [['', 'All']].concat(['claude', 'codex', 'cursor'].filter((a) => harnessCount(a)).map((a) => [a, AGENT_LABEL[a]]));
-    const chip = (cur, key, set) => ([v, label], n) => h('button', { type: 'button', class: 'ssf' + (cur === v ? ' on' : ''), 'aria-pressed': String(cur === v), onclick: () => { S[key] = v; S.histShown = {}; drawHistory(); } }, label, n != null ? h('span', { class: 'ssn' }, String(n)) : null);
-    const hc = chip(S.sessionHarness || '', 'sessionHarness'); const oc = chip(S.sessionOutcome || '', 'sessionOutcome');
-    S.searchFilters.replaceChildren(h('div', { class: 'ssgroup', role: 'group', 'aria-label': 'Harness' }, ...hs.map((e) => hc(e, harnessCount(e[0])))),
-      h('div', { class: 'ssgroup', role: 'group', 'aria-label': 'Outcome' }, ...OUTCOMES.map((e) => oc(e, e[0] ? sessions.filter((x) => sessionOutcomeOf(x) === e[0]).length : null))));
+    const hbtn = ([v, label]) => h('button', { type: 'button', class: 'ssf' + ((S.sessionHarness || '') === v ? ' on' : ''), 'aria-pressed': String((S.sessionHarness || '') === v), onclick: () => { S.sessionHarness = v; S.histShown = {}; drawHistory(); } }, label, h('span', { class: 'ssn' }, String(harnessCount(v))));
+    const sel = h('select', { class: 'jsel ssout', 'aria-label': 'Outcome' }, ...OUTCOMES.map(([v, l]) => h('option', { value: v }, l + (v ? ' (' + sessions.filter((x) => sessionOutcomeOf(x) === v).length + ')' : ''))));
+    sel.value = S.sessionOutcome || '';
+    sel.addEventListener('change', () => { S.sessionOutcome = sel.value; S.histShown = {}; drawHistory(); });
+    S.searchFilters.replaceChildren(h('div', { class: 'ssgroup', role: 'group', 'aria-label': 'Harness' }, ...hs.map(hbtn)), sel);
   }
   function renderSessions() {
     const box = $('sessions');
@@ -4175,7 +4176,7 @@
     const sig = JSON.stringify([list.map((x) => [x.pid, x.cwd, x.branch, x.via, x.detached, x.sessionId]), hiddenClosed, !!S.showClosedSessions]);
     if (sig === S.sessSig && box.childElementCount) return;
     S.sessSig = sig;
-    const sub = 'Every session on this computer, whichever harness it ran in: the ones open now first, then recent ones by when they were last active.';
+    const sub = 'Every session on this computer, from every harness.';
     const kids = [toolbar('Sessions', sub, refreshBtn(async () => { S.sessions = await api('/api/sessions'); S.sessSig = ''; S.hist = null; renderSessions(); }))];
     kids.push(h('div', { id: 'active' }));
     const toggles = [];
@@ -4327,7 +4328,7 @@
     const box = $('active');
     if (!box) return;
     const list = (S.sessions || []).filter((x) => S.showClosedSessions || !x.detached);
-    if (!list.length) { box.replaceChildren(h('h3', { class: 'section-h' }, 'Open now'), emptyCard('Nothing is open right now', 'Open Claude, Codex or Cursor in a terminal and it appears here. Or start a task from this page.', 'Start a task', '#/')); return; }
+    if (!list.length) { box.replaceChildren(h('div', { class: 'opennow-empty' }, h('span', { class: 'tc-dot', 'aria-hidden': 'true' }), h('b', {}, 'Open now'), h('span', { class: 'faint' }, 'Nothing is open. Open Claude, Codex or Cursor in a terminal and it appears here.'), h('a', { class: 'linkbtn', href: '#/' }, 'Start a task'))); return; }
     box.replaceChildren(h('h3', { class: 'section-h' }, 'Open now'), h('ul', { class: 'hrows active' }, ...list.map((x) => {
       const rec = S.hist && S.hist.sessions.find((r) => r.id === x.sessionId && r.agent === x.agent && r.cwd === x.cwd);
       return h('li', { class: 'hrow' + (x.detached ? ' detached' : '') },
@@ -4370,9 +4371,11 @@
     const items = query ? scored.map((p) => p[0]) : inBucket(bucket);
     if (S.searchCount) S.searchCount.textContent = query ? items.length + (items.length === 1 ? ' session' : ' sessions') + ' of ' + hist.sessions.length : '';
     const shown = (S.histShown && S.histShown[bucket]) || 20;
-    const parts = [h('h3', { class: 'section-h' }, query ? 'Search results' : 'Recent')];
+    const parts = [];
     if (hist.note) parts.push(h('p', { class: 'faint' }, hist.note));
-    if (!query) parts.push(h('div', { class: 'seg tabs-seg', role: 'tablist', 'aria-label': 'How long ago' }, ...BUCKETS.map(([k, label]) => h('button', { type: 'button', role: 'tab', class: k === bucket ? 'on' : '', 'aria-selected': String(k === bucket), onclick: () => { S.histBucket = k; S.histPicked = true; drawHistory(); } }, label + ' ' + inBucket(k).length))));
+    const headRow = h('div', { class: 'sx-head' }, h('h3', { class: 'section-h' }, query ? 'Search results' : 'Recent'));
+    parts.push(headRow);
+    if (!query) headRow.append(h('div', { class: 'seg tabs-seg', role: 'tablist', 'aria-label': 'How long ago' }, ...BUCKETS.map(([k, label]) => h('button', { type: 'button', role: 'tab', class: k === bucket ? 'on' : '', 'aria-selected': String(k === bucket), onclick: () => { S.histBucket = k; S.histPicked = true; drawHistory(); } }, label + ' ' + inBucket(k).length))));
     if (query && !items.length) parts.push(h('div', { class: 'card ssempty' }, h('b', {}, terms.length ? 'No session matches "' + (S.sessionQuery || '').trim() + '"' : 'No session matches these filters'),
       h('p', { class: 'faint small' }, 'Every word has to match. Try fewer words, or search by a folder, a branch, or part of the session ID. Use quotes for an exact phrase.'),
       h('div', { class: 'row' }, h('button', { class: 'btn ghost small', onclick: () => { S.sessionQuery = ''; S.sessionHarness = ''; S.sessionOutcome = ''; const el = $('session-search'); if (el) el.value = ''; drawHistory(); } }, 'Clear search and filters'))));
@@ -4381,21 +4384,34 @@
       try { await writeClip(cmd); toast('Copied. Paste it in a terminal to ' + what + '.'); } catch (_) { showCommand(cmd); }
     };
     if (items.length) {
-      parts.push(h('ul', { class: 'hrows' }, ...items.slice(0, shown).map((x) => { const runnable = x.agent === 'claude'; return h('li', { class: 'hrow' },
-        h('div', { class: 'hmain' },
-          h('div', { class: 'ht' }, harnessChip(x.agent), sessionLink(x, terms)),
-          x.description ? h('p', { class: 'hdesc' }, highlight(x.description, terms)) : null,
-          matchSnippet(x, terms),
-          h('div', { class: 'faint small path' }, highlight(x.cwd, terms)),
-          h('div', { class: 'row' }, x.origin ? h('span', { class: 'chip', title: 'Where this session was started' }, x.origin) : null, x.activeSec ? h('span', { class: 'chip', title: 'Time spent working in this session' }, dur(x.activeSec) + ' worked') : null, x.branch ? h('span', { class: 'chip mono' }, icon('branch'), x.branch) : null, h('span', { class: 'chip' }, ago(x.updated)), x.exists ? null : h('span', { class: 'chip warn' }, 'Folder is gone'))),
-        h('div', { class: 'row hact' },
-          runnable
-            ? [h('button', { class: 'btn ghost small', disabled: !x.exists, title: 'Start a new session from this one here; the original stays as it is', onclick: () => continueSession(x, true) }, icon('branch'), 'Fork'),
-              h('button', { class: 'btn small', disabled: !x.exists, title: 'Continue this same session here', onclick: () => continueSession(x, false) }, icon('send'), 'Resume')]
-            : [h('button', { class: 'btn ghost small', disabled: !x.exists, onclick: copyCmd(x.fork || x.resume, 'fork it') }, icon('branch'), 'Copy fork command'),
-              h('button', { class: 'btn small', disabled: !x.exists, onclick: copyCmd(x.resume, 'continue it') }, icon('copy'), 'Copy resume command')],
-          h('button', { class: runnable ? 'btn ghost small' : 'btn small', disabled: !x.exists, title: 'Start a new task from this session\'s handoff, in the harness Cully runs tasks in', onclick: () => continueAsTask(x) }, icon('plus'), 'Continue as a task'),
-          runnable ? h('button', { class: 'linkbtn', title: 'Copy the terminal command instead', onclick: copyCmd(x.resume, 'continue it') }, 'Copy command') : null)); })));
+      const row = (x) => {
+        const runnable = x.agent === 'claude';
+        const folder = (x.cwd || '').split('/').filter(Boolean).pop() || x.cwd || '';
+        const oc = sessionOutcomeOf(x);
+        const ocChip = oc === 'yes' ? h('span', { class: 'chip ok' }, 'Finished') : oc === 'partly' ? h('span', { class: 'chip' }, 'Partly') : oc === 'no' ? h('span', { class: 'chip warn' }, 'Not finished') : null;
+        const item = (ic, label, sub, fn, disabled) => h('button', { type: 'button', class: 'folderrow', disabled: !!disabled, onclick: (e) => { const d = e.currentTarget.closest('details'); if (d) d.open = false; fn(); } }, icon(ic), h('span', { class: 'fr-main' }, h('b', {}, label), sub ? h('small', { class: 'faint' }, sub) : null));
+        const menu = h('details', { class: 'menu sx-menu' }, h('summary', { class: 'btn ghost small', 'aria-label': 'More actions', title: 'More actions' }, '⋯'),
+          h('div', { class: 'menu-pop pop-card' }, h('div', { class: 'popcol' },
+            runnable ? item('branch', 'Fork', 'A new session from this one; the original stays', () => continueSession(x, true), !x.exists) : item('branch', 'Copy fork command', 'Paste it in a terminal', copyCmd(x.fork || x.resume, 'fork it'), !x.exists),
+            runnable ? item('send', 'Resume this session', 'Continue the same conversation', () => continueSession(x, false), !x.exists) : null,
+            runnable ? item('plus', 'Continue as a task', 'Start a task from its handoff', () => continueAsTask(x), !x.exists) : null,
+            item('copy', runnable ? 'Copy command' : 'Copy resume command', 'Resume it in a terminal', copyCmd(x.resume, 'continue it')))));
+        const primary = runnable
+          ? h('button', { type: 'button', class: 'btn small', disabled: !x.exists, title: 'Continue this same session here', onclick: () => continueSession(x, false) }, icon('send'), 'Resume')
+          : h('button', { type: 'button', class: 'btn small', disabled: !x.exists, title: 'Start a new task from this session\'s handoff', onclick: () => continueAsTask(x) }, icon('plus'), 'Continue');
+        const li = h('li', { class: 'sx-row' },
+          h('div', { class: 'sx-main' },
+            h('div', { class: 'sx-top' }, harnessChip(x.agent), h('span', { class: 'sx-title' }, sessionLink(x, terms)), ocChip, h('span', { class: 'sp' }), h('span', { class: 'sx-time', title: x.updated ? new Date(x.updated).toLocaleString() : '' }, ago(x.updated))),
+            h('p', { class: 'sx-desc' + (x.description ? '' : ' faint') }, x.description ? highlight(x.description, terms) : 'Not summarised yet. Open it and use Summarize.'),
+            matchSnippet(x, terms),
+            h('div', { class: 'sx-meta' }, folder ? h('span', { class: 'chip', title: x.cwd }, icon('folder'), highlight(folder, terms)) : null,
+              x.branch && x.branch !== 'HEAD' ? h('span', { class: 'chip mono', title: x.branch }, icon('branch'), x.branch) : null,
+              x.activeSec ? h('span', { class: 'faint small', title: 'Time spent working in this session' }, dur(x.activeSec) + ' worked') : null)),
+          h('div', { class: 'sx-act' }, primary, menu));
+        li.addEventListener('click', (e) => { if (e.target.closest('a, button, summary, details, input, select')) return; location.hash = sessionHref(x.id); });
+        return li;
+      };
+      parts.push(h('ul', { class: 'sx-rows' }, ...items.slice(0, shown).map(row)));
       if (items.length > shown) parts.push(h('div', { class: 'row' }, h('button', { class: 'btn ghost', onclick: () => { S.histShown = { ...(S.histShown || {}), [bucket]: shown + 20 }; drawHistory(); } }, 'Show ' + Math.min(20, items.length - shown) + ' more of ' + (items.length - shown))));
     }
     if (hist.older) parts.push(h('p', { class: 'faint small' }, 'Showing the most recent sessions of each harness. Older ones are kept by the agents themselves.'));
