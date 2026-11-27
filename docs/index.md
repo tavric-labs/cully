@@ -20,6 +20,8 @@ Works across agents. Learns across sessions.
 | What you want to do | Guide |
 | --- | --- |
 | Install Cully and run your first agent | [Quickstart](/quickstart) |
+| Decide between one machine and many | [One machine or many?](/choose-a-mode) |
+| Finish setup from the browser or terminal | [Set up Cully](/setup) |
 | Audit instructions, skills, hooks and memory setup | [Audit your harness](/harness) |
 | Inspect lookup overhead and recent output | [Measure token impact](/token-impact) |
 | Read your own work on a phone | [Mobile developer preview](/mobile) |

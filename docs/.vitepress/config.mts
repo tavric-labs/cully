@@ -45,6 +45,8 @@ export default withMermaid(defineConfig({
     ],
     sidebar: [
       { text: 'Quickstart', link: '/quickstart' },
+      { text: 'One machine or many?', link: '/choose-a-mode' },
+      { text: 'Set up Cully', link: '/setup' },
       { text: 'Solo mode', link: '/solo' },
       { text: 'Team mode', link: '/team-workflows' },
       {
