@@ -564,7 +564,7 @@
   function mountAgent(id) {
     const a = S.agents.find((x) => x.id === id);
     if (!a) { $('stage').replaceChildren(h('div', { class: 'empty' }, S.agents.length ? 'That agent no longer exists.' : 'Loading…')); return; }
-    S.tab = ['chat', 'changes', 'handoff', 'calls'].includes(S.tab) ? S.tab : 'chat';
+    S.tab = ['chat', 'changes', 'handoff', 'calls', 'graph'].includes(S.tab) ? S.tab : 'chat';
     const ahead = h('div', { class: 'ahead', id: 'ahead' });
     const sub = h('div', { class: 'sub2', id: 'sub2' });
     const ctxnote = h('div', { id: 'ctxnote' });
@@ -599,7 +599,7 @@
   }
   function setTab(t) {
     S.tab = t;
-    if (t !== 'chat') S.sideTab = t;
+    if (t !== 'chat') { S.sideTab = t; S.sideChosen = S.sideChosen || {}; S.sideChosen[S.route.id] = true; }
     const a = S.agents.find((x) => x.id === S.route.id);
     $('agrid').dataset.show = t;
     if (a) { drawAgentChrome(a); loadSide(a, true); }
@@ -779,8 +779,11 @@
     // call is waiting. After that your own choice of tab and of open or closed stands.
     S.askOpened = S.askOpened || new Set();
     const fresh = (a.permissions || []).filter((p) => !S.askOpened.has(p.id));
-    if (fresh.length) { fresh.forEach((p) => S.askOpened.add(p.id)); S.sidePref[a.id] = 'open'; S.sideTab = 'calls'; if (S.tab !== 'chat') S.tab = 'calls'; S.diffKey = ''; }
-    const showSide = S.sidePref[a.id] ? S.sidePref[a.id] === 'open' : nChanges > 0;
+    if (fresh.length) { fresh.forEach((p) => S.askOpened.add(p.id)); S.sidePref[a.id] = 'open'; S.sideTab = 'calls'; (S.sideChosen = S.sideChosen || {})[a.id] = true; if (S.tab !== 'chat') S.tab = 'calls'; S.diffKey = ''; }
+    // The graph is the first thing in the right column while there are no changes to show, so it is open by default.
+    S.sideDefault = S.sideDefault || {};
+    if (!S.sideDefault[a.id]) S.sideDefault[a.id] = nChanges > 0 ? 'changes' : 'graph';
+    const showSide = S.sidePref[a.id] ? S.sidePref[a.id] === 'open' : true;
     const grid = $('agrid');
     if (grid) grid.classList.toggle('no-side', !showSide);
     const sideBtn = h('button', { class: 'btn ghost small sidetoggle', title: showSide ? 'Hide the changes and summary' : 'Show the changes and summary', 'aria-pressed': String(showSide), onclick: () => { S.sidePref[a.id] = showSide ? 'closed' : 'open'; S.diffKey = ''; drawAgentChrome(a); loadSide(a, true); } }, icon('branch'), showSide ? 'Hide changes' : (nChanges ? 'Changes (' + nChanges + ')' : 'Summary'));
@@ -821,10 +824,10 @@
         : h('span', { class: 'step ' + s.status, title: s.detail || '' }, label);
     }));
     const tabLabel = (k, label) => label + (k === 'changes' && a.files && a.files.length ? ' (' + a.files.length + ')' : k === 'calls' && S.feed && S.feed.calls.length ? ' (' + S.feed.calls.length + ')' : '');
-    $('tabs').replaceChildren(...[['chat', 'Chat'], ['calls', 'Calls'], ['changes', 'Changes'], ['handoff', 'Summary']].map(([k, label]) =>
+    $('tabs').replaceChildren(...[['chat', 'Chat'], ['graph', 'Graph'], ['calls', 'Calls'], ['changes', 'Changes'], ['handoff', 'Summary']].map(([k, label]) =>
       h('button', { class: S.tab === k ? 'on' : '', onclick: () => setTab(k) }, tabLabel(k, label))));
     const sideKind = sideKindNow();
-    $('tabs-side').replaceChildren(...[['calls', 'Calls'], ['changes', 'Changes'], ['handoff', 'Summary']].map(([k, label]) =>
+    $('tabs-side').replaceChildren(...[['graph', 'Graph'], ['calls', 'Calls'], ['changes', 'Changes'], ['handoff', 'Summary']].map(([k, label]) =>
       h('button', { class: sideKind === k ? 'on' : '', onclick: () => setTab(k) }, tabLabel(k, label))));
     if (S.feed) {
       S.feed.composer.hidden = finished;
@@ -835,7 +838,12 @@
     drawStatusline(a);
     if (sideKind === 'calls' || sideKindNow() === 'calls') loadSide(a, true);
   }
-  const sideKindNow = () => (['calls', 'changes', 'handoff'].includes(S.tab) ? S.tab : S.sideTab || 'changes');
+  const sideKindNow = () => {
+    if (['calls', 'changes', 'handoff', 'graph'].includes(S.tab)) return S.tab;
+    const id = S.route && S.route.id;
+    if (id && !(S.sideChosen && S.sideChosen[id]) && S.sideDefault && S.sideDefault[id]) return S.sideDefault[id]; // your own choice always wins over the default
+    return S.sideTab || 'changes';
+  };
   // The bottom status line, like a terminal's: state, harness and model, context, tokens or cost, and the
   // time since the task last moved.
   function drawStatusline(a) {
@@ -1104,10 +1112,116 @@
       h('ol', { class: 'calls' }, ...f.calls.map(row)));
   }
   setInterval(() => { if (S.route && S.route.name === 'agent' && S.feed && sideKindNow() === 'calls') { const a = S.agents.find((x) => x.id === S.route.id); if (a && S.feed.calls.some((c) => c.status === 'run')) drawCalls(a); } }, 1000);
+  // ---- the graph tab: what the task did, as phases joined by the reason for each step ----
+  // It is a picture of a trace Cully observed. The layout comes from graph.js; this part only draws it.
+  const SVGNS = 'http://www.w3.org/2000/svg';
+  function sv(tag, attrs, ...kids) {
+    const el = document.createElementNS(SVGNS, tag);
+    for (const [k, v] of Object.entries(attrs || {})) { if (v == null || v === false) continue; if (k.startsWith('on')) el.addEventListener(k.slice(2), v); else el.setAttribute(k, v); }
+    for (const kid of kids.flat()) if (kid != null && kid !== false) el.append(kid.nodeType ? kid : document.createTextNode(String(kid)));
+    return el;
+  }
+  const GRAPH_LEGEND = [['working', 'Working'], ['tool', 'Waiting on a tool'], ['needs-you', 'Needs you'], ['helper', 'Waiting on a helper'], ['checking', 'Checking'], ['stuck', 'Stuck'], ['done', 'Done'], ['failed', 'Failed or stopped']];
+  const ANSWER_WORDS = { allowed: 'Allowed once', 'allowed-always': 'Allowed for the rest of the task', denied: 'Denied', expired: 'No answer in time, so it was not allowed' };
+  function graphDetail(n, now) {
+    const G = window.CullyGraph;
+    const open = G.isOpen(n);
+    const ms = (open ? now : new Date(n.end).getTime()) - new Date(n.start).getTime();
+    const kv = (k, v) => (v ? h('div', { class: 'gkv' }, h('span', { class: 'faint' }, k), h('span', {}, v)) : null);
+    return h('div', { class: 'gdetail', 'aria-live': 'polite' },
+      h('div', { class: 'row' }, h('b', {}, G.nodeLabel(n)), h('span', { class: 'pill ph-' + n.phase }, G.PHASE_LABEL[n.phase] || n.phase), ...(n.tags || []).map((t) => h('span', { class: 'chip' }, t))),
+      kv('How it began', G.reasonLabel(n.cause)),
+      n.phase === 'needs-you' ? kv('Asked', n.summary) : kv('Tool', n.tool ? n.tool + (n.summary ? ': ' + n.summary : '') : n.summary),
+      n.phase === 'needs-you' ? kv('You answered', ANSWER_WORDS[n.answer] || (open ? 'Not answered yet' : n.answer || 'No answer recorded')) : null,
+      kv(n.phase === 'needs-you' ? 'You took' : 'Time', G.dur(Math.max(0, ms)) + (open ? ' so far' : '')),
+      kv('Started', n.start ? new Date(n.start).toLocaleTimeString() : ''),
+      n.count > 1 ? kv('Repeated', n.count + ' times in a row') : null,
+      n.cost ? kv('Cost', '$' + n.cost.toFixed(2) + ' at list price') : null,
+      n.tokens ? kv('Tokens', fmtTokens(n.tokens)) : null,
+      n.ended === 'restart' ? kv('Ended', 'The server restarted while this was going') : null,
+      n.changed ? h('div', { class: 'gkv' }, h('span', { class: 'faint' }, 'What changed'), h('span', {}, n.changed + ' '), h('button', { type: 'button', class: 'linkbtn', onclick: () => setTab('changes') }, 'Open the Changes tab')) : null,
+      n.suspected ? h('p', { class: 'faint small' }, 'Suspected: this step came just before the failure. It is a hint and may not be the cause.') : null,
+      n.phase === 'stuck' ? h('p', { class: 'faint small' }, 'Cully thinks the task was going in circles. That is a guess from repeated calls.') : null,
+      n.phase === 'failed' ? h('p', { class: 'faint small' }, 'The task failed here. From outside, Cully cannot tell what caused it.') : null,
+      n.phase === 'earlier' ? h('p', { class: 'faint small' }, 'Older plain steps were folded into this one to keep the graph short. Questions to you, stuck spells, helpers and failures are kept.') : null);
+  }
+  function renderGraph(body, a, view) {
+    const G = window.CullyGraph;
+    const now = Date.now();
+    S.graphUi = S.graphUi || {};
+    const ui = (S.graphUi[a.id] = S.graphUi[a.id] || { sel: null, collapsed: new Set() });
+    const L = G.layout(view, { collapsed: ui.collapsed });
+    const nodeById = new Map(L.nodes.map((p) => [p.id, p]));
+    const live = ['preparing', 'working', 'waiting'].includes(a.state);
+    const oldWrap = body.querySelector('.gwrap');
+    const atEnd = !oldWrap || oldWrap.scrollLeft + oldWrap.clientWidth >= oldWrap.scrollWidth - 40;
+    const keepLeft = oldWrap ? oldWrap.scrollLeft : 0;
+    if (!L.nodes.length) { body.replaceChildren(h('div', { class: 'empty' }, 'No steps recorded yet. They appear here as the task works.')); return; }
+    const svg = sv('svg', { class: 'graph', width: L.width, height: L.height, viewBox: '0 0 ' + L.width + ' ' + L.height, role: 'group', 'aria-label': 'Task graph: ' + G.headline(view, now) });
+    const pick = (id) => { ui.sel = id; renderGraph(body, a, view); };
+    for (const r of L.rows) {
+      svg.append(sv('line', { class: 'glane', x1: 0, x2: L.width, y1: r.y, y2: r.y }));
+      const hp = L.helpers.find((x) => x.parent === r.id);
+      svg.append(sv('g', { class: 'glabel' + (r.helper ? ' sub' : '') },
+        sv('rect', { x: 6, y: r.y + 8, width: L.opts.labelW - 14, height: 20, rx: 10 }),
+        sv('text', { x: 14, y: r.y + 22 }, uiClipText(r.label, 13))));
+      if (hp) {
+        const toggle = () => { if (ui.collapsed.has(r.id)) ui.collapsed.delete(r.id); else ui.collapsed.add(r.id); renderGraph(body, a, view); };
+        svg.append(sv('text', { class: 'gfold', x: 14, y: r.y + 46, tabindex: 0, role: 'button', 'aria-label': hp.folded ? 'Show the helper lane' : 'Fold the helper lane', onclick: toggle, onkeydown: (e) => { if (e.key === 'Enter') toggle(); } }, hp.folded ? 'show helpers' : 'fold helpers'));
+      }
+    }
+    for (const e of L.edges) svg.append(sv('path', { class: 'gedge' + (e.cross ? ' cross' : ''), d: e.d }, sv('title', {}, e.reasonLabel || e.reason)));
+    for (const b of L.back) svg.append(sv('g', { class: 'gback' }, sv('path', { d: b.d }, sv('title', {}, 'The same two steps repeated ' + b.count + ' times')), sv('text', { x: b.lx, y: b.ly, 'text-anchor': 'middle' }, b.label)));
+    const sel = ui.sel && nodeById.has(ui.sel) ? ui.sel : L.nodes[L.nodes.length - 1].id;
+    for (const p of L.nodes) {
+      const n = p.node; const open = G.isOpen(n);
+      const needs = n.phase === 'needs-you';
+      const text = p.label + (n.count > 1 && (n.phase === 'tool' || n.phase === 'working') ? ' x' + n.count : '');
+      const g = sv('g', { class: 'gnode ph-' + n.phase + (open ? ' open' : '') + (p.suspected ? ' suspected' : '') + (p.id === sel ? ' sel' : ''), tabindex: 0, role: 'button', 'aria-pressed': String(p.id === sel), 'aria-label': p.label + (open ? ', happening now' : ''),
+        onclick: () => pick(p.id), onkeydown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pick(p.id); } } },
+      sv('title', {}, p.label + (n.summary && n.phase !== 'earlier' ? ': ' + n.summary : '') + (p.suspected ? ' (suspected, not certain)' : '')),
+      needs ? sv('rect', { class: 'gring', x: p.x - 3, y: p.y - 3, width: p.w + 6, height: p.h + 6, rx: p.h / 2 + 3 }) : null,
+      sv('rect', { class: 'gbody', x: p.x, y: p.y, width: p.w, height: p.h, rx: p.h / 2 }),
+      sv('text', { x: p.x + p.w / 2, y: p.y + p.h / 2 + 4, 'text-anchor': 'middle' }, uiClipText(text, 17)));
+      if (needs) {
+        const ms = (open ? now : new Date(n.end).getTime()) - new Date(n.start).getTime();
+        g.append(sv('text', { class: 'gwait', x: p.x + p.w / 2, y: p.y + p.h + 14, 'text-anchor': 'middle' }, (open ? 'waiting ' : 'you took ') + G.dur(Math.max(0, ms))));
+      }
+      svg.append(g);
+    }
+    const wrap = h('div', { class: 'gwrap' }, svg);
+    const legend = h('div', { class: 'glegend', 'aria-label': 'Legend' }, ...GRAPH_LEGEND.map(([k, t]) => h('span', { class: 'gl' }, h('span', { class: 'gsw ph-' + k }), t)), h('span', { class: 'gl' }, h('span', { class: 'gsw dashed' }), 'Suspected, only a hint'));
+    const selNode = nodeById.get(sel);
+    body.replaceChildren(
+      h('div', { class: 'ghead' }, h('b', {}, G.headline(view, now)), live ? h('span', { class: 'faint small' }, 'updating live') : null),
+      legend, wrap, graphDetail(Object.assign({ suspected: !!selNode.suspected }, selNode.node), now),
+      view.mermaid ? h('details', { class: 'gtext' }, h('summary', { class: 'faint small' }, 'Text version of the same trace'), h('pre', { class: 'gpre' }, view.mermaid)) : null,
+      h('p', { class: 'faint small' }, view.note || ''));
+    const nw = body.querySelector('.gwrap');
+    if (nw) nw.scrollLeft = atEnd ? nw.scrollWidth : keepLeft;
+  }
+  async function drawGraph(a) {
+    const body = $('sidebody'); if (!body || sideKindNow() !== 'graph') return;
+    let view;
+    try { view = await api('/api/agents/' + a.id + '/graph'); } catch (_) { if (!body.querySelector('.gwrap')) body.replaceChildren(h('div', { class: 'empty' }, 'The graph is not available right now.')); return; }
+    if (sideKindNow() !== 'graph' || !S.route || S.route.id !== a.id) return;
+    renderGraph(body, a, view);
+  }
+  setInterval(() => {
+    if (!S.route || S.route.name !== 'agent' || sideKindNow() !== 'graph') return;
+    const a = S.agents.find((x) => x.id === S.route.id);
+    if (a && ['preparing', 'working', 'waiting'].includes(a.state)) drawGraph(a);
+  }, 3000);
   async function loadSide(a, force) {
     const body = $('sidebody'); const head = $('sidehead');
     if (!body) return;
     const kind = sideKindNow();
+    if (kind === 'graph') {
+      S.diffKey = '';
+      head.replaceChildren(h('span', {}, 'What this task did, step by step. Observed by Cully, not a plan it follows'));
+      drawGraph(a);
+      return;
+    }
     if (kind === 'calls') {
       S.diffKey = '';
       head.replaceChildren(h('span', {}, 'Every tool call this task has made, newest last'));
