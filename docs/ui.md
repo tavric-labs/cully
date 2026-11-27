@@ -307,6 +307,10 @@ Message shapes recorded from codex-cli 0.172.0 (full notes in the spike file `no
 - Token values stay in the agent's environment; the UI shows only a token number, and agent output is scrubbed of token values.
 - Agent output is rendered as text only, under a strict content security policy.
 
+### The graph window
+
+The Graph tab lists every state a task went through as a card: what state it was, how long, and what it did there (the tools it ran and how each ended, what it said, your messages, plan updates, files changed). "Open the graph" or "Show on graph" opens a large window with the same trace as a graph: one node per state, curved arrows between them labelled with why the state changed, a lane for each session, repeated retries folded into a loop with a counter, and the state happening now pulsing. Drag to move, scroll to zoom, arrow keys to step from state to state, and click a node to see in the side panel what it did and how, what came before and after it, its cost and the files it changed. It is a trace of what Cully observed, not a plan the task follows.
+
 ## Task graph
 
 The Graph tab in the task window's right panel shows what a task did as a graph. Each node is a visit to a phase: working, waiting on a tool, needs you, waiting on a helper, checking, stuck, done, failed, stopped by a limit, stopped or closed. Each edge carries the reason for the step, such as a tool starting, a permission question, your answer or a turn ending. One lane is drawn per session, so continuing in another harness shows as an edge between lanes. The tab opens by default while a task has no file changes; your own tab choice always wins after that.

@@ -133,7 +133,39 @@
     return parts.join(', ');
   }
 
-  const api = { isOpen, PHASE_LABEL, reasonLabel, nodeLabel, dur, collapseLoops, layout, headline, DEFAULTS };
+  // What a state did, in one sentence, from the acts recorded in it.
+  function actSummary(n) {
+    const acts = (n && n.acts) || [];
+    const tools = acts.filter((a) => a.k === 'tool');
+    const failed = tools.filter((a) => a.ok === 'fail').length;
+    const said = acts.filter((a) => a.k === 'said').length;
+    const you = acts.filter((a) => a.k === 'you').length;
+    const files = [];
+    for (const a of tools) {
+      const m = /^(Edit|Write|MultiEdit|NotebookEdit): (.+)$/.exec(a.l || '');
+      if (m && !files.includes(m[2])) files.push(m[2]);
+    }
+    const parts = [];
+    if (tools.length) parts.push('ran ' + tools.length + (tools.length === 1 ? ' tool' : ' tools') + (failed ? ' (' + failed + ' failed)' : ''));
+    if (files.length) parts.push('edited ' + files.slice(0, 3).join(', ') + (files.length > 3 ? ' and ' + (files.length - 3) + ' more' : ''));
+    if (said) parts.push('wrote ' + said + (said === 1 ? ' message' : ' messages'));
+    if (you) parts.push('you sent ' + you + (you === 1 ? ' message' : ' messages'));
+    let sentence = parts.join(', ');
+    if (sentence) sentence = sentence.charAt(0).toUpperCase() + sentence.slice(1);
+    return { sentence, tools: tools.length, failed, said, you, files, total: (n && n.actsN) || acts.length, shown: acts.length };
+  }
+
+  // The whole trace as one bar: a segment per state, as wide as it lasted (never less than a sliver).
+  function strip(view, now) {
+    const t = now || Date.now();
+    return ((view && view.nodes) || []).map((n) => {
+      const end = isOpen(n) ? t : new Date(n.end).getTime();
+      const ms = Math.max(0, end - new Date(n.start).getTime());
+      return { id: n.id, phase: n.phase, ms, grow: Math.max(1, Math.round(Math.sqrt(ms / 1000) * 4)) };
+    });
+  }
+
+  const api = { isOpen, PHASE_LABEL, reasonLabel, nodeLabel, dur, collapseLoops, layout, headline, actSummary, strip, DEFAULTS };
   root.CullyGraph = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

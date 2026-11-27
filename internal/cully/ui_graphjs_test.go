@@ -53,3 +53,37 @@ console.log('ok');
 		t.Fatalf("%v\n%s", err, out)
 	}
 }
+
+// What a state did is summed up from its acts, and the whole trace becomes a bar of segments.
+func TestGraphActSummaryAndStripInNode(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node is not installed")
+	}
+	js, err := uiStaticFS.ReadFile("ui_static/graph.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := string(js) + `
+const G = module.exports || CullyGraph;
+const assert = require('assert');
+let s = G.actSummary({ acts: [
+  { k: 'tool', l: 'Bash: go test ./...', ok: 'fail' }, { k: 'tool', l: 'Edit: a.go', ok: 'ok' }, { k: 'tool', l: 'Write: b.go' },
+  { k: 'said', l: 'Fixing it' }, { k: 'you', l: 'ok' }], actsN: 9 });
+assert.strictEqual(s.tools, 3); assert.strictEqual(s.failed, 1); assert.deepStrictEqual(s.files, ['a.go', 'b.go']);
+assert.strictEqual(s.sentence, 'Ran 3 tools (1 failed), edited a.go, b.go, wrote 1 message, you sent 1 message');
+assert.strictEqual(s.total, 9); assert.strictEqual(s.shown, 5);
+assert.strictEqual(G.actSummary({}).sentence, '');
+assert.strictEqual(G.actSummary({ acts: [{ k: 'tool', l: 'Read: x' }] }).sentence, 'Ran 1 tool');
+const seg = G.strip({ nodes: [
+  { id: 'a', phase: 'working', start: '2026-01-01T00:00:00Z', end: '2026-01-01T00:00:01Z' },
+  { id: 'b', phase: 'needs-you', start: '2026-01-01T00:00:01Z', end: '2026-01-01T00:10:01Z' },
+  { id: 'c', phase: 'working', start: '2026-01-01T00:10:01Z' } ] }, Date.parse('2026-01-01T00:10:05Z'));
+assert.strictEqual(seg.length, 3); assert.ok(seg[1].grow > seg[0].grow, 'a long wait is a wider segment'); assert.ok(seg[0].grow >= 1);
+console.log('ok');
+`
+	out, err := exec.Command(node, "-e", script).CombinedOutput()
+	if err != nil || !strings.Contains(string(out), "ok") {
+		t.Fatalf("node: %v\n%s", err, out)
+	}
+}

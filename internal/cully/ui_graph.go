@@ -1,6 +1,7 @@
 package cully
 
 import (
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strconv"
@@ -22,23 +23,41 @@ const (
 )
 
 type uiGraphNode struct {
-	ID      string    `json:"id"`
-	Session string    `json:"session,omitempty"` // the harness session it happened in; its lane
-	Phase   string    `json:"phase"`
-	Tags    []string  `json:"tags,omitempty"`
-	Start   time.Time `json:"start"`
-	End     time.Time `json:"end,omitempty"` // zero while the node is open
-	Cause   string    `json:"cause,omitempty"`
-	Ended   string    `json:"ended,omitempty"` // why it closed, when nothing followed (restart)
-	Tool    string    `json:"tool,omitempty"`
-	Summary string    `json:"summary,omitempty"` // up to 120 characters, redacted; never a tool's input in full
-	Answer  string    `json:"answer,omitempty"`  // for a permission question: what you chose
-	Changed string    `json:"changed,omitempty"` // what changed in the files during this node
-	Cost    float64   `json:"cost,omitempty"`
-	Tokens  int       `json:"tokens,omitempty"`
-	Count   int       `json:"count,omitempty"`   // visits folded into this node
-	Earlier int       `json:"earlier,omitempty"` // for the summary node: how many steps it stands for
+	ID      string       `json:"id"`
+	Session string       `json:"session,omitempty"` // the harness session it happened in; its lane
+	Phase   string       `json:"phase"`
+	Tags    []string     `json:"tags,omitempty"`
+	Start   time.Time    `json:"start"`
+	End     time.Time    `json:"end,omitempty"` // zero while the node is open
+	Cause   string       `json:"cause,omitempty"`
+	Ended   string       `json:"ended,omitempty"` // why it closed, when nothing followed (restart)
+	Tool    string       `json:"tool,omitempty"`
+	Summary string       `json:"summary,omitempty"` // up to 120 characters, redacted; never a tool's input in full
+	Answer  string       `json:"answer,omitempty"`  // for a permission question: what you chose
+	Changed string       `json:"changed,omitempty"` // what changed in the files during this node
+	Cost    float64      `json:"cost,omitempty"`
+	Tokens  int          `json:"tokens,omitempty"`
+	Count   int          `json:"count,omitempty"`   // visits folded into this node
+	Earlier int          `json:"earlier,omitempty"` // for the summary node: how many steps it stands for
+	Acts    []uiGraphAct `json:"acts,omitempty"`    // what the task did while in this state: a few of the first and the latest
+	ActsN   int          `json:"actsN,omitempty"`   // how many things it did in all
 }
+
+// uiGraphAct is one thing the task did or said in a state: a tool call and how it ended, a message,
+// a plan update, an answer from you. Labels are short, redacted text; a tool's input is never kept in full.
+type uiGraphAct struct {
+	T  time.Time `json:"t"`
+	K  string    `json:"k"`            // tool, said, you, plan, note, error, turn
+	L  string    `json:"l"`            // what it was, in a short line
+	R  string    `json:"r,omitempty"`  // for a tool: how it ended, in a short line
+	Ok string    `json:"ok,omitempty"` // for a tool: ok or fail
+}
+
+const (
+	uiGraphActMax   = 30  // acts kept per state
+	uiGraphActHead  = 8   // of those, the first ones are kept
+	uiGraphActLabel = 140 // characters of a label
+)
 
 // uiTaskGraph is what is stored with the task record.
 type uiTaskGraph struct {
@@ -62,8 +81,9 @@ type uiGraph struct {
 	openCost  float64
 	openToks  int
 	now       func() time.Time
-	firstCall string // the reason the first node of this run gets, when the task already had a history
-	runNodes  int    // nodes this run has made
+	firstCall string       // the reason the first node of this run gets, when the task already had a history
+	runNodes  int          // nodes this run has made
+	pending   []uiGraphAct // tool calls seen just before the state they belong to is opened
 }
 
 func (g *uiGraph) clock() time.Time {
@@ -104,10 +124,13 @@ func (g *uiGraph) visit(phase string, tags []string, cause string, n uiGraphNote
 func (g *uiGraph) visitLocked(phase string, tags []string, cause string, n uiGraphNote, files []string) {
 	now := g.clock()
 	changed := g.newFiles(files)
+	pend := g.pending
+	g.pending = nil
 	if k := len(g.g.Nodes); k > 0 && g.g.Nodes[k-1].End.IsZero() {
 		open := &g.g.Nodes[k-1]
 		if open.Phase == phase && uiSameTags(open.Tags, tags) {
 			open.Count++
+			uiAddActs(open, pend)
 			if changed != "" {
 				open.Changed = uiJoinChanged(open.Changed, changed)
 			}
@@ -115,6 +138,10 @@ func (g *uiGraph) visitLocked(phase string, tags []string, cause string, n uiGra
 				open.Summary, open.Tool = n.Summary, firstNonEmpty(open.Tool, n.Tool)
 			}
 			return
+		}
+		if phase != uiPhTool { // calls seen before a state other than waiting-on-a-tool belong to the one ending
+			uiAddActs(open, pend)
+			pend = nil
 		}
 		g.closeLocked(open, now, changed)
 	} else if changed != "" && len(g.g.Nodes) > 0 { // files changed after the last node closed
@@ -128,6 +155,7 @@ func (g *uiGraph) visitLocked(phase string, tags []string, cause string, n uiGra
 	g.runNodes++
 	node := uiGraphNode{ID: "n" + strconv.Itoa(g.g.Seq), Session: g.session, Phase: phase, Tags: append([]string(nil), tags...), Start: now, Cause: cause, Tool: n.Tool, Summary: n.Summary, Count: 1}
 	g.openCost, g.openToks = g.cost, g.tokens
+	uiAddActs(&node, pend)
 	if uiTerminalPhase(phase) {
 		node.End = now
 	}
@@ -440,4 +468,122 @@ func (a *uiAgent) graphSync(cause string, note ...string) {
 	}
 	a.graph.visitLocked(phase, tags, cause, n, files)
 	a.graph.mu.Unlock()
+}
+
+// uiAddActs appends acts to a node, keeping the first few and the latest ones when there are too many.
+func uiAddActs(n *uiGraphNode, acts []uiGraphAct) {
+	for _, a := range acts {
+		n.ActsN++
+		n.Acts = append(n.Acts, a)
+		if len(n.Acts) > uiGraphActMax {
+			n.Acts = append(n.Acts[:uiGraphActHead], n.Acts[uiGraphActHead+1:]...)
+		}
+	}
+}
+
+// act records one thing the task did or said in its present state. A tool call waits for the state it
+// belongs to (waiting on a tool) to open; how it ended is added to the state still open.
+func (g *uiGraph) act(a uiGraphAct, toolEnd bool) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	k := len(g.g.Nodes)
+	if k == 0 {
+		return
+	}
+	if a.K == "tool" {
+		g.pending = append(g.pending, a)
+		if len(g.pending) > uiGraphActMax {
+			g.pending = g.pending[len(g.pending)-uiGraphActMax:]
+		}
+		return
+	}
+	n := &g.g.Nodes[k-1]
+	if toolEnd {
+		for i := len(n.Acts) - 1; i >= 0; i-- {
+			if n.Acts[i].K == "tool" && n.Acts[i].Ok == "" {
+				n.Acts[i].Ok, n.Acts[i].R = a.Ok, a.R
+				return
+			}
+		}
+		return
+	}
+	uiAddActs(n, []uiGraphAct{a})
+}
+
+func uiToolShort(name string) string {
+	if rest, ok := strings.CutPrefix(name, "mcp__"); ok {
+		if server, tool, ok := strings.Cut(rest, "__"); ok {
+			return tool + " on " + server
+		}
+	}
+	return name
+}
+
+// graphAct turns an event the task produced into an act of the state it happened in.
+func (a *uiAgent) graphAct(ev uiEvent) {
+	a.graph.mu.Lock()
+	ready := a.graph.loaded
+	a.graph.mu.Unlock()
+	if !ready {
+		return
+	}
+	one := func(s string, n int) string {
+		for _, line := range strings.Split(s, "\n") {
+			if line = strings.Join(strings.Fields(line), " "); line != "" {
+				return uiClip(line, n)
+			}
+		}
+		return ""
+	}
+	act := uiGraphAct{T: ev.Time, K: ev.Kind}
+	switch ev.Kind {
+	case "tool":
+		act.L = uiToolShort(ev.Tool)
+		if t := one(ev.Text, 110); t != "" {
+			act.L += ": " + t
+		}
+	case "tool_result":
+		ok := "ok"
+		if ev.Failed {
+			ok = "fail"
+		}
+		a.graph.act(uiGraphAct{Ok: ok, R: one(ev.Text, 100)}, true)
+		return
+	case "text":
+		act.K, act.L = "said", one(ev.Text, uiGraphActLabel)
+	case "user":
+		act.K, act.L = "you", one(ev.Text, uiGraphActLabel)
+	case "plan":
+		var items []struct {
+			S string `json:"s"`
+		}
+		if json.Unmarshal([]byte(ev.Text), &items) != nil || len(items) == 0 {
+			return
+		}
+		done := 0
+		for _, it := range items {
+			if it.S == "completed" {
+				done++
+			}
+		}
+		act.L = "Plan: " + strconv.Itoa(done) + " of " + strconv.Itoa(len(items)) + " done"
+	case "error":
+		act.L = one(ev.Text, uiGraphActLabel)
+	case "note":
+		if strings.HasPrefix(ev.Text, "Waiting for you to allow") {
+			return // the state itself says so
+		}
+		act.L = one(ev.Text, uiGraphActLabel)
+	case "result":
+		act.K, act.L = "turn", "The turn finished"
+		if ev.Failed {
+			act.L = "The turn ended with an error"
+		}
+	default:
+		return
+	}
+	if act.L == "" {
+		return
+	}
+	a.graph.act(act, false)
 }

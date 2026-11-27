@@ -567,6 +567,11 @@ func (a *uiAgent) openToolLocked() string {
 }
 
 func (a *uiAgent) add(ev uiEvent) {
+	ev = a.addEvent(ev)
+	a.graphAct(ev)
+}
+
+func (a *uiAgent) addEvent(ev uiEvent) uiEvent {
 	ev.Text = a.tokens.redact(ev.Text)
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -581,6 +586,7 @@ func (a *uiAgent) add(ev uiEvent) {
 	}
 	close(a.notify)
 	a.notify = make(chan struct{})
+	return ev
 }
 
 // eventsSince returns events after seq and a channel closed by the next append.

@@ -1186,82 +1186,239 @@
   }
   const GRAPH_LEGEND = [['working', 'Working'], ['tool', 'Waiting on a tool'], ['needs-you', 'Needs you'], ['helper', 'Waiting on a helper'], ['checking', 'Checking'], ['stuck', 'Stuck'], ['done', 'Done'], ['failed', 'Failed or stopped']];
   const ANSWER_WORDS = { allowed: 'Allowed once', 'allowed-always': 'Allowed for the rest of the task', denied: 'Denied', expired: 'No answer in time, so it was not allowed' };
-  function graphDetail(n, now) {
+  const ACT_GLYPH = { tool: '>', said: '"', you: '@', plan: '#', note: '-', error: '!', turn: '|' };
+  const ACT_WORD = { tool: 'Tool', said: 'It said', you: 'You said', plan: 'Plan', note: 'Note', error: 'Error', turn: 'Turn' };
+  // One state as a card on the flow: what state it was, how long, what it did there, and what came of it.
+  function graphStep(n, view, ui, now, a, extra) {
     const G = window.CullyGraph;
     const open = G.isOpen(n);
-    const ms = (open ? now : new Date(n.end).getTime()) - new Date(n.start).getTime();
-    const kv = (k, v) => (v ? h('div', { class: 'gkv' }, h('span', { class: 'faint' }, k), h('span', {}, v)) : null);
-    return h('div', { class: 'gdetail', 'aria-live': 'polite' },
-      h('div', { class: 'row' }, h('b', {}, G.nodeLabel(n)), h('span', { class: 'pill ph-' + n.phase }, G.PHASE_LABEL[n.phase] || n.phase), ...(n.tags || []).map((t) => h('span', { class: 'chip' }, t))),
-      kv('How it began', G.reasonLabel(n.cause)),
-      n.phase === 'needs-you' ? kv('Asked', n.summary) : kv('Tool', n.tool ? n.tool + (n.summary ? ': ' + n.summary : '') : n.summary),
-      n.phase === 'needs-you' ? kv('You answered', ANSWER_WORDS[n.answer] || (open ? 'Not answered yet' : n.answer || 'No answer recorded')) : null,
-      kv(n.phase === 'needs-you' ? 'You took' : 'Time', G.dur(Math.max(0, ms)) + (open ? ' so far' : '')),
-      kv('Started', n.start ? new Date(n.start).toLocaleTimeString() : ''),
-      n.count > 1 ? kv('Repeated', n.count + ' times in a row') : null,
-      n.cost ? kv('Cost', '$' + n.cost.toFixed(2) + ' at list price') : null,
-      n.tokens ? kv('Tokens', fmtTokens(n.tokens)) : null,
-      n.ended === 'restart' ? kv('Ended', 'The server restarted while this was going') : null,
-      n.changed ? h('div', { class: 'gkv' }, h('span', { class: 'faint' }, 'What changed'), h('span', {}, n.changed + ' '), h('button', { type: 'button', class: 'linkbtn', onclick: () => setTab('changes') }, 'Open the Changes tab')) : null,
-      n.suspected ? h('p', { class: 'faint small' }, 'Suspected: this step came just before the failure. It is a hint and may not be the cause.') : null,
-      n.phase === 'stuck' ? h('p', { class: 'faint small' }, 'Cully thinks the task was going in circles. That is a guess from repeated calls.') : null,
-      n.phase === 'failed' ? h('p', { class: 'faint small' }, 'The task failed here. From outside, Cully cannot tell what caused it.') : null,
-      n.phase === 'earlier' ? h('p', { class: 'faint small' }, 'Older plain steps were folded into this one to keep the graph short. Questions to you, stuck spells, helpers and failures are kept.') : null);
+    const ms = Math.max(0, (open ? now : new Date(n.end).getTime()) - new Date(n.start).getTime());
+    const sum = G.actSummary(n);
+    const needs = n.phase === 'needs-you';
+    const acts = n.acts || [];
+    const head = h('div', { class: 'gf-head' },
+      h('span', { class: 'pill ph-' + n.phase }, G.PHASE_LABEL[n.phase] || n.phase),
+      h('b', { class: 'gf-title' }, n.phase === 'tool' && n.tool ? n.tool : n.phase === 'earlier' ? (n.summary || 'Earlier steps') : G.nodeLabel(n)),
+      n.count > 1 && (n.phase === 'tool' || n.phase === 'working') ? h('span', { class: 'chip' }, n.count + ' times') : null,
+      h('span', { class: 'sp' }),
+      h('span', { class: 'faint small' }, (n.start ? new Date(n.start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '') + ', ' + (open ? G.dur(ms) + ' so far' : G.dur(ms))));
+    const lines = [];
+    if (needs) {
+      lines.push(h('p', { class: 'gf-line' }, h('b', {}, 'Asked: '), n.summary || n.tool || 'permission'));
+      lines.push(h('p', { class: 'gf-line' }, h('b', {}, 'You answered: '), ANSWER_WORDS[n.answer] || (open ? 'Not answered yet' : n.answer || 'No answer recorded'), open ? '' : ', after ' + G.dur(ms)));
+    } else if (sum.sentence) lines.push(h('p', { class: 'gf-line' }, sum.sentence + '.'));
+    else if (n.summary && n.phase !== 'earlier' && n.phase !== 'tool') lines.push(h('p', { class: 'gf-line' }, n.summary));
+    if (n.changed) lines.push(h('p', { class: 'gf-line' }, h('b', {}, 'Files: '), n.changed + ' ', h('button', { type: 'button', class: 'linkbtn', onclick: () => setTab('changes') }, 'Open the Changes tab')));
+    const chips = [];
+    for (const t of n.tags || []) if (!t.startsWith('tool:')) chips.push(h('span', { class: 'chip' }, t));
+    if (n.cost) chips.push(h('span', { class: 'chip' }, '$' + n.cost.toFixed(2)));
+    if (n.tokens) chips.push(h('span', { class: 'chip' }, fmtTokens(n.tokens) + ' tokens'));
+    if (n.ended === 'restart') chips.push(h('span', { class: 'chip warn' }, 'The server restarted here'));
+    const more = acts.length ? h('details', { class: 'gf-acts', ...(ui.open.has(n.id) ? { open: true } : {}) },
+      h('summary', {}, 'What it did here', h('span', { class: 'faint small' }, ' ' + (sum.total > sum.shown ? sum.shown + ' of ' + sum.total : String(sum.total)))),
+      h('ol', { class: 'gf-list' }, ...acts.map((x) => h('li', { class: 'gf-act k-' + x.k + (x.ok === 'fail' ? ' bad' : '') },
+        h('span', { class: 'gf-glyph', 'aria-hidden': 'true' }, ACT_GLYPH[x.k] || '-'),
+        h('span', { class: 'gf-t faint small' }, x.t ? new Date(x.t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : ''),
+        h('span', { class: 'gf-l' }, h('span', { class: 'visually-hidden' }, (ACT_WORD[x.k] || '') + ': '), x.l,
+          x.k === 'tool' ? h('span', { class: 'gf-r ' + (x.ok === 'fail' ? 'bad' : '') }, x.ok === 'fail' ? ' failed' + (x.r ? ': ' + x.r : '') : x.ok === 'ok' ? ' ok' + (x.r ? ': ' + x.r : '') : ' running') : null))))) : null;
+    if (more) more.addEventListener('toggle', () => { if (more.open) ui.open.add(n.id); else ui.open.delete(n.id); });
+    const notes = [];
+    if (extra && extra.suspected) notes.push(h('p', { class: 'faint small' }, 'Suspected: this step came just before the failure. It is a hint and may not be the cause.'));
+    if (n.phase === 'stuck') notes.push(h('p', { class: 'faint small' }, 'Cully thinks the task was going in circles. That is a guess from repeated calls.'));
+    if (n.phase === 'failed') notes.push(h('p', { class: 'faint small' }, 'The task failed here. From outside, Cully cannot tell what caused it.'));
+    if (n.phase === 'earlier') notes.push(h('p', { class: 'faint small' }, 'Older plain steps were folded into this one to keep the graph short. Questions to you, stuck spells, helpers and failures are kept.'));
+    const show = h('button', { type: 'button', class: 'linkbtn gf-show', title: 'See this state on the graph, with what it did and how', onclick: () => openGraphWindow(a, n.id) }, 'Show on graph');
+    return h('article', { class: 'gf-card ph-' + n.phase + (open ? ' open' : '') + (extra && extra.suspected ? ' suspected' : '') + (needs ? ' needs' : '') },
+      head, ...lines, chips.length ? h('div', { class: 'row gf-chips' }, ...chips) : null, more, show, ...notes);
   }
   function renderGraph(body, a, view) {
     const G = window.CullyGraph;
     const now = Date.now();
     S.graphUi = S.graphUi || {};
-    const ui = (S.graphUi[a.id] = S.graphUi[a.id] || { sel: null, collapsed: new Set() });
-    const L = G.layout(view, { collapsed: ui.collapsed });
-    const nodeById = new Map(L.nodes.map((p) => [p.id, p]));
+    const ui = (S.graphUi[a.id] = S.graphUi[a.id] || { open: new Set() });
+    if (!ui.open) ui.open = new Set();
     const live = ['preparing', 'working', 'waiting'].includes(a.state);
-    const oldWrap = body.querySelector('.gwrap');
-    const atEnd = !oldWrap || oldWrap.scrollLeft + oldWrap.clientWidth >= oldWrap.scrollWidth - 40;
-    const keepLeft = oldWrap ? oldWrap.scrollLeft : 0;
-    if (!L.nodes.length) { body.replaceChildren(h('div', { class: 'empty' }, 'No steps recorded yet. They appear here as the task works.')); return; }
-    const svg = sv('svg', { class: 'graph', width: L.width, height: L.height, viewBox: '0 0 ' + L.width + ' ' + L.height, role: 'group', 'aria-label': 'Task graph: ' + G.headline(view, now) });
-    const pick = (id) => { ui.sel = id; renderGraph(body, a, view); };
-    for (const r of L.rows) {
-      svg.append(sv('line', { class: 'glane', x1: 0, x2: L.width, y1: r.y, y2: r.y }));
-      const hp = L.helpers.find((x) => x.parent === r.id);
-      svg.append(sv('g', { class: 'glabel' + (r.helper ? ' sub' : '') },
-        sv('rect', { x: 6, y: r.y + 8, width: L.opts.labelW - 14, height: 20, rx: 10 }),
-        sv('text', { x: 14, y: r.y + 22 }, uiClipText(r.label, 13))));
-      if (hp) {
-        const toggle = () => { if (ui.collapsed.has(r.id)) ui.collapsed.delete(r.id); else ui.collapsed.add(r.id); renderGraph(body, a, view); };
-        svg.append(sv('text', { class: 'gfold', x: 14, y: r.y + 46, tabindex: 0, role: 'button', 'aria-label': hp.folded ? 'Show the helper lane' : 'Fold the helper lane', onclick: toggle, onkeydown: (e) => { if (e.key === 'Enter') toggle(); } }, hp.folded ? 'show helpers' : 'fold helpers'));
+    const keep = body.scrollTop; const atEnd = body.scrollTop + body.clientHeight >= body.scrollHeight - 60;
+    const all = (view && view.nodes) || [];
+    if (!all.length) { body.replaceChildren(h('div', { class: 'empty' }, 'No steps recorded yet. They appear here as the task works.')); return; }
+    const col = G.collapseLoops(all);
+    const loops = new Map(col.loops.map((l) => [l.to, l]));
+    const lanes = new Map(((view && view.lanes) || []).map((l) => [l.id, l]));
+    // a step before a failure is only a suspect, never named as the cause
+    const suspect = new Set();
+    col.nodes.forEach((n, k) => { if (n.phase !== 'failed') return; for (let m = k - 1; m >= 0; m--) if (col.nodes[m].phase === 'tool' || col.nodes[m].phase === 'working') { suspect.add(col.nodes[m].id); break; } });
+    const bar = h('div', { class: 'gf-strip', role: 'img', 'aria-label': 'The whole trace: one segment per state, as wide as it lasted' },
+      ...G.strip(view, now).map((sg) => { const el = h('i', { class: 'gf-seg ph-' + sg.phase, title: (G.PHASE_LABEL[sg.phase] || sg.phase) + ', ' + G.dur(sg.ms) }); el.style.flexGrow = String(sg.grow); return el; }));
+    const flow = h('div', { class: 'gf-flow' });
+    let lastLane = null;
+    col.nodes.forEach((n, k) => {
+      const lane = n.session || 'run';
+      if (lane !== lastLane) {
+        const meta = lanes.get(lane) || { label: lane, agent: '' };
+        flow.append(h('div', { class: 'gf-lane' }, meta.agent ? harnessChip(meta.agent) : null, h('b', {}, meta.label || lane), k ? h('span', { class: 'faint small' }, 'a new session') : null));
+        lastLane = lane;
       }
-    }
-    for (const e of L.edges) svg.append(sv('path', { class: 'gedge' + (e.cross ? ' cross' : ''), d: e.d }, sv('title', {}, e.reasonLabel || e.reason)));
-    for (const b of L.back) svg.append(sv('g', { class: 'gback' }, sv('path', { d: b.d }, sv('title', {}, 'The same two steps repeated ' + b.count + ' times')), sv('text', { x: b.lx, y: b.ly, 'text-anchor': 'middle' }, b.label)));
-    const sel = ui.sel && nodeById.has(ui.sel) ? ui.sel : L.nodes[L.nodes.length - 1].id;
-    for (const p of L.nodes) {
-      const n = p.node; const open = G.isOpen(n);
-      const needs = n.phase === 'needs-you';
-      const text = p.label + (n.count > 1 && (n.phase === 'tool' || n.phase === 'working') ? ' x' + n.count : '');
-      const g = sv('g', { class: 'gnode ph-' + n.phase + (open ? ' open' : '') + (p.suspected ? ' suspected' : '') + (p.id === sel ? ' sel' : ''), tabindex: 0, role: 'button', 'aria-pressed': String(p.id === sel), 'aria-label': p.label + (open ? ', happening now' : ''),
-        onclick: () => pick(p.id), onkeydown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pick(p.id); } } },
-      sv('title', {}, p.label + (n.summary && n.phase !== 'earlier' ? ': ' + n.summary : '') + (p.suspected ? ' (suspected, not certain)' : '')),
-      needs ? sv('rect', { class: 'gring', x: p.x - 3, y: p.y - 3, width: p.w + 6, height: p.h + 6, rx: p.h / 2 + 3 }) : null,
-      sv('rect', { class: 'gbody', x: p.x, y: p.y, width: p.w, height: p.h, rx: p.h / 2 }),
-      sv('text', { x: p.x + p.w / 2, y: p.y + p.h / 2 + 4, 'text-anchor': 'middle' }, uiClipText(text, 17)));
-      if (needs) {
-        const ms = (open ? now : new Date(n.end).getTime()) - new Date(n.start).getTime();
-        g.append(sv('text', { class: 'gwait', x: p.x + p.w / 2, y: p.y + p.h + 14, 'text-anchor': 'middle' }, (open ? 'waiting ' : 'you took ') + G.dur(Math.max(0, ms))));
-      }
-      svg.append(g);
-    }
-    const wrap = h('div', { class: 'gwrap' }, svg);
+      if (k > 0) flow.append(h('div', { class: 'gf-edge' + (col.nodes[k - 1].session !== n.session ? ' cross' : '') }, h('span', { class: 'gf-edgel' }, G.reasonLabel(n.cause) || '')));
+      const row = h('div', { class: 'gf-row' + (n.phase === 'helper' ? ' helper' : '') }, h('span', { class: 'gf-node ph-' + n.phase + (G.isOpen(n) ? ' open' : '') + (n.phase === 'needs-you' ? ' ring' : '') }), graphStep(n, view, ui, now, a, { suspected: suspect.has(n.id) }));
+      flow.append(row);
+      const lp = loops.get(n.id);
+      if (lp) flow.append(h('div', { class: 'gf-loop' }, h('span', { class: 'gf-loopchip' }, icon('refresh'), 'These two steps repeated ' + lp.count + ' times, shown once')));
+    });
     const legend = h('div', { class: 'glegend', 'aria-label': 'Legend' }, ...GRAPH_LEGEND.map(([k, t]) => h('span', { class: 'gl' }, h('span', { class: 'gsw ph-' + k }), t)), h('span', { class: 'gl' }, h('span', { class: 'gsw dashed' }), 'Suspected, only a hint'));
-    const selNode = nodeById.get(sel);
     body.replaceChildren(
-      h('div', { class: 'ghead' }, h('b', {}, G.headline(view, now)), live ? h('span', { class: 'faint small' }, 'updating live') : null),
-      legend, wrap, graphDetail(Object.assign({ suspected: !!selNode.suspected }, selNode.node), now),
+      h('div', { class: 'ghead' }, h('b', {}, G.headline(view, now)), live ? h('span', { class: 'faint small' }, 'updating live') : null, h('span', { class: 'sp' }), h('button', { type: 'button', class: 'btn small', title: 'Open the graph in a large window', onclick: () => openGraphWindow(a) }, icon('branch'), 'Open the graph')),
+      bar, legend, flow,
       view.mermaid ? h('details', { class: 'gtext' }, h('summary', { class: 'faint small' }, 'Text version of the same trace'), h('pre', { class: 'gpre' }, view.mermaid)) : null,
       h('p', { class: 'faint small' }, view.note || ''));
-    const nw = body.querySelector('.gwrap');
-    if (nw) nw.scrollLeft = atEnd ? nw.scrollWidth : keepLeft;
+    body.scrollTop = atEnd && live ? body.scrollHeight : keep;
+  }
+  // ---- the graph window: a large canvas with every state as a node, and a panel for the one you pick ----
+  function openGraphWindow(a, focusId) {
+    const G = window.CullyGraph;
+    const st = { view: null, sel: focusId || null, scale: 1, tx: 0, ty: 0, L: null, groups: new Map(), moved: false };
+    const canvas = h('div', { class: 'gw-canvas', tabindex: '0', role: 'application', 'aria-label': 'Task graph. Drag to move, scroll to zoom, left and right arrows to step between states, plus and minus to zoom, 0 to fit.' });
+    const panel = h('aside', { class: 'gw-panel', 'aria-live': 'polite' });
+    const headline = h('span', { class: 'faint small' });
+    const liveTag = h('span', { class: 'chip', hidden: true }, 'live');
+    const stripBox = h('div', { class: 'gw-strip' });
+    const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+    const size = () => { const r = canvas.getBoundingClientRect(); return { w: Math.max(200, r.width), h: Math.max(200, r.height) }; };
+    let vp = null;
+    const apply = () => { if (vp) vp.setAttribute('transform', 'translate(' + st.tx.toFixed(1) + ' ' + st.ty.toFixed(1) + ') scale(' + st.scale.toFixed(3) + ')'); canvas.classList.toggle('far', st.scale < 0.6); };
+    const fit = () => { if (!st.L) return; const r = size(); st.scale = clamp(Math.min((r.w - 40) / st.L.width, (r.h - 40) / st.L.height), 0.25, 1.3); st.tx = (r.w - st.L.width * st.scale) / 2; st.ty = (r.h - st.L.height * st.scale) / 2; apply(); };
+    const centerOn = (id) => { const p = st.L && st.L.nodes.find((x) => x.id === id); if (!p) return; const r = size(); st.tx = r.w / 2 - (p.x + p.w / 2) * st.scale; st.ty = r.h / 2 - (p.y + p.h / 2) * st.scale; apply(); };
+    const zoomAt = (f, mx, my) => { const r = size(); mx = mx == null ? r.w / 2 : mx; my = my == null ? r.h / 2 : my; const ns = clamp(st.scale * f, 0.2, 2.5); st.tx = mx - (mx - st.tx) * (ns / st.scale); st.ty = my - (my - st.ty) * (ns / st.scale); st.scale = ns; apply(); };
+    const nodes = () => (st.L ? st.L.nodes : []);
+    const select = (id, center) => {
+      st.sel = id;
+      for (const [k, g] of st.groups) { g.classList.toggle('sel', k === id); g.setAttribute('aria-pressed', String(k === id)); }
+      drawPanel();
+      if (center) centerOn(id);
+    };
+    const step = (d) => { const list = nodes(); if (!list.length) return; const i = list.findIndex((x) => x.id === st.sel); select(list[clamp((i < 0 ? list.length - 1 : i) + d, 0, list.length - 1)].id, true); };
+
+    function drawPanel() {
+      const list = nodes(); const p = list.find((x) => x.id === st.sel);
+      if (!p) { panel.replaceChildren(h('div', { class: 'empty' }, list.length ? 'Pick a state on the graph to see what it did.' : 'No steps recorded yet.')); return; }
+      const n = p.node; const open = G.isOpen(n); const now = Date.now();
+      const ms = Math.max(0, (open ? now : new Date(n.end).getTime()) - new Date(n.start).getTime());
+      const k = list.indexOf(p); const prev = list[k - 1]; const next = list[k + 1];
+      const sum = G.actSummary(n); const acts = n.acts || [];
+      const t0 = new Date(n.start).getTime();
+      const kv = (a1, v) => (v ? h('div', { class: 'gkv' }, h('span', { class: 'faint' }, a1), h('span', {}, v)) : null);
+      const nb = (q, label) => (q ? h('button', { type: 'button', class: 'gw-nb', onclick: () => select(q.id, true) }, h('span', { class: 'gf-node ph-' + q.node.phase }), h('span', {}, label + ': ' + q.label)) : null);
+      panel.replaceChildren(
+        h('div', { class: 'gw-ph' }, h('span', { class: 'pill ph-' + n.phase }, G.PHASE_LABEL[n.phase] || n.phase), open ? h('span', { class: 'chip' }, 'happening now') : null, p.suspected ? h('span', { class: 'chip warn' }, 'suspected, only a hint') : null),
+        h('h3', { class: 'gw-h' }, n.phase === 'tool' && n.tool ? n.tool : p.label),
+        h('div', { class: 'gw-kvs' },
+          kv('How it began', G.reasonLabel(n.cause)),
+          kv('Time', G.dur(ms) + (open ? ' so far' : '')),
+          kv('Started', n.start ? new Date(n.start).toLocaleTimeString() : ''),
+          n.count > 1 ? kv('Repeated', n.count + ' times in a row') : null,
+          n.cost ? kv('Cost', '$' + n.cost.toFixed(2) + ' at list price') : null,
+          n.tokens ? kv('Tokens', fmtTokens(n.tokens)) : null,
+          n.phase === 'needs-you' ? kv('Asked', n.summary || n.tool) : (n.phase === 'tool' ? kv('Call', n.summary) : null),
+          n.phase === 'needs-you' ? kv('You answered', ANSWER_WORDS[n.answer] || (open ? 'Not answered yet' : n.answer || 'No answer recorded')) : null,
+          (n.tags || []).filter((t) => !t.startsWith('tool:')).length ? kv('Tags', (n.tags || []).filter((t) => !t.startsWith('tool:')).join(', ')) : null,
+          n.ended === 'restart' ? kv('Ended', 'The server restarted while this was going') : null),
+        sum.sentence ? h('p', { class: 'gw-sum' }, sum.sentence + '.') : null,
+        acts.length ? h('div', { class: 'gw-sec' }, h('b', {}, 'What it did, and how'), h('span', { class: 'faint small' }, ' ' + (sum.total > sum.shown ? 'latest ' + sum.shown + ' of ' + sum.total : String(sum.total))),
+          h('ol', { class: 'gw-acts' }, ...acts.map((x) => { const off = x.t ? Math.max(0, Math.round((new Date(x.t).getTime() - t0) / 1000)) : null; return h('li', { class: 'gw-act k-' + x.k + (x.ok === 'fail' ? ' bad' : '') },
+            h('span', { class: 'gf-glyph', 'aria-hidden': 'true' }, ACT_GLYPH[x.k] || '-'),
+            h('div', { class: 'gw-actb' },
+              h('div', {}, h('span', { class: 'gw-actk' }, ACT_WORD[x.k] || ''), off != null ? h('span', { class: 'faint small' }, ' +' + (off < 60 ? off + ' s' : Math.floor(off / 60) + ' min ' + (off % 60) + ' s')) : null),
+              h('div', { class: x.k === 'tool' ? 'gw-mono' : '' }, x.l),
+              x.k === 'tool' ? h('div', { class: 'gw-res ' + (x.ok === 'fail' ? 'bad' : x.ok === 'ok' ? 'ok' : '') }, x.ok === 'fail' ? 'Failed' + (x.r ? ': ' + x.r : '') : x.ok === 'ok' ? 'Finished' + (x.r ? ': ' + x.r : '') : 'No result seen yet') : null)); }))) : h('p', { class: 'faint small' }, 'Nothing was recorded inside this state. Cully sees only the events the harness sends, so a quiet stretch can still hide work.'),
+        n.changed ? h('div', { class: 'gw-sec' }, h('b', {}, 'Files'), h('p', { class: 'gf-line' }, n.changed), h('button', { type: 'button', class: 'btn ghost small', onclick: () => { closeGraphWindow(); setTab('changes'); } }, 'Open the Changes tab')) : null,
+        n.phase === 'stuck' ? h('p', { class: 'faint small' }, 'Cully thinks the task was going in circles. That is a guess from repeated calls.') : null,
+        n.phase === 'failed' ? h('p', { class: 'faint small' }, 'The task failed here. From outside, Cully cannot tell what caused it.') : null,
+        n.phase === 'earlier' ? h('p', { class: 'faint small' }, 'Older plain steps were folded into this one to keep the graph short.') : null,
+        h('div', { class: 'gw-sec gw-nbs' }, nb(prev, 'Came from'), nb(next, 'Led to')));
+    }
+
+    function draw() {
+      const view = st.view; const now = Date.now();
+      const all = (view && view.nodes) || [];
+      headline.textContent = G.headline(view, now);
+      liveTag.hidden = !['preparing', 'working', 'waiting'].includes((S.agents.find((x) => x.id === a.id) || a).state);
+      if (!all.length) { st.L = null; canvas.replaceChildren(h('div', { class: 'empty' }, 'No steps recorded yet. They appear here as the task works.')); drawPanel(); return; }
+      const L = G.layout(view, { nodeW: 168, nodeH: 54, gapX: 56, laneH: 112, labelW: 132, pad: 24, loopLift: 36, collapsed: new Set() });
+      st.L = L; st.groups = new Map();
+      const svg = sv('svg', { class: 'gw-svg', width: '100%', height: '100%' });
+      svg.append(sv('defs', {}, sv('marker', { id: 'gw-arrow', viewBox: '0 0 10 10', refX: '9', refY: '5', markerWidth: '7', markerHeight: '7', orient: 'auto-start-reverse' }, sv('path', { d: 'M0 0 L10 5 L0 10 z', class: 'gw-arrowhead' }))));
+      vp = sv('g', { class: 'gw-vp' });
+      svg.append(vp);
+      for (const r of L.rows) {
+        vp.append(sv('rect', { class: 'gw-lanebg' + (r.helper ? ' sub' : ''), x: 0, y: r.y, width: L.width, height: L.opts.laneH, rx: 10 }));
+        vp.append(sv('text', { class: 'gw-lanel', x: 14, y: r.y + 24 }, uiClipText(r.label, 16) + (r.agent ? ', ' + r.agent : '')));
+      }
+      const byId = new Map(L.nodes.map((q) => [q.id, q]));
+      for (const e of L.edges) {
+        const q1 = byId.get(e.from); const q2 = byId.get(e.to);
+        vp.append(sv('path', { class: 'gw-edge' + (e.cross ? ' cross' : ''), d: e.d, 'marker-end': 'url(#gw-arrow)' }, sv('title', {}, e.reasonLabel || e.reason)));
+        if (q1 && q2 && e.reasonLabel) vp.append(sv('text', { class: 'gw-edgel', x: (q1.x + q1.w + q2.x) / 2, y: (q1.y + q2.y + q1.h) / 2 - 8, 'text-anchor': 'middle' }, uiClipText(e.reasonLabel, 24)));
+      }
+      for (const b of L.back) vp.append(sv('g', { class: 'gw-back' }, sv('path', { d: b.d, 'marker-end': 'url(#gw-arrow)' }, sv('title', {}, 'The same two steps repeated ' + b.count + ' times')), sv('text', { x: b.lx, y: b.ly, 'text-anchor': 'middle' }, b.label)));
+      if (!st.sel || !byId.has(st.sel)) st.sel = L.nodes[L.nodes.length - 1].id;
+      for (const q of L.nodes) {
+        const n = q.node; const open = G.isOpen(n); const needs = n.phase === 'needs-you';
+        const ms = Math.max(0, (open ? now : new Date(n.end).getTime()) - new Date(n.start).getTime());
+        const sm = G.actSummary(n);
+        const sub = G.dur(ms) + (sm.tools ? ', ' + sm.tools + (sm.tools === 1 ? ' tool' : ' tools') : '') + (n.count > 1 && !sm.tools ? ', x' + n.count : '');
+        const g = sv('g', { class: 'gw-node ph-' + n.phase + (open ? ' open' : '') + (q.suspected ? ' suspected' : '') + (q.id === st.sel ? ' sel' : ''), tabindex: '0', role: 'button', 'aria-pressed': String(q.id === st.sel), 'aria-label': q.label + ', ' + sub,
+          onclick: () => { if (!st.moved) select(q.id, false); }, onkeydown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); select(q.id, false); } } },
+        sv('title', {}, q.label + (n.summary && n.phase !== 'earlier' ? ': ' + n.summary : '')),
+        needs ? sv('rect', { class: 'gw-ring', x: q.x - 4, y: q.y - 4, width: q.w + 8, height: q.h + 8, rx: 14 }) : null,
+        sv('rect', { class: 'gw-body', x: q.x, y: q.y, width: q.w, height: q.h, rx: 11 }),
+        sv('rect', { class: 'gw-stripe', x: q.x, y: q.y, width: 6, height: q.h, rx: 3 }),
+        sv('text', { class: 'gw-nt', x: q.x + 16, y: q.y + 22 }, uiClipText(q.label, 20)),
+        sv('text', { class: 'gw-ns', x: q.x + 16, y: q.y + 41 }, uiClipText(sub, 24)));
+        st.groups.set(q.id, g);
+        vp.append(g);
+      }
+      canvas.replaceChildren(svg);
+      stripBox.replaceChildren(...G.strip(view, now).map((sg) => { const el = h('button', { type: 'button', class: 'gf-seg ph-' + sg.phase, title: (G.PHASE_LABEL[sg.phase] || sg.phase) + ', ' + G.dur(sg.ms), 'aria-label': 'Go to ' + (G.PHASE_LABEL[sg.phase] || sg.phase), onclick: () => { if (st.groups.has(sg.id)) select(sg.id, true); } }); el.style.flexGrow = String(sg.grow); return el; }));
+      if (!st.fitted) { st.fitted = true; if (L.nodes.length > 6) { st.scale = 1; centerOn(st.sel); } else fit(); } else apply();
+      drawPanel();
+    }
+
+    // drag to move, wheel to zoom
+    let drag = null;
+    canvas.addEventListener('pointerdown', (e) => { if (e.button !== 0) return; drag = { x: e.clientX, y: e.clientY, tx: st.tx, ty: st.ty }; st.moved = false; canvas.setPointerCapture(e.pointerId); canvas.classList.add('grab'); });
+    canvas.addEventListener('pointermove', (e) => { if (!drag) return; const dx = e.clientX - drag.x; const dy = e.clientY - drag.y; if (Math.abs(dx) + Math.abs(dy) > 4) st.moved = true; st.tx = drag.tx + dx; st.ty = drag.ty + dy; apply(); });
+    const endDrag = () => { drag = null; canvas.classList.remove('grab'); setTimeout(() => { st.moved = false; }, 0); };
+    canvas.addEventListener('pointerup', endDrag); canvas.addEventListener('pointercancel', endDrag);
+    canvas.addEventListener('wheel', (e) => { e.preventDefault(); const r = canvas.getBoundingClientRect(); zoomAt(e.deltaY < 0 ? 1.12 : 1 / 1.12, e.clientX - r.left, e.clientY - r.top); }, { passive: false });
+    canvas.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowRight' || e.key === 'ArrowDown') { e.preventDefault(); step(1); }
+      else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') { e.preventDefault(); step(-1); }
+      else if (e.key === '+' || e.key === '=') zoomAt(1.2); else if (e.key === '-') zoomAt(1 / 1.2); else if (e.key === '0') fit();
+    });
+
+    const zbtn = (label, aria, fn) => h('button', { type: 'button', class: 'btn ghost small', 'aria-label': aria, title: aria, onclick: fn }, label);
+    const modal = h('div', { class: 'modal gw-modal', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Task graph' },
+      h('header', { class: 'gw-top' }, h('h2', {}, 'What this task did'), headline, liveTag, h('span', { class: 'sp' }),
+        zbtn('-', 'Zoom out', () => zoomAt(1 / 1.2)), zbtn('+', 'Zoom in', () => zoomAt(1.2)), zbtn('Fit', 'Fit the whole graph', fit),
+        zbtn('Latest', 'Go to the latest state', () => { const l = nodes(); if (l.length) { st.scale = 1; select(l[l.length - 1].id, true); } }),
+        h('button', { class: 'btn ghost small', onclick: closeGraphWindow }, 'Close')),
+      h('div', { class: 'gw-body-wrap' }, h('div', { class: 'gw-main' }, canvas, stripBox, h('p', { class: 'faint small gw-note' }, 'Observed by Cully, not a plan it follows. It cannot see inside the harness, so steps between tool calls are inferred.')), panel));
+    const bg = h('div', { class: 'modal-bg', onclick: (e) => { if (e.target === bg) closeGraphWindow(); } }, modal);
+    $('modal-root').replaceChildren(bg);
+    S.modal = { agent: 'graphwin' };
+    document.removeEventListener('keydown', escClose);
+    document.addEventListener('keydown', escClose);
+    function closeGraphWindow() { closeMCP(); }
+    const load = async () => {
+      try { st.view = await api('/api/agents/' + a.id + '/graph'); } catch (_) { if (!st.view) canvas.replaceChildren(h('div', { class: 'empty' }, 'The graph is not available right now.')); return; }
+      if (!document.body.contains(canvas)) return;
+      draw();
+    };
+    load().then(() => canvas.focus({ preventScroll: true }));
+    const timer = setInterval(() => {
+      if (!document.body.contains(canvas)) { clearInterval(timer); return; }
+      const cur = S.agents.find((x) => x.id === a.id);
+      if (cur && ['preparing', 'working', 'waiting'].includes(cur.state)) load();
+    }, 3000);
   }
   async function drawGraph(a) {
     const body = $('sidebody'); if (!body || sideKindNow() !== 'graph') return;

@@ -2,6 +2,7 @@ package cully
 
 import (
 	"encoding/json"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -134,5 +135,43 @@ func TestAgentGraphHooks(t *testing.T) {
 	want := "preparing:started working:state tool:tool-started working:tool-finished done:finished"
 	if strings.Join(got, " ") != want {
 		t.Fatalf("got %v", got)
+	}
+}
+
+func TestActsLandInTheStateTheyBelongTo(t *testing.T) {
+	g := &uiGraph{}
+	g.loaded = true
+	g.visit(uiPhWorking, nil, "started", uiGraphNote{}, nil)
+	g.act(uiGraphAct{K: "said", L: "Looking at the tests"}, false)
+	g.act(uiGraphAct{K: "tool", L: "Bash: go test ./..."}, false) // seen just before its state opens
+	g.visit(uiPhTool, []string{"tool:Bash"}, "tool-started", uiGraphNote{Tool: "Bash"}, nil)
+	g.act(uiGraphAct{Ok: "fail", R: "2 tests failed"}, true)
+	g.visit(uiPhWorking, nil, "tool-finished", uiGraphNote{}, nil)
+	g.act(uiGraphAct{K: "said", L: "Two tests fail, fixing"}, false)
+	n := g.g.Nodes
+	if len(n) != 3 {
+		t.Fatalf("nodes = %d", len(n))
+	}
+	if len(n[0].Acts) != 1 || n[0].Acts[0].L != "Looking at the tests" {
+		t.Errorf("first state: %+v", n[0].Acts)
+	}
+	if len(n[1].Acts) != 1 || n[1].Acts[0].K != "tool" || n[1].Acts[0].Ok != "fail" || n[1].Acts[0].R != "2 tests failed" {
+		t.Errorf("the tool state should hold the call and how it ended: %+v", n[1].Acts)
+	}
+	if len(n[2].Acts) != 1 || n[2].Acts[0].L != "Two tests fail, fixing" {
+		t.Errorf("last state: %+v", n[2].Acts)
+	}
+}
+
+func TestActsPerStateAreCappedKeepingTheFirstAndTheLatest(t *testing.T) {
+	n := &uiGraphNode{}
+	for i := 0; i < 100; i++ {
+		uiAddActs(n, []uiGraphAct{{K: "said", L: strconv.Itoa(i)}})
+	}
+	if len(n.Acts) != uiGraphActMax || n.ActsN != 100 {
+		t.Fatalf("kept %d of %d", len(n.Acts), n.ActsN)
+	}
+	if n.Acts[0].L != "0" || n.Acts[len(n.Acts)-1].L != "99" || n.Acts[uiGraphActHead-1].L != strconv.Itoa(uiGraphActHead-1) {
+		t.Errorf("first and latest must survive: %v ... %v", n.Acts[0].L, n.Acts[len(n.Acts)-1].L)
 	}
 }
