@@ -22,7 +22,7 @@ func TestUIPhase(t *testing.T) {
 		{"helper", uiPhaseIn{State: uiWaiting, Harness: "reviewing"}, "helper", "Waiting on a helper", []string{"helper"}},
 		{"verifying", uiPhaseIn{State: uiWaiting, Harness: "verifying"}, "checking", "Checking", []string{"tests"}},
 		{"judging", uiPhaseIn{State: uiWorking, Harness: "judging"}, "checking", "Checking", []string{"judge"}},
-		{"steering is working", uiPhaseIn{State: uiWorking, Harness: "steering"}, "working", "Working", []string{"agent"}},
+		{"steering is working", uiPhaseIn{State: uiWorking, Harness: "steering"}, "working", "Working", []string{"agent", "nudge"}},
 		{"stuck", uiPhaseIn{State: uiWorking, Stuck: true, OpenTool: "Bash"}, "stuck", "Stuck", []string{"agent"}},
 		{"done", uiPhaseIn{State: uiDone, Permission: true}, "done", "Done", nil},
 		{"failed", uiPhaseIn{State: uiFailed}, "failed", "Failed", nil},

@@ -479,6 +479,7 @@ type uiAgent struct {
 	stopReason                        string       // why Cully stopped it: cost_limit or turn_limit
 	doneTurns                         int          // turns the harness has finished, for the turn limit
 	perm                              uiPermState  // questions about tools the task is not already allowed to use
+	graph                             uiGraph      // what the task did, as nodes and edges; see ui_graph.go
 
 	mu      sync.Mutex
 	state   string
@@ -591,6 +592,7 @@ func (a *uiAgent) setState(s string) {
 	a.mu.Lock()
 	a.state = s
 	a.mu.Unlock()
+	a.graphSync("state")
 	if a.mgr != nil {
 		a.mgr.saveTask(a) // the task is kept in the database, so it survives a restart
 	}
@@ -688,6 +690,7 @@ func (a *uiAgent) isStopped() bool {
 
 func (a *uiAgent) run(m *uiManager) {
 	defer close(a.done)
+	a.graphSync("started")
 	var prompt string
 	if a.req.resumeID != "" || a.req.inPlaceDir != "" {
 		prompt = a.req.Prompt
@@ -830,6 +833,7 @@ func (a *uiAgent) handleLine(line []byte) {
 		delete(a.openTools, r.ID)
 	}
 	uses := p.Uses
+	toolText := ""
 	if len(p.MCP) > 0 {
 		a.mcp = p.MCP
 		if a.mgr != nil {
@@ -848,6 +852,7 @@ func (a *uiAgent) handleLine(line []byte) {
 		a.add(ev)
 		switch ev.Kind {
 		case "tool":
+			toolText = ev.Text
 			a.watch.call(ev.Tool, ev.Text)
 		case "tool_result":
 			a.watch.result(ev.Failed, ev.Text)
@@ -861,6 +866,11 @@ func (a *uiAgent) handleLine(line []byte) {
 			a.journalToolResult(use, r.Failed)
 		}
 		a.harnessResult(r.ID, r.Failed)
+	}
+	if len(uses) > 0 {
+		a.graphSync("tool-started", toolText)
+	} else if len(p.Results) > 0 {
+		a.graphSync("tool-finished")
 	}
 	if len(p.InitTools) > 0 && a.mgr != nil {
 		a.mgr.rememberInit(p.InitTools, p.InitCommands)
@@ -877,6 +887,7 @@ func (a *uiAgent) handleLine(line []byte) {
 		}
 		if p.Cost > 0 {
 			a.cost = p.Cost
+			a.graph.meter(p.Cost, 0)
 		}
 		if p.Limits != nil {
 			p.Limits.Seen = time.Now().Unix()
@@ -895,6 +906,7 @@ func (a *uiAgent) handleLine(line []byte) {
 		first := a.sessionID == ""
 		a.sessionID = p.SessionID
 		a.mu.Unlock()
+		a.graph.setSession(p.SessionID)
 		if first && a.mgr != nil {
 			a.mgr.saveTask(a)
 		}
@@ -912,6 +924,7 @@ func (a *uiAgent) handleLine(line []byte) {
 	if p.Usage != nil {
 		a.mu.Lock()
 		a.usage = a.usage.add(*p.Usage)
+		a.graph.meter(0, a.usage.Input+a.usage.Output)
 		a.turns++
 		a.mu.Unlock()
 	}
@@ -928,6 +941,7 @@ func (a *uiAgent) handleLine(line []byte) {
 			a.state = uiWaiting
 		}
 		a.mu.Unlock()
+		a.graphSync("turn-ended")
 		if a.mgr != nil {
 			a.mgr.saveTask(a) // a turn ended: keep what the task now looks like
 		}
@@ -988,6 +1002,9 @@ func (a *uiAgent) write(text string) error {
 		}
 	}
 	a.mu.Unlock()
+	if stdin != nil {
+		a.graphSync("user-message")
+	}
 	if a.mgr != nil {
 		a.mgr.saveTask(a)
 	}

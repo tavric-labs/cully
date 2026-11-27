@@ -95,5 +95,8 @@ func uiPhaseOf(in uiPhaseIn, tags *[]string) string {
 		return uiPhNeedsYou
 	}
 	*tags = []string{"agent"}
+	if in.Harness == "steering" {
+		*tags = []string{"agent", "nudge"}
+	}
 	return uiPhWorking
 }
