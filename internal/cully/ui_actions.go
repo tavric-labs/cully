@@ -65,11 +65,41 @@ func AGENTNAME(agent string) string {
 
 // ---- jobs ----
 
+type uiJobRunView struct {
+	Start   time.Time `json:"start"`
+	Seconds int       `json:"seconds"`
+	Status  string    `json:"status"` // ok, failed or timeout
+	Tail    string    `json:"tail,omitempty"`
+	Manual  bool      `json:"manual,omitempty"`
+}
+
 type uiJobView struct {
-	Name    string `json:"name"`
-	After   string `json:"after"`
-	Program string `json:"program"` // the program only; arguments can hold secrets
-	Running bool   `json:"running"`
+	Name     string         `json:"name"`
+	After    string         `json:"after"`
+	Program  string         `json:"program"` // the program only; arguments can hold secrets
+	Folder   string         `json:"folder,omitempty"`
+	Running  bool           `json:"running"`
+	Schedule string         `json:"schedule"` // as set: "", daily, weekdays, hourly, every 2h or in 30m
+	When     string         `json:"when"`     // the schedule in words
+	MaxRuns  int            `json:"maxRuns,omitempty"`
+	Runs     int            `json:"runs"`
+	Paused   bool           `json:"paused"`
+	State    string         `json:"state"` // running, paused, scheduled or done
+	Next     time.Time      `json:"next,omitzero"`
+	Streak   int            `json:"streak"`  // failed runs in a row, newest first
+	History  []uiJobRunView `json:"history"` // the last 20 runs, newest first
+}
+
+func uiJobWhen(j scheduledJob) string {
+	switch kind, _ := jobScheduleKind(j); kind {
+	case jobOnce:
+		return "once, " + j.Schedule
+	case jobInterval:
+		return j.Schedule
+	case jobWeekdays:
+		return "every weekday after " + j.After
+	}
+	return "every day after " + j.After
 }
 
 func uiJobs() []uiJobView {
@@ -79,13 +109,38 @@ func uiJobs() []uiJobView {
 		return out
 	}
 	states := readJobStates()
+	now := jobsNow()
 	for _, j := range jobs {
-		v := uiJobView{Name: j.Name, After: j.After}
+		v := uiJobView{Name: j.Name, After: j.After, Schedule: j.Schedule, When: uiJobWhen(j), MaxRuns: j.MaxRuns, History: []uiJobRunView{}}
 		if len(j.Command) > 0 {
 			v.Program = filepath.Base(j.Command[0])
 		}
-		if st := states[j.Name]; st != nil && st.PID > 0 {
+		if f := uiJobFolderArg(j.Command); f != "" && f != "." {
+			v.Folder = filepath.Base(f)
+		}
+		st := states[j.Name]
+		if st == nil {
+			st = &jobState{}
+		}
+		if st.PID > 0 {
 			v.Running = processAlive(st.PID)
+		}
+		v.Paused, v.Runs = st.Paused, st.Runs
+		runs := jobHistory(j.Name)
+		v.Streak = jobFailureStreak(runs)
+		for _, r := range runs {
+			v.History = append(v.History, uiJobRunView{Start: r.Start, Seconds: int(r.End.Sub(r.Start).Seconds()), Status: r.Status, Tail: r.Tail, Manual: r.Manual})
+		}
+		v.Next = jobNext(j, *st, now)
+		switch due, why := jobDue(j, *st, now); {
+		case v.Running:
+			v.State = "running"
+		case st.Paused:
+			v.State = "paused"
+		case !due && (why == "finished" || why == "run limit reached"):
+			v.State = "done"
+		default:
+			v.State = "scheduled"
 		}
 		out = append(out, v)
 	}

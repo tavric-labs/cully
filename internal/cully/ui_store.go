@@ -153,6 +153,13 @@ func (s *uiStore) logAdd(ns string, v any, keep int) {
 	}
 }
 
+// logDel removes a whole log.
+func (s *uiStore) logDel(ns string) {
+	if s.ok() {
+		_, _ = s.db.Exec(`DELETE FROM log WHERE ns=?`, ns)
+	}
+}
+
 // logAll returns a log, oldest first.
 func (s *uiStore) logAll(ns string) []json.RawMessage {
 	var out []json.RawMessage

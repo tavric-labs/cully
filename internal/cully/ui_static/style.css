@@ -1180,3 +1180,16 @@ details.sgroup > summary { cursor: pointer; } details.sgroup > summary::-webkit-
 .actsum { margin: 0 0 6px; font: 500 var(--t-m) var(--serif); color: var(--ink); }
 .actmain .fsec:first-of-type .section-h { margin-top: 12px; }
 @media (max-width: 860px) { .actwrap { grid-template-columns: 1fr; } .actside { position: static; order: -1; flex-direction: row; flex-wrap: wrap; } .actside .actcard { flex: 1 1 220px; } }
+
+/* Background jobs page */
+.agentcard2.st-paused::before { background: var(--line2); }
+.agentcard2.st-done::before { background: var(--faint); }
+.avatar.st-paused, .avatar.st-done { filter: grayscale(.6); opacity: .85; }
+.ac-state.st-paused, .ac-state.st-done { background: var(--surface2); color: var(--faint); }
+.jsched { gap: 10px 14px; flex-wrap: wrap; align-items: center; }
+.jsched [hidden], .jedit[hidden] { display: none; }
+.jsel, .jnum { border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink); padding: 5px 8px; font: inherit; }
+.jnum { width: 80px; }
+.jedit { display: flex; flex-direction: column; gap: 10px; padding-top: 4px; border-top: 1px solid var(--line); }
+.jtext { width: 100%; min-height: 56px; margin: 8px 0; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: var(--ink); padding: 8px 10px; font: inherit; resize: vertical; }
+.jtail { white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--mono, monospace); font-size: 12px; }

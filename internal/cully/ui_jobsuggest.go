@@ -429,27 +429,14 @@ func (m *uiManager) jobSuggestionAccept(id, after string) (string, error) {
 	return "", errors.New("no such suggestion")
 }
 
-// uiSaveJob adds one job to jobs.json, or with update changes the command and
-// time of the job of that name. It keeps the file private and every other job,
-// and every other setting of the changed one, exactly as written.
-func uiSaveJob(j scheduledJob, update bool) error {
+// uiEditJobsFile loads jobs.json (refusing a file others can write or another user owns), lets fn
+// change the raw job entries, and writes the file back privately and atomically. Every entry and
+// setting fn does not touch stays exactly as written.
+func uiEditJobsFile(fn func(existing []scheduledJob, raw []json.RawMessage) ([]json.RawMessage, error)) error {
 	path := jobsConfigFile()
-	existing, err := loadJobs(path) // refuses a file others can write or another user owns
+	existing, err := loadJobs(path)
 	if err != nil {
 		return err
-	}
-	if _, err := j.normalized(); err != nil {
-		return err
-	}
-	found := false
-	for _, e := range existing {
-		found = found || e.Name == j.Name
-	}
-	if update != found {
-		if update {
-			return errors.New("the job " + j.Name + " is gone, so there is nothing to update")
-		}
-		return errors.New("a job named " + j.Name + " already exists")
 	}
 	var cfg struct {
 		Jobs []json.RawMessage `json:"jobs"`
@@ -459,28 +446,8 @@ func uiSaveJob(j scheduledJob, update bool) error {
 			return err
 		}
 	}
-	if update {
-		for i, r := range cfg.Jobs {
-			var m map[string]json.RawMessage
-			if json.Unmarshal(r, &m) != nil {
-				continue
-			}
-			var n string
-			_ = json.Unmarshal(m["name"], &n)
-			if n != j.Name {
-				continue
-			}
-			m["command"], _ = json.Marshal(j.Command)
-			m["after"], _ = json.Marshal(j.After)
-			cfg.Jobs[i], _ = json.Marshal(m)
-		}
-	} else {
-		entry, _ := json.Marshal(struct {
-			Name    string   `json:"name"`
-			Command []string `json:"command"`
-			After   string   `json:"after"`
-		}{j.Name, j.Command, j.After})
-		cfg.Jobs = append(cfg.Jobs, entry)
+	if cfg.Jobs, err = fn(existing, cfg.Jobs); err != nil {
+		return err
 	}
 	out, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
@@ -505,6 +472,60 @@ func uiSaveJob(j scheduledJob, update bool) error {
 		return err
 	}
 	return os.Rename(tmp.Name(), path)
+}
+
+// uiJobEntryName is the name in one raw job entry.
+func uiJobEntryName(r json.RawMessage) (string, map[string]json.RawMessage) {
+	var m map[string]json.RawMessage
+	if json.Unmarshal(r, &m) != nil {
+		return "", nil
+	}
+	var n string
+	_ = json.Unmarshal(m["name"], &n)
+	return n, m
+}
+
+// uiSaveJob adds one job to jobs.json, or with update changes the command and
+// time of the job of that name. It keeps the file private and every other job,
+// and every other setting of the changed one, exactly as written.
+func uiSaveJob(j scheduledJob, update bool) error {
+	if kind, every := jobScheduleKind(j); kind == jobOnce && j.RunAt.IsZero() {
+		j.RunAt = jobsNow().Add(every).UTC().Truncate(time.Second)
+	}
+	return uiEditJobsFile(func(existing []scheduledJob, raw []json.RawMessage) ([]json.RawMessage, error) {
+		if _, err := j.normalized(); err != nil {
+			return nil, err
+		}
+		found := false
+		for _, e := range existing {
+			found = found || e.Name == j.Name
+		}
+		if update != found {
+			if update {
+				return nil, errors.New("the job " + j.Name + " is gone, so there is nothing to update")
+			}
+			return nil, errors.New("a job named " + j.Name + " already exists")
+		}
+		if update {
+			for i, r := range raw {
+				if n, m := uiJobEntryName(r); m != nil && n == j.Name {
+					m["command"], _ = json.Marshal(j.Command)
+					m["after"], _ = json.Marshal(j.After)
+					raw[i], _ = json.Marshal(m)
+				}
+			}
+			return raw, nil
+		}
+		entry, _ := json.Marshal(struct {
+			Name     string    `json:"name"`
+			Command  []string  `json:"command"`
+			After    string    `json:"after,omitempty"`
+			Schedule string    `json:"schedule,omitempty"`
+			MaxRuns  int       `json:"max_runs,omitempty"`
+			RunAt    time.Time `json:"run_at,omitzero"`
+		}{j.Name, j.Command, j.After, j.Schedule, j.MaxRuns, j.RunAt})
+		return append(raw, entry), nil
+	})
 }
 
 // uiJobSuggestionView is a proposal as the Background jobs page shows it.

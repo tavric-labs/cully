@@ -15,6 +15,8 @@ func jobsHome(t *testing.T) string {
 	t.Helper()
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("CLAUDE_CONFIG_DIR", t.TempDir()) // run history goes to the database here, never the real one
+	t.Cleanup(uiCloseStores)
 	return home
 }
 

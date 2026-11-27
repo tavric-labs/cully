@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -42,6 +43,9 @@ const (
 	jobLogMax              = 1 << 20
 	jobsTick               = 5 * time.Minute
 	jobsFirstDelay         = 2 * time.Minute
+	jobsMaxRuns            = 1000
+	jobHistoryKeep         = 20
+	jobTailMax             = 600
 )
 
 var (
@@ -78,6 +82,13 @@ type scheduledJob struct {
 	TimeoutMinutes int      `json:"timeout_minutes,omitempty"`
 	MaxAttempts    int      `json:"max_attempts,omitempty"`
 	RetryMinutes   int      `json:"retry_minutes,omitempty"`
+	// Schedule is "" or "daily" (once a day after `after`), "weekdays" (the same, not on
+	// Saturday or Sunday), "hourly", "every 15m" to "every 168h", or "in 30m" (one run).
+	Schedule string `json:"schedule,omitempty"`
+	// MaxRuns ends the job after that many scheduled runs; 0 means it never ends.
+	MaxRuns int `json:"max_runs,omitempty"`
+	// RunAt is when a one-shot "in" job runs. Cully sets it when the job is saved.
+	RunAt time.Time `json:"run_at,omitempty"`
 
 	timeoutOverride time.Duration // tests only
 }
@@ -109,8 +120,21 @@ func (j scheduledJob) normalized() (scheduledJob, error) {
 	if prog := cmd[0]; strings.Contains(prog, "/") && !filepath.IsAbs(prog) {
 		return j, fmt.Errorf("command[0] %q must be an absolute path, ~/path, or a bare program name found on PATH; a relative path would depend on where the daemon was started", prog)
 	}
-	if _, err := time.Parse("15:04", j.After); err != nil {
-		return j, fmt.Errorf("after must be a 24-hour local time such as \"22:30\" (got %q)", j.After)
+	kind, _, err := jobSchedule(j.Schedule)
+	if err != nil {
+		return j, err
+	}
+	j.Schedule = strings.ToLower(strings.TrimSpace(j.Schedule))
+	if kind == jobDaily || kind == jobWeekdays || j.After != "" {
+		if _, err := time.Parse("15:04", j.After); err != nil {
+			return j, fmt.Errorf("after must be a 24-hour local time such as \"22:30\" (got %q)", j.After)
+		}
+	}
+	if kind == jobOnce && j.RunAt.IsZero() {
+		return j, errors.New("a one-shot job needs run_at, which Cully sets when it saves the job")
+	}
+	if j.MaxRuns < 0 || j.MaxRuns > jobsMaxRuns {
+		return j, fmt.Errorf("max_runs must be between 1 and %d", jobsMaxRuns)
 	}
 	if j.MinHours < 0 || j.MinHours > jobsMaxMinHours {
 		return j, errors.New("min_hours must be between 0 and 8760")
@@ -208,7 +232,64 @@ func latestSlot(now time.Time, after string) time.Time {
 	return slot
 }
 
+const (
+	jobDaily    = "daily"
+	jobWeekdays = "weekdays"
+	jobInterval = "interval"
+	jobOnce     = "once"
+)
+
+var jobInRe = regexp.MustCompile(`^in ([0-9]{1,3})(m|h)$`)
+
+// jobSchedule reads a job's schedule. The forms are those of an agent ("hourly", "daily",
+// "weekdays", "every 15m" to "every 168h", see uiScheduleInterval) plus "in 30m" (one run, 1 minute
+// to 168 hours from when the job is saved). An empty schedule is "daily", at the `after` time.
+func jobSchedule(s string) (kind string, every time.Duration, err error) {
+	s = strings.ToLower(strings.TrimSpace(s))
+	if m := jobInRe.FindStringSubmatch(s); m != nil {
+		n, _ := strconv.Atoi(m[1])
+		d := time.Duration(n) * time.Minute
+		if m[2] == "h" {
+			d = time.Duration(n) * time.Hour
+		}
+		if d < time.Minute || d > 7*24*time.Hour {
+			return "", 0, errors.New("in must be between 1m and 168h")
+		}
+		return jobOnce, d, nil
+	}
+	switch s {
+	case "", "daily":
+		return jobDaily, 24 * time.Hour, nil
+	case "weekdays":
+		return jobWeekdays, 24 * time.Hour, nil
+	}
+	d, ok := uiScheduleInterval(s)
+	if !ok || d <= 0 {
+		return "", 0, fmt.Errorf("schedule must be daily, weekdays, hourly, every 15m to every 168h, or in 30m (got %q)", s)
+	}
+	return jobInterval, d, nil
+}
+
+// jobScheduleKind is the kind of a job that has already been validated.
+func jobScheduleKind(j scheduledJob) (string, time.Duration) {
+	k, d, _ := jobSchedule(j.Schedule)
+	return k, d
+}
+
+// jobLatestSlot is the latest daily slot, stepping back over a weekend for "weekdays".
+func jobLatestSlot(j scheduledJob, now time.Time) time.Time {
+	slot := latestSlot(now, j.After)
+	if j.Schedule == jobWeekdays {
+		for slot.Weekday() == time.Saturday || slot.Weekday() == time.Sunday {
+			slot = time.Date(slot.Year(), slot.Month(), slot.Day()-1, slot.Hour(), slot.Minute(), 0, 0, slot.Location())
+		}
+	}
+	return slot
+}
+
 type jobState struct {
+	Paused      bool      `json:"paused,omitempty"`
+	Runs        int       `json:"runs,omitempty"` // scheduled runs started, for max_runs
 	FirstSeen   time.Time `json:"first_seen,omitempty"`
 	LastStart   time.Time `json:"last_start,omitempty"`
 	LastEnd     time.Time `json:"last_end,omitempty"`
@@ -221,10 +302,18 @@ type jobState struct {
 	Detail      string    `json:"detail,omitempty"`
 }
 
-// jobDue decides whether to start a job now, and says why not.
+// jobDue decides whether to start a job now, and says why not. A job that is paused, still
+// running, or past its run limit is never due. Whatever the schedule, a long downtime gives one
+// catch-up run, not one per missed time.
 func jobDue(j scheduledJob, st jobState, now time.Time) (bool, string) {
+	if st.Paused {
+		return false, "paused"
+	}
 	if st.Running {
-		return false, "running"
+		return false, "running" // skip this tick; the earlier run is still going
+	}
+	if j.MaxRuns > 0 && st.Runs >= j.MaxRuns {
+		return false, "run limit reached"
 	}
 	// A stored time in the future means the clock was wrong once. Never let it
 	// block a job: ignore a future success, and bound the others to now.
@@ -237,7 +326,48 @@ func jobDue(j scheduledJob, st jobState, now time.Time) (bool, string) {
 	if st.LastEnd.After(now) {
 		st.LastEnd = now
 	}
-	slot := latestSlot(now, j.After)
+	if st.LastStart.After(now) {
+		st.LastStart = now
+	}
+	retryReady := func() (bool, string) {
+		if st.Attempts >= j.MaxAttempts {
+			return false, "attempt limit reached for this slot"
+		}
+		if now.Sub(st.LastEnd) < time.Duration(j.RetryMinutes)*time.Minute {
+			return false, "waiting to retry after a failed attempt"
+		}
+		return true, "due"
+	}
+	kind, every := jobScheduleKind(j)
+	switch kind {
+	case jobOnce:
+		if !st.LastSuccess.IsZero() {
+			return false, "finished"
+		}
+		if now.Before(j.RunAt) {
+			return false, "waiting for its time"
+		}
+		if st.Slot == "once" && st.Attempts > 0 {
+			return retryReady()
+		}
+		return true, "due"
+	case jobInterval:
+		if st.Slot != "" && strings.HasPrefix(st.Slot, "i:") && st.LastExit != 0 && !st.LastEnd.IsZero() && st.Attempts > 0 && st.Attempts < j.MaxAttempts {
+			return retryReady()
+		}
+		anchor := st.LastStart
+		if anchor.IsZero() {
+			anchor = st.FirstSeen
+		}
+		if anchor.IsZero() {
+			return false, "waiting for the daemon to see it"
+		}
+		if now.Sub(anchor) < every {
+			return false, "not yet time for the next run"
+		}
+		return true, "due"
+	}
+	slot := jobLatestSlot(j, now)
 	if st.LastSuccess.IsZero() {
 		if st.FirstSeen.IsZero() || !slot.After(st.FirstSeen) {
 			return false, "waiting for the first slot after it was added"
@@ -259,6 +389,44 @@ func jobDue(j scheduledJob, st jobState, now time.Time) (bool, string) {
 		}
 	}
 	return true, "due"
+}
+
+// jobNext says when a job next runs, for a person: a time, or why it does not.
+func jobNext(j scheduledJob, st jobState, now time.Time) time.Time {
+	if st.Paused || st.Running {
+		return time.Time{}
+	}
+	if j.MaxRuns > 0 && st.Runs >= j.MaxRuns {
+		return time.Time{}
+	}
+	kind, every := jobScheduleKind(j)
+	switch kind {
+	case jobOnce:
+		if !st.LastSuccess.IsZero() {
+			return time.Time{}
+		}
+		return j.RunAt
+	case jobInterval:
+		anchor := st.LastStart
+		if anchor.IsZero() {
+			anchor = st.FirstSeen
+		}
+		if anchor.IsZero() {
+			return time.Time{}
+		}
+		if n := anchor.Add(every); n.After(now) {
+			return n
+		}
+		return now
+	}
+	if due, _ := jobDue(j, st, now); due {
+		return now
+	}
+	next := jobLatestSlot(j, now).AddDate(0, 0, 1)
+	for !next.After(now) || (j.Schedule == jobWeekdays && (next.Weekday() == time.Saturday || next.Weekday() == time.Sunday)) {
+		next = next.AddDate(0, 0, 1)
+	}
+	return next
 }
 
 // ---- state
@@ -422,7 +590,7 @@ func startJob(j scheduledJob, now time.Time, manual bool, tee io.Writer) (<-chan
 		}
 		prog = p
 	}
-	slot := latestSlot(now, j.After).Format(time.RFC3339)
+	kind, _ := jobScheduleKind(j)
 	var claimErr error
 	if err := updateJobState(j.Name, func(s *jobState) {
 		if s.Running && ((s.PID == 0 && now.Sub(s.LastStart) < jobClaimGrace) || pidAlive(s.PID)) {
@@ -431,10 +599,23 @@ func startJob(j scheduledJob, now time.Time, manual bool, tee io.Writer) (<-chan
 		}
 		s.Running, s.PID, s.LastStart, s.Detail = true, 0, now, ""
 		if !manual {
+			var slot string
+			switch kind {
+			case jobOnce:
+				slot = "once"
+			case jobInterval:
+				slot = "i:" + now.Format(time.RFC3339)
+				if strings.HasPrefix(s.Slot, "i:") && s.LastExit != 0 && !s.LastEnd.IsZero() && s.Attempts > 0 && s.Attempts < j.MaxAttempts {
+					slot = s.Slot // a retry of the run that failed
+				}
+			default:
+				slot = jobLatestSlot(j, now).Format(time.RFC3339)
+			}
 			if s.Slot == slot {
 				s.Attempts++
 			} else {
 				s.Slot, s.Attempts = slot, 1
+				s.Runs++
 			}
 		}
 	}); err != nil {
@@ -445,6 +626,7 @@ func startJob(j scheduledJob, now time.Time, manual bool, tee io.Writer) (<-chan
 	}
 	fail := func(err error) (<-chan jobResult, error) {
 		finishJob(j.Name, jobResult{Exit: -1}, err.Error())
+		recordJobRun(j.Name, jobRunRec{Start: now, End: jobsNow(), Status: "failed", Exit: -1, Tail: err.Error(), Manual: manual})
 		return nil, err
 	}
 	if err := os.MkdirAll(jobsRunDir(), 0o700); err != nil {
@@ -457,6 +639,10 @@ func startJob(j scheduledJob, now time.Time, manual bool, tee io.Writer) (<-chan
 	logf, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 	if err != nil {
 		return fail(err)
+	}
+	logFrom := int64(0)
+	if fi, err := logf.Stat(); err == nil {
+		logFrom = fi.Size()
 	}
 	fmt.Fprintf(logf, "--- %s start %s\n", now.Format(time.RFC3339), strings.Join(j.Command, " "))
 	cmd := exec.Command(prog, j.Command[1:]...)
@@ -507,9 +693,103 @@ func startJob(j scheduledJob, now time.Time, manual bool, tee io.Writer) (<-chan
 		}
 		fmt.Fprintf(logf, "--- %s end exit=%d%s\n", jobsNow().Format(time.RFC3339), res.Exit, map[bool]string{true: " (timed out)"}[res.TimedOut])
 		finishJob(j.Name, res, detail)
+		status := "ok"
+		if res.TimedOut {
+			status = "timeout"
+		} else if res.Exit != 0 {
+			status = "failed"
+		}
+		tail := jobLogTail(logPath, logFrom)
+		if tail == "" {
+			tail = detail
+		}
+		recordJobRun(j.Name, jobRunRec{Start: now, End: jobsNow(), Status: status, Exit: res.Exit, Tail: tail, Manual: manual})
 		done <- res
 	}()
 	return done, nil
+}
+
+// ---- run history
+
+// jobRunRec is one run in a job's history, kept in the database: the last jobHistoryKeep per job.
+type jobRunRec struct {
+	Start  time.Time `json:"start"`
+	End    time.Time `json:"end"`
+	Status string    `json:"status"` // ok, failed or timeout
+	Exit   int       `json:"exit"`
+	Tail   string    `json:"tail,omitempty"` // the end of the output, with secrets redacted
+	Manual bool      `json:"manual,omitempty"`
+}
+
+func jobHistoryNS(name string) string { return "jobruns:" + name }
+
+func recordJobRun(name string, r jobRunRec) {
+	uiDB().logAdd(jobHistoryNS(name), r, jobHistoryKeep)
+}
+
+// jobHistory returns a job's runs, newest first.
+func jobHistory(name string) []jobRunRec {
+	var out []jobRunRec
+	raw := uiDB().logAll(jobHistoryNS(name))
+	for i := len(raw) - 1; i >= 0; i-- {
+		var r jobRunRec
+		if json.Unmarshal(raw[i], &r) == nil {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+// jobFailureStreak counts the failed runs in a row, newest first.
+func jobFailureStreak(runs []jobRunRec) int {
+	n := 0
+	for _, r := range runs {
+		if r.Status == "ok" {
+			break
+		}
+		n++
+	}
+	return n
+}
+
+// jobLogTail is the end of what a run wrote to the log from offset from, without the marker lines
+// and with secrets redacted.
+func jobLogTail(path string, from int64) string {
+	f, err := os.Open(path)
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+	fi, err := f.Stat()
+	if err != nil || fi.Size() <= from {
+		return ""
+	}
+	if fi.Size()-from > 8192 {
+		from = fi.Size() - 8192
+	}
+	buf := make([]byte, fi.Size()-from)
+	n, _ := f.ReadAt(buf, from)
+	var keep []string
+	for _, ln := range strings.Split(string(buf[:n]), "\n") {
+		if ln = strings.TrimSpace(ln); ln != "" && !strings.HasPrefix(ln, "--- ") {
+			keep = append(keep, ln)
+		}
+	}
+	out := redactSecrets(strings.ToValidUTF8(strings.Join(keep, "\n"), ""))
+	if r := []rune(out); len(r) > jobTailMax {
+		out = "…" + string(r[len(r)-jobTailMax:])
+	}
+	return out
+}
+
+// setJobPaused pauses or resumes a job without deleting it.
+func setJobPaused(name string, paused bool) error {
+	return updateJobState(name, func(s *jobState) {
+		s.Paused = paused
+		if !paused && s.FirstSeen.IsZero() {
+			s.FirstSeen = jobsNow()
+		}
+	})
 }
 
 // reconcileJobs repairs bookkeeping for jobs this process did not start (a job
@@ -538,6 +818,7 @@ func reconcileJobs(jobs []scheduledJob, now time.Time) {
 		if pidAlive(st.PID) && now.Sub(st.LastStart) <= 2*limit {
 			continue
 		}
+		recordJobRun(name, jobRunRec{Start: st.LastStart, End: now, Status: "failed", Exit: -1, Tail: "lost: the daemon restarted before the job finished"})
 		_ = updateJobState(name, func(s *jobState) {
 			s.Running, s.PID, s.LastEnd, s.LastExit = false, 0, now, -1
 			s.Detail = "lost: the daemon restarted before the job finished"
@@ -681,6 +962,10 @@ func RunJobs(w io.Writer, args []string) error {
 		switch due, why := jobDue(j, *st, now); {
 		case st.Running:
 			next, result = "running", "running"
+		case st.Paused:
+			next = "paused"
+		case why == "run limit reached" || why == "finished":
+			next = why
 		case due:
 			next = "due now"
 		case st.FirstSeen.IsZero():
@@ -689,8 +974,10 @@ func RunJobs(w io.Writer, args []string) error {
 			next = st.LastEnd.Add(time.Duration(j.RetryMinutes)*time.Minute).Format("2006-01-02 15:04") + " (retry)"
 		case strings.HasPrefix(why, "attempt limit"):
 			next = latestSlot(now, j.After).AddDate(0, 0, 1).Format("2006-01-02 15:04") + " (attempt limit reached)"
+		case func() bool { k, _ := jobScheduleKind(j); return k == jobInterval || k == jobOnce }():
+			next = jobNext(j, *st, now).Format("2006-01-02 15:04") + " (" + why + ")"
 		default:
-			slot := latestSlot(now, j.After).AddDate(0, 0, 1)
+			slot := jobLatestSlot(j, now).AddDate(0, 0, 1)
 			if !st.LastSuccess.IsZero() {
 				if m := st.LastSuccess.Add(time.Duration(j.MinHours * float64(time.Hour))); m.After(slot) {
 					slot = latestSlot(m, j.After)
@@ -701,7 +988,11 @@ func RunJobs(w io.Writer, args []string) error {
 			}
 			next = slot.Format("2006-01-02 15:04") + " (" + why + ")"
 		}
-		fmt.Fprintf(w, "%-20s %-8s %-18s %-10s %s\n", j.Name, j.After, last, result, next)
+		when := j.After
+		if j.Schedule != "" && j.Schedule != jobDaily && j.Schedule != jobWeekdays {
+			when = j.Schedule
+		}
+		fmt.Fprintf(w, "%-20s %-8s %-18s %-10s %s\n", j.Name, when, last, result, next)
 	}
 	return nil
 }
