@@ -41,14 +41,20 @@ type uiPolicy struct {
 	Deny    []string        `json:"deny"` // nil means the default block list
 	// McpOnly names the connected MCP servers tasks load. Empty means all of them.
 	McpOnly []string `json:"mcpOnly,omitempty"`
+	// AskRisky: the default blocks (git push, curl, ssh...) become questions on a permission card instead of
+	// refusals. Nil means yes; it is on unless you turn it off.
+	AskRisky *bool `json:"askRisky,omitempty"`
 }
+
+func (p uiPolicy) askRisky() bool { return p.AskRisky == nil || *p.AskRisky }
 
 // uiPolicyInput is what the admin page sends. A nil Deny restores the default block list.
 type uiPolicyInput struct {
-	Presets map[string]bool `json:"presets"`
-	Allow   []string        `json:"allow"`
-	Deny    []string        `json:"deny"`
-	McpOnly []string        `json:"mcpOnly"`
+	Presets  map[string]bool `json:"presets"`
+	Allow    []string        `json:"allow"`
+	Deny     []string        `json:"deny"`
+	McpOnly  []string        `json:"mcpOnly"`
+	AskRisky *bool           `json:"askRisky"`
 }
 
 type uiToolPresetView struct {
@@ -65,6 +71,7 @@ type uiToolsView struct {
 	Allow       []string           `json:"allow"`
 	Deny        []string           `json:"deny"`
 	DefaultDeny []string           `json:"defaultDeny"`
+	AskRisky    bool               `json:"askRisky"` // the default blocks become questions when a task can show a permission card
 	Mcp         struct {
 		Available []string `json:"available"` // servers found in Claude's own config
 		Only      []string `json:"only"`      // the ones tasks load; empty means all
@@ -106,6 +113,13 @@ func (m *uiManager) toolPolicy(plan bool) (allowed, denied string) { return m.to
 // toolPolicyFor is toolPolicy with the tool groups of one named agent in place
 // of the global switches. The block list and extra allowed tools still apply.
 func (m *uiManager) toolPolicyFor(plan bool, groups map[string]bool) (allowed, denied string) {
+	allowed, denied, _ = m.toolPolicyAsk(plan, groups, false)
+	return allowed, denied
+}
+
+// toolPolicyAsk is toolPolicyFor for a task that can show you a permission card. When it can, and "ask me
+// about risky commands" is on, the default blocks are not blocked: they are returned as ask rules.
+func (m *uiManager) toolPolicyAsk(plan bool, groups map[string]bool, canAsk bool) (allowed, denied string, ask []string) {
 	m.policyMu.Lock()
 	defer m.policyMu.Unlock()
 	m.loadPolicyLocked()
@@ -120,11 +134,42 @@ func (m *uiManager) toolPolicyFor(plan bool, groups map[string]bool) (allowed, d
 		}
 	}
 	tools = append(tools, m.policy.Allow...)
-	denied = uiDeniedTools
+	list := uiSplitTools(uiDeniedTools)
 	if m.policy.Deny != nil {
-		denied = strings.Join(m.policy.Deny, ",")
+		list = append([]string{}, m.policy.Deny...)
 	}
-	return strings.Join(uiDedupe(tools), ","), denied
+	if canAsk && m.policy.askRisky() {
+		askable := map[string]bool{}
+		for _, r := range uiAskableTools {
+			askable[r] = true
+		}
+		var keep []string
+		for _, r := range list {
+			if askable[r] {
+				ask = append(ask, r)
+			} else {
+				keep = append(keep, r)
+			}
+		}
+		list = keep
+	}
+	return strings.Join(uiDedupe(tools), ","), strings.Join(list, ","), ask
+}
+
+// uiWriteAskSettings writes the ask rules as a settings file for --settings, private to this task.
+func uiWriteAskSettings(dir string, asks []string) string {
+	if len(asks) == 0 {
+		return ""
+	}
+	b, err := json.Marshal(map[string]any{"permissions": map[string]any{"ask": asks}})
+	if err != nil {
+		return ""
+	}
+	p := filepath.Join(dir, "settings.json")
+	if os.WriteFile(p, b, 0o600) != nil {
+		return ""
+	}
+	return p
 }
 
 func uiDedupe(in []string) []string {
@@ -196,6 +241,7 @@ func (m *uiManager) setToolPolicy(in uiPolicyInput) error {
 		}
 	}
 	next.McpOnly = uiDedupe(in.McpOnly)
+	next.AskRisky = in.AskRisky
 	uiDB().put("settings", "policy", next)
 	m.policyMu.Lock()
 	m.policy, m.policyLoaded = next, true
@@ -208,7 +254,7 @@ func (m *uiManager) toolsView() uiToolsView {
 	m.loadPolicyLocked()
 	p := m.policy
 	m.policyMu.Unlock()
-	v := uiToolsView{Presets: []uiToolPresetView{}, Allow: append([]string{}, p.Allow...), DefaultDeny: uiSplitTools(uiDeniedTools)}
+	v := uiToolsView{Presets: []uiToolPresetView{}, Allow: append([]string{}, p.Allow...), DefaultDeny: uiSplitTools(uiDeniedTools), AskRisky: p.askRisky()}
 	for _, pr := range uiToolPresets {
 		v.Presets = append(v.Presets, uiToolPresetView{ID: pr.ID, Label: pr.Label, Description: pr.Description, Tools: pr.Tools, On: p.presetOn(pr), NotInPlan: pr.NotInPlan})
 	}

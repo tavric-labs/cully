@@ -413,13 +413,15 @@
       helperBox.replaceChildren(h('span', { class: 'opt-label' }, 'Ask these agents to review the finished work'), h('div', { class: 'row' }, ...ok.slice(0, 8).map((x) => { const cb = h('input', Object.assign({ type: 'checkbox', id: 'hp-' + x.id, onchange: (e) => { S.opts.helpers = e.target.checked ? [...S.opts.helpers, x.id].slice(0, 2) : S.opts.helpers.filter((i) => i !== x.id); } }, S.opts.helpers.includes(x.id) ? { checked: true } : {})); return h('label', { class: 'toggle' }, cb, h('span', { class: 'tick' }, icon('check')), x.name); })), h('p', { class: 'faint small' }, 'Up to two. A reviewer is read only; its concerns go back to the task.'));
     }).catch(() => {});
     loopBox.append(helperBox);
+    const limitIn = (key, label, ph, step) => { const i = h('input', { type: 'number', min: '0', step, placeholder: ph, 'aria-label': label, class: 'limitin', value: S.opts[key] || '' }); i.addEventListener('input', () => { S.opts[key] = i.value; }); return h('label', { class: 'limit', title: label + ' (empty means no limit)' }, h('span', { class: 'faint small' }, label), i); };
+    const limits = h('div', { class: 'row limits' }, limitIn('maxCost', 'Stop at $', 'no limit', '0.5'), limitIn('maxTurns', 'or after turns', 'no limit', '1'));
     const loopToggle = toggle('loop', 'Keep going until checked', 'Cully verifies the work, steers the agent when it loops, and judges it against your checks');
     loopToggle.querySelector('input').addEventListener('change', () => { loopBox.hidden = !S.opts.loop; });
     const form = h('form', { class: 'composer-card' }, ta, loopBox,
       h('div', { class: 'row end' },
         h('div', { class: 'row' }, h('span', { class: 'opt-label' }, 'Include'), toggle('context', 'Context', "Start from this project's latest journal and git state"),
           toggle('recall', 'Recall', 'Ask Cully memory what is relevant (needs the Cully MCP signed in)'),
-          toggle('scout', 'Scout', 'Search the web for current practice and pitfalls'), loopToggle, seg, repo),
+          toggle('scout', 'Scout', 'Search the web for current practice and pitfalls'), loopToggle, seg, repo, limits),
         h('div', { class: 'row' }, later, start)), err);
     form.insertBefore(voiceControls(ta, form), err);
     later.addEventListener('click', async () => {
@@ -434,7 +436,7 @@
       e.preventDefault();
       err.hidden = true; start.disabled = true;
       try {
-        const body = { prompt: ta.value, repo: S.opts.repo || (repo ? repo.value : ''), mode: S.opts.mode, context: S.opts.context, recall: S.opts.recall, scout: S.opts.scout, loop: !!S.opts.loop, doneWhen: S.opts.loop ? (S.opts.doneWhen || '') : '', helpers: S.opts.loop ? (S.opts.helpers || []) : [] };
+        const body = { prompt: ta.value, repo: S.opts.repo || (repo ? repo.value : ''), mode: S.opts.mode, context: S.opts.context, recall: S.opts.recall, scout: S.opts.scout, maxCost: Number(S.opts.maxCost) || 0, maxTurns: Math.floor(Number(S.opts.maxTurns)) || 0, loop: !!S.opts.loop, doneWhen: S.opts.loop ? (S.opts.doneWhen || '') : '', helpers: S.opts.loop ? (S.opts.helpers || []) : [] };
         const view = await api('/api/agents', { method: 'POST', body: JSON.stringify(body) });
         S.draft = '';
         await refresh();
@@ -615,6 +617,7 @@
         item('Model', h('p', {}, a.context && a.context.model ? a.context.model : r.model)),
         item('Permission mode', h('p', {}, r.permission === 'plan' ? 'Plan only: it can read and plan but not change files.' : 'It may edit files without asking; it cannot ask a person for anything else, so what is not allowed below is refused.')),
         item('Tools it may use', chips(r.groups)),
+        (r.asks || []).length ? item('Asks you first', chips(r.asks, 'warn')) : null,
         item('Always blocked', chips(r.blocked, 'warn')),
         item('Connected servers', h('div', {}, h('p', {}, r.mcpMode === 'chosen' ? 'Limited to the servers you chose: ' + r.mcpChosen.join(', ') + '. Fewer servers means fewer tokens every turn.' : 'All of the servers connected to your harness. Limit them on the Harness permissions page to save tokens.'), servers)),
         item('Where it works', h('p', {}, r.isolation === 'worktree' ? 'In its own git worktree on branch ' + a.branch + ', so your checkout is untouched.' : 'Directly in the folder, not in a separate branch.' + (r.resume ? ' ' + r.resume + '.' : ''))),
@@ -639,13 +642,13 @@
     box.dataset.sig = sig;
     const answer = async (p, decision) => { try { await api('/api/agents/' + a.id + '/permissions/' + p.id, { method: 'POST', body: JSON.stringify({ decision, hash: p.hash }) }); await refresh(); } catch (e) { toast(e.message, true); } };
     box.replaceChildren(...list.map((p) => h('section', { class: 'permcard', role: 'alertdialog', 'aria-label': 'The task asks to use ' + p.tool },
-      h('div', { class: 'row' }, icon('lock'), h('b', {}, 'The task asks to use ' + p.tool), h('span', { class: 'faint small' }, 'waiting for you since ' + clockTime(p.at))),
+      h('div', { class: 'row' }, icon('lock'), h('b', {}, 'The task asks to use ' + p.tool), h('span', { class: 'chip risk-' + p.risk, title: 'Worked out from the call by fixed rules, not by a model' }, ({ low: 'Low risk', medium: 'Medium risk', high: 'High risk' })[p.risk] || p.risk), h('span', { class: 'faint small' }, p.riskWhy ? p.riskWhy + '. Waiting since ' + clockTime(p.at) : 'waiting for you since ' + clockTime(p.at))),
       p.summary ? h('pre', { class: 'permcmd' }, p.summary) : null,
       h('p', { class: 'faint small' }, 'Everything it sent, in full. What you allow is exactly this:'),
       h('pre', { class: 'permcmd' }, p.input),
       h('div', { class: 'row' },
         h('button', { class: 'btn small', onclick: () => answer(p, 'allow') }, icon('check'), 'Allow once'),
-        h('button', { class: 'btn ghost small', title: 'Allow this exact call again without asking, for the rest of this task', onclick: () => answer(p, 'allow_always') }, 'Allow for this task'),
+        p.risk === 'high' ? null : h('button', { class: 'btn ghost small', title: 'Allow this exact call again without asking, for the rest of this task', onclick: () => answer(p, 'allow_always') }, 'Allow for this task'),
         h('button', { class: 'btn ghost small', onclick: () => answer(p, 'deny') }, 'Deny')))));
   }
   document.addEventListener('click', (e) => { for (const d of document.querySelectorAll('details.menu[open]')) if (!d.contains(e.target)) d.open = false; });
@@ -901,6 +904,12 @@
     const secs = Math.max(0, Math.floor((Date.now() - new Date(a.updated || a.created).getTime()) / 1000));
     const now = f.plan && f.plan.find((x) => x.s === 'in_progress');
     const what = asking ? 'Needs your answer: allow or deny the request below' : live ? (f.running ? 'Running ' + f.running : now ? now.c : a.state === 'preparing' ? 'Gathering context' : 'Thinking') : 'Your turn: reply below or pick a suggestion';
+    if (a.stuck && !asking) {
+      el.className = 'activity stuck';
+      el.replaceChildren(h('span', { class: 'adot' }), h('span', { class: 'awhat' }, 'Looks stuck: ' + a.stuck.label.toLowerCase() + '. ' + a.stuck.detail),
+        h('button', { class: 'btn small', title: 'Tell the task it is going in circles and ask it to try another way', onclick: () => sendMessage(a.id, 'You seem to be stuck: ' + a.stuck.detail + ' Stop repeating it, say what is blocking you, and try a different approach.') }, 'Nudge'));
+      return;
+    }
     el.replaceChildren(h('span', { class: 'adot' }), h('span', { class: 'awhat' }, uiClipText(what, 120)), live ? h('span', { class: 'faint small' }, secs < 5 ? 'just now' : secs + 's since the last update') : null);
   }
   const uiClipText = (t, n) => (t.length > n ? t.slice(0, n) + '…' : t);
@@ -1004,6 +1013,8 @@
         a.option ? h('span', { class: 'chip' }, 'Option ' + a.option) : null,
         a.token ? h('span', { class: 'chip' }, 'token ' + a.token) : null,
         files.length ? h('span', { class: 'chip', title: files.slice(0, 8).join('\n') }, files.length + (files.length === 1 ? ' file changed' : ' files changed')) : null,
+        a.stuck ? h('span', { class: 'chip warn', title: a.stuck.detail }, icon('alert'), 'Stuck: ' + a.stuck.label.toLowerCase()) : null,
+        a.stopReason ? h('span', { class: 'chip warn' }, icon('stop'), a.stopReason === 'cost_limit' ? 'Stopped at the cost limit' : 'Stopped at the turn limit') : null,
         advice ? h('span', { class: 'chip warn' }, icon('spark'), advice + (advice === 1 ? ' piece of advice' : ' pieces of advice')) : null,
         clash.length ? h('span', { class: 'chip warn', title: clash.map((o) => o.file).join('\n') }, icon('alert'), 'Clashes with ' + joinNames([...others].map((id) => (S.agents.find((x) => x.id === id) || {}).title || id))) : null),
       actions.length ? h('div', { class: 'row bactions' }, ...actions) : null);
@@ -1102,7 +1113,7 @@
     let queue = [];
     try { queue = await api('/api/queue'); } catch (_) { /* optional */ }
     const prefs = boardPrefs();
-    const sigOf = JSON.stringify([S.agents.map((a) => [a.id, a.state, a.last, (a.files || []).length, a.updated, a.context && a.context.percent, a.group, a.option, a.usage && a.usage.tokens, a.harness && a.harness.status]), queue.map((x) => x.id), S.overlaps, prefs, S.finishedAll]);
+    const sigOf = JSON.stringify([S.agents.map((a) => [a.id, a.state, a.stuck && a.stuck.kind, a.stopReason, a.last, (a.files || []).length, a.updated, a.context && a.context.percent, a.group, a.option, a.usage && a.usage.tokens, a.harness && a.harness.status]), queue.map((x) => x.id), S.overlaps, prefs, S.finishedAll]);
     const box = $('board');
     if (S.boardSig === sigOf && box.childElementCount) { refreshRunning(); return; }
     S.boardSig = sigOf;
@@ -1690,6 +1701,15 @@
       body.append(card('The three harnesses side by side', 'Tasks run in ' + AGENT_LABEL[tasksAgent] + '. Sessions, the library and the advisor cover all three.',
         h('table', { class: 'ptable cmp' }, h('thead', {}, h('tr', {}, h('th', {}, ''), ...['claude', 'codex', 'cursor'].map((a) => h('th', { class: a === agent ? 'on' : '' }, AGENT_LABEL[a], infos[a].installed ? '' : ' (not found)')))),
           h('tbody', {}, ...rows.map(([label, f]) => h('tr', {}, h('td', { class: 'faint' }, label), ...['claude', 'codex', 'cursor'].map((a) => h('td', { class: a === agent ? 'on' : '' }, cell(a, f)))))))));
+      // What Cully can do with each harness, and a warning when the installed Claude Code has dropped a flag Cully relies on.
+      try {
+        const cv = await api('/api/harness/capabilities');
+        const mark = (v) => h('span', { class: 'cap cap-' + v, title: v === 'yes' ? 'Supported' : v === 'partial' ? 'Partly' : 'Not available' }, v === 'yes' ? 'Yes' : v === 'partial' ? 'Partly' : 'No');
+        body.append(card('What Cully can do with each harness', 'Each feature works through what the harness offers, so it is checked against the installed program, not assumed.',
+          cv.missing.length ? h('div', { class: 'ctxnote' }, icon('alert'), h('div', {}, h('b', {}, 'Your Claude Code is missing ' + (cv.missing.length === 1 ? 'a flag' : cv.missing.length + ' flags') + ' Cully relies on'), h('div', { class: 'faint small' }, cv.missing.join('; ') + '. The features that need them are switched off until it is updated.'))) : (cv.flagsChecked ? h('p', { class: 'faint small' }, 'Every flag Cully uses is present in this Claude Code' + (cv.version ? ' (' + cv.version + ')' : '') + '.') : null),
+          h('table', { class: 'ptable cmp' }, h('thead', {}, h('tr', {}, h('th', {}, 'Feature'), ...['claude', 'codex', 'cursor'].map((a) => h('th', {}, AGENT_LABEL[a])), h('th', {}, ''))),
+            h('tbody', {}, ...cv.capabilities.map((c) => h('tr', {}, h('td', {}, h('b', {}, c.label), h('div', { class: 'faint small' }, c.why)), h('td', {}, mark(c.claude)), h('td', {}, mark(c.codex)), h('td', {}, mark(c.cursor)), h('td', { class: 'faint small' }, c.note || '')))))));
+      } catch (_) { /* optional */ }
       body.append(card(info.name + (info.installed ? ' ' + info.version : ''), info.tasksUseIt ? 'Every task Cully starts runs in this harness: it carries out the work, uses the servers and skills below, and obeys the permissions.' : 'Cully reads this harness\'s setup so you can compare it with the others. Tasks started here run in ' + AGENT_LABEL[tasksAgent] + '.',
         h('div', { class: 'btiles' }, tile(info.model || 'Default', 'Model'), tile(info.mode || 'Not set', 'Its permission mode'), tile(info.allow + ' / ' + info.deny, 'Allow and deny rules'), tile(String(info.mcp.length), 'Connected servers'), tile(String(info.skills.length), 'Skills'), tile(String(info.hooks.length), 'Hook events'), tile(String(info.plugins.length), 'Plugins'), tile(String(info.commands.length), 'Commands')),
         h('div', { class: 'row' }, ...info.instructions.map((x) => h('span', { class: 'chip mono' }, x))), ...info.notes.map((n) => h('p', { class: 'faint small' }, n))));
@@ -1710,7 +1730,7 @@
         for (const c of body.querySelectorAll('.srow')) c.classList.toggle('off', chosen.size > 0 && !chosen.has(c.dataset.name) && !c.querySelector('.sdot.connector'));
       };
       bar.append(h('span', {}, 'You have unsaved changes.'), h('button', { class: 'btn', onclick: async () => {
-        try { await api('/api/admin/tools', { method: 'PUT', body: JSON.stringify({ presets: Object.fromEntries(tools.presets.map((p) => [p.id, p.on])), allow: tools.allow, deny: tools.deny, mcpOnly: [...chosen] }) }); toast('Saved. New tasks load ' + (chosen.size ? chosen.size + ' servers' : 'all servers') + '.'); renderHarness(); } catch (e) { toast(e.message, true); }
+        try { await api('/api/admin/tools', { method: 'PUT', body: JSON.stringify({ presets: Object.fromEntries(tools.presets.map((p) => [p.id, p.on])), allow: tools.allow, deny: tools.deny, mcpOnly: [...chosen], askRisky: tools.askRisky }) }); toast('Saved. New tasks load ' + (chosen.size ? chosen.size + ' servers' : 'all servers') + '.'); renderHarness(); } catch (e) { toast(e.message, true); }
       } }, icon('check'), 'Save'), h('button', { class: 'btn ghost', onclick: () => renderHarness() }, 'Discard'));
       const order = { auth: 0, bad: 1, ok: 2, unchecked: 3 };
       const own = info.mcp.filter((m) => m.kind !== 'connector'); const conns = info.mcp.filter((m) => m.kind === 'connector');
@@ -1784,7 +1804,7 @@
         const managed = new Set(cur.keys());
         const allow = [...pol.allow.filter((r) => !managed.has(r)), ...[...cur].filter(([, v]) => v === 'allow').map(([id]) => id)];
         const deny = [...pol.deny.filter((r) => !managed.has(r)), ...[...cur].filter(([, v]) => v === 'block').map(([id]) => id)];
-        try { await api('/api/admin/tools', { method: 'PUT', body: JSON.stringify({ presets: Object.fromEntries(pol.presets.map((p) => [p.id, p.on])), allow, deny, mcpOnly: pol.mcp.only }) }); toast('Saved. New tasks use these settings.'); renderHarness(); } catch (e) { toast(e.message, true); }
+        try { await api('/api/admin/tools', { method: 'PUT', body: JSON.stringify({ presets: Object.fromEntries(pol.presets.map((p) => [p.id, p.on])), allow, deny, mcpOnly: pol.mcp.only, askRisky: pol.askRisky }) }); toast('Saved. New tasks use these settings.'); renderHarness(); } catch (e) { toast(e.message, true); }
       };
       const setOne = (id, v) => { cur.set(id, v); drawTiles(); };
       const seg = (id) => { const row = h('div', { class: 'seg acc', role: 'group', 'aria-label': 'Access' });
@@ -1914,11 +1934,11 @@
   async function renderPermissions(out, head) {
     const v = await api('/api/admin/tools');
     const tv = await api('/api/harness/tools?agent=claude').catch(() => ({ servers: [] }));
-    const state = { presets: Object.fromEntries(v.presets.map((p) => [p.id, p.on])), allow: [...v.allow], deny: [...v.deny], mcp: [...v.mcp.only] };
+    const state = { presets: Object.fromEntries(v.presets.map((p) => [p.id, p.on])), allow: [...v.allow], deny: [...v.deny], mcp: [...v.mcp.only], askRisky: v.askRisky !== false };
     const orig = JSON.stringify(state);
     const bar = h('div', { class: 'savebar', hidden: true });
     const save = async () => {
-      try { await api('/api/admin/tools', { method: 'PUT', body: JSON.stringify({ presets: state.presets, allow: state.allow, deny: state.deny, mcpOnly: state.mcp }) }); toast('Saved. New tasks use these settings.'); renderPermissions(out, head); } catch (e) { toast(e.message, true); }
+      try { await api('/api/admin/tools', { method: 'PUT', body: JSON.stringify({ presets: state.presets, allow: state.allow, deny: state.deny, mcpOnly: state.mcp, askRisky: state.askRisky }) }); toast('Saved. New tasks use these settings.'); renderPermissions(out, head); } catch (e) { toast(e.message, true); }
     };
     const summary = h('div', { class: 'permsum' });
     const touch = () => {
@@ -1965,11 +1985,16 @@
     out.replaceChildren(head(),
       h('p', { class: 'faint' }, 'Tasks Cully starts run on their own. A task may use what is allowed here without asking. For anything else it stops, and a card in its window shows exactly what it wants to do so you can allow or deny it. What is blocked here is never offered at all.'),
       summary,
+      (() => {
+        const sw = h('button', { type: 'button', class: 'switch', role: 'switch', 'aria-checked': String(state.askRisky), 'aria-label': 'Ask me about risky commands', onclick: () => { state.askRisky = !state.askRisky; sw.setAttribute('aria-checked', String(state.askRisky)); touch(); } }, h('span', { class: 'knob' }));
+        return h('section', { class: 'group askcard' }, h('div', { class: 'row' }, h('b', {}, 'Ask me about risky commands'), h('span', { class: 'sp' }), sw),
+          h('p', { class: 'faint small' }, 'On (recommended): a command such as git push, curl, ssh or kubectl stops the task and a card in its window shows exactly what it wants to do, with a risk label. You allow it once, or deny it. Off: those are blocked outright and the task is told no. A high-risk call is only ever allowed one at a time.'));
+      })(),
       h('section', { class: 'group' }, h('header', {}, h('span', { class: 'gt' }, 'What a task may do on its own')), cards),
       h('section', { class: 'group' }, h('header', {}, h('span', { class: 'gt' }, 'Allowed without asking'), h('a', { class: 'linkbtn sp', href: '#/harness/tools' }, 'Choose connected tools one by one')),
         h('p', { class: 'faint small' }, 'Extra things a task may use freely, such as one kind of command. For the tools of a connected server, the Tools page lets you pick Ask, Allow or Block for each.'), chipList('allowed', state.allow, 'Bash(go test:*)', allowSug)),
       h('section', { class: 'group' }, h('header', {}, h('span', { class: 'gt' }, 'Never allowed'), h('button', { class: 'linkbtn sp', onclick: () => { state.deny = [...v.defaultDeny]; drawDeny(); touch(); } }, 'Reset to defaults')),
-        h('p', { class: 'faint small' }, 'Blocked even when allowed above. The defaults stop a task from pushing code or sending data out.'), denyBox),
+        h('p', { class: 'faint small' }, 'Blocked even when allowed above, and never asked about. While "Ask me about risky commands" is on, the default entries (git push, curl, wget, ssh, scp, nc, kubectl) ask instead; anything else you add here is blocked outright.'), denyBox),
       bar);
     touch();
   }

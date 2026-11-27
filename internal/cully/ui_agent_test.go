@@ -70,6 +70,18 @@ func uiNewTestRepo(t *testing.T) string {
 func uiTestManager(t *testing.T, bin string, tokens ...string) (*uiManager, string, string) {
 	t.Helper()
 	repo := uiNewTestRepo(t)
+	// The real claude's help is not read in tests: an unreadable help means every flag is assumed present.
+	savedHelp := uiClaudeHelp
+	uiClaudeHelp = func() string { return "" }
+	uiFlagsMu.Lock()
+	uiFlagsAt = time.Time{}
+	uiFlagsMu.Unlock()
+	t.Cleanup(func() {
+		uiClaudeHelp = savedHelp
+		uiFlagsMu.Lock()
+		uiFlagsAt = time.Time{}
+		uiFlagsMu.Unlock()
+	})
 	out := t.TempDir()
 	t.Setenv("FAKE_OUT", out)
 	body := ""
@@ -425,7 +437,7 @@ func TestEveryTaskRecordsHowItsHarnessWasSetUp(t *testing.T) {
 		}
 		return false
 	}
-	if !has(r.Allowed, "Read") || !has(r.Blocked, "Bash(git push:*)") || !has(r.Groups, "Read files") || !has(r.Brief, "The project's journal and git state") {
+	if !has(r.Allowed, "Read") || !has(r.Asks, "Bash(git push:*)") || has(r.Blocked, "Bash(git push:*)") || !has(r.Groups, "Read files") || !has(r.Brief, "The project's journal and git state") {
 		t.Fatalf("run = %+v", r)
 	}
 	if !r.Loop || !r.DoneWhen || r.MaxRounds != 2 || r.ToolBudget != uiHarnessToolBudget || len(r.LoopChecks) < 4 {

@@ -51,6 +51,8 @@ type uiPermission struct {
 	At      time.Time       `json:"at"`
 	Status  string          `json:"status"` // pending, allowed, allowed-always, denied or expired
 	Hash    string          `json:"-"`      // of the exact input shown; an allow must name it
+	Risk    string          `json:"risk"`   // low, medium or high, from fixed rules
+	RiskWhy string          `json:"riskWhy"`
 	decide  chan string
 }
 
@@ -62,6 +64,8 @@ type uiPermView struct {
 	At      time.Time `json:"at"`
 	Status  string    `json:"status"`
 	Hash    string    `json:"hash"` // the answer must quote this, so it is about exactly what was shown
+	Risk    string    `json:"risk"`
+	RiskWhy string    `json:"riskWhy"`
 }
 
 type uiPermState struct {
@@ -113,7 +117,7 @@ func uiPermSummary(tool string, input json.RawMessage) string {
 func (a *uiAgent) permView(p *uiPermission) uiPermView {
 	// The whole input is shown, never a clipped or chosen part of it: a request too long to show, or
 	// one that holds a secret the page would have to hide, is refused before it gets here.
-	return uiPermView{ID: p.ID, Tool: p.Tool, Input: prettyJSON(p.Input), Summary: p.Summary, At: p.At, Status: p.Status, Hash: p.Hash}
+	return uiPermView{ID: p.ID, Tool: p.Tool, Input: prettyJSON(p.Input), Summary: p.Summary, At: p.At, Status: p.Status, Hash: p.Hash, Risk: p.Risk, RiskWhy: p.RiskWhy}
 }
 
 func prettyJSON(raw json.RawMessage) string {
@@ -265,7 +269,8 @@ func (a *uiAgent) answerPermission(c net.Conn) {
 		reply("allow")
 		return
 	}
-	p := &uiPermission{ID: uiNewID(), Tool: ask.ToolName, Input: ask.Input, Summary: uiPermSummary(ask.ToolName, ask.Input), At: time.Now().UTC(), Status: "pending", Hash: hex.EncodeToString(sum[:]), decide: make(chan string, 1)}
+	risk, why := uiToolRisk(ask.ToolName, ask.Input, a.worktree)
+	p := &uiPermission{Risk: risk, RiskWhy: why, ID: uiNewID(), Tool: ask.ToolName, Input: ask.Input, Summary: uiPermSummary(ask.ToolName, ask.Input), At: time.Now().UTC(), Status: "pending", Hash: hex.EncodeToString(sum[:]), decide: make(chan string, 1)}
 	a.perm.list = append(a.perm.list, p)
 	if len(a.perm.list) > uiPermKeep {
 		a.perm.list = a.perm.list[len(a.perm.list)-uiPermKeep:]
@@ -314,6 +319,9 @@ func (a *uiAgent) decidePermission(id, decision, hash string) error {
 		if p.ID == id {
 			if p.Status != "pending" {
 				return errors.New("that question was already answered")
+			}
+			if decision == "allow_always" && p.Risk == uiRiskHigh {
+				return errors.New("a high-risk call is allowed one at a time, never for the rest of the task")
 			}
 			if decision != "deny" && hash != p.Hash {
 				return errors.New("what you were shown does not match what the task asked; reload and look again")

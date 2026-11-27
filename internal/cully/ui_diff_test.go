@@ -78,8 +78,9 @@ func TestDiffSkipsLargeUntrackedFileContent(t *testing.T) {
 	}
 }
 
-func TestAgentsLaunchWithOutboundCommandsDenied(t *testing.T) {
+func TestAgentsLaunchWithOutboundCommandsAskingAndBlockedWithoutTheCard(t *testing.T) {
 	m, repo, out := uiTestManager(t, uiWriteScript(t, fakeClaude), "tok-aaa1")
+	// With the permission card (the default), outbound commands are questions in the task's own settings.
 	a, _ := m.start(uiStartRequest{Repo: repo, Prompt: "go"})
 	uiWaitState(t, a, "waiting")
 	b, _ := os.ReadFile(filepath.Join(out, "args.log"))
@@ -88,9 +89,23 @@ func TestAgentsLaunchWithOutboundCommandsDenied(t *testing.T) {
 	if i < 0 {
 		t.Fatalf("no --disallowedTools in %q", args)
 	}
+	if strings.Contains(args[i:i+60], "git push") {
+		t.Fatalf("git push is still a block when the task can ask: %q", args)
+	}
+	// Without the card they are blocks, exactly as before.
+	off := false
+	if err := m.setToolPolicy(uiPolicyInput{Presets: map[string]bool{}, AskRisky: &off}); err != nil {
+		t.Fatal(err)
+	}
+	_ = os.Remove(filepath.Join(out, "args.log"))
+	c, _ := m.start(uiStartRequest{Repo: repo, Prompt: "go again"})
+	uiWaitState(t, c, "waiting")
+	b, _ = os.ReadFile(filepath.Join(out, "args.log"))
+	args = string(b)
+	i = strings.Index(args, "--disallowedTools ")
 	for _, want := range []string{"Bash(git push:*)", "Bash(curl:*)", "Bash(wget:*)", "Bash(ssh:*)"} {
-		if !strings.Contains(args[i:], want) {
-			t.Fatalf("%s not denied: %q", want, args)
+		if i < 0 || !strings.Contains(args[i:], want) {
+			t.Fatalf("%s not denied with the switch off: %q", want, args)
 		}
 	}
 }

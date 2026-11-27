@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -39,6 +40,12 @@ const (
 )
 
 const uiDeniedTools = "Bash(git push:*),Bash(curl:*),Bash(wget:*),Bash(ssh:*),Bash(scp:*),Bash(nc:*),Bash(kubectl:*)"
+
+// uiAskableTools are the default blocks that become questions when the task can ask you (the permission
+// card) and "Ask me about risky commands" is on, which it is by default. Claude lets a rule say "ask"
+// as well as "allow" or "deny", and an ask rule wins over a broad allow such as Bash, so these stop and
+// ask even when commands are allowed in general. Without the card they stay blocked.
+var uiAskableTools = uiSplitTools(uiDeniedTools)
 
 var (
 	uiModelName = regexp.MustCompile(`^[A-Za-z0-9._\[\]-]{1,64}$`)
@@ -85,6 +92,8 @@ type uiStartRequest struct {
 	rules        string
 	Loop         bool            `json:"loop"`     // keep going until the agent has checked its work
 	DoneWhen     string          `json:"doneWhen"` // checks that say the task is done, one per line
+	MaxCost      float64         `json:"maxCost"`  // stop the task when its list-price cost reaches this many dollars; 0 means no limit
+	MaxTurns     int             `json:"maxTurns"` // stop it after this many turns; 0 means no limit
 	MaxRounds    int             `json:"maxRounds"`
 	Helpers      []string        `json:"helpers"` // named agents the loop asks to review the finished work
 	identityName string          // the named agent this run is for
@@ -132,8 +141,12 @@ type uiAgentView struct {
 	Limits      *uiLimits      `json:"limits,omitempty"`      // the account's five-hour and seven-day limits
 	Run         *uiRunInfo     `json:"run,omitempty"`         // how the harness underneath was set up for this task
 	Permissions []uiPermView   `json:"permissions,omitempty"` // tool uses waiting for your answer
-	Group       string         `json:"group,omitempty"`       // fan-out: options of one task share it
-	Option      string         `json:"option,omitempty"`      // fan-out: "A", "B", ...
+	Stuck       *uiStuck       `json:"stuck,omitempty"`       // the task is going in circles
+	StopReason  string         `json:"stopReason,omitempty"`  // cost_limit or turn_limit: Cully stopped it at the limit you set
+	MaxCost     float64        `json:"maxCost,omitempty"`
+	MaxTurns    int            `json:"maxTurns,omitempty"`
+	Group       string         `json:"group,omitempty"`  // fan-out: options of one task share it
+	Option      string         `json:"option,omitempty"` // fan-out: "A", "B", ...
 }
 
 type uiManager struct {
@@ -338,6 +351,9 @@ func (m *uiManager) start(req uiStartRequest) (*uiAgent, error) {
 	if req.Mode != "" && req.Mode != "edit" && req.Mode != "plan" {
 		return nil, errors.New(`mode must be "edit" or "plan"`)
 	}
+	if req.MaxCost < 0 || req.MaxCost > 10000 || req.MaxTurns < 0 || req.MaxTurns > 10000 {
+		return nil, errors.New("the cost limit must be 0 to 10000 dollars and the turn limit 0 to 10000 turns (0 means no limit)")
+	}
 	if req.Model != "" && !uiModelName.MatchString(req.Model) {
 		return nil, errors.New("invalid model name")
 	}
@@ -453,9 +469,12 @@ type uiAgent struct {
 	created                           time.Time
 	tokens                            *uiTokenPool
 	done                              chan struct{}
-	sessionID                         string      // the harness session this run is, once it has said
-	counted                           bool        // this run has been counted in its task record
-	perm                              uiPermState // questions about tools the task is not already allowed to use
+	sessionID                         string       // the harness session this run is, once it has said
+	counted                           bool         // this run has been counted in its task record
+	watch                             uiStuckWatch // notices the task going in circles
+	stopReason                        string       // why Cully stopped it: cost_limit or turn_limit
+	doneTurns                         int          // turns the harness has finished, for the turn limit
+	perm                              uiPermState  // questions about tools the task is not already allowed to use
 
 	mu      sync.Mutex
 	state   string
@@ -503,7 +522,7 @@ func (a *uiAgent) snapshot() uiAgentView {
 	return uiAgentView{
 		ID: a.id, Title: a.title, Repo: a.repo, Branch: a.branch, Worktree: a.worktree,
 		Token: a.token, State: a.state, Created: a.created,
-		Stages: a.stagesCopyLocked(), Events: len(a.events), Files: a.sortedFilesLocked(), Last: a.last, Updated: a.updated, Group: a.req.group, Option: a.req.option, Harness: a.harnessView(), Usage: usageOf(a.usage), Run: a.runInfo, Context: contextOf(a.model, a.ctx, a.window, a.compactions), Cost: a.cost, Limits: a.limitsView(), MCP: append([]uiMCPServer(nil), a.mcp...), Permissions: a.pendingPermissions(),
+		Stages: a.stagesCopyLocked(), Events: len(a.events), Files: a.sortedFilesLocked(), Last: a.last, Updated: a.updated, Group: a.req.group, Option: a.req.option, Harness: a.harnessView(), Usage: usageOf(a.usage), Run: a.runInfo, Context: contextOf(a.model, a.ctx, a.window, a.compactions), Cost: a.cost, Limits: a.limitsView(), MCP: append([]uiMCPServer(nil), a.mcp...), Permissions: a.pendingPermissions(), Stuck: a.watch.current(), StopReason: a.stopReason, MaxCost: a.req.MaxCost, MaxTurns: a.req.MaxTurns,
 	}
 }
 
@@ -666,14 +685,24 @@ func (a *uiAgent) run(m *uiManager) {
 	if a.req.Mode == "plan" {
 		permission = "plan"
 	}
-	allowed, denied := m.toolPolicyFor(a.req.Mode == "plan", a.req.groups)
+	permCfg := ""
+	if uiClaudeHas("--permission-prompt-tool") && uiClaudeHas("--settings") {
+		permCfg = a.startPermServer() // the private socket the permission card talks over; "" if it could not be made
+	} else {
+		a.add(uiEvent{Kind: "note", Text: "This Claude Code does not list --permission-prompt-tool or --settings, so Cully cannot ask you about risky commands: they stay blocked."})
+	}
+	relay := permCfg != ""
+	allowed, denied, asks := m.toolPolicyAsk(a.req.Mode == "plan", a.req.groups, relay)
 	args := []string{"-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose",
 		"--permission-mode", permission, "--allowedTools", allowed,
 		"--disallowedTools", denied}
 	mcpArgs := m.mcpFilterArgs()
 	args = append(args, mcpArgs...)
-	if cfg := a.startPermServer(); cfg != "" { // ask the page instead of refusing
-		args = append(args, "--permission-prompt-tool", "mcp__"+uiPermServer+"__"+uiPermTool, "--mcp-config", cfg)
+	if relay { // ask you instead of refusing
+		args = append(args, "--permission-prompt-tool", "mcp__"+uiPermServer+"__"+uiPermTool, "--mcp-config", permCfg)
+		if sp := uiWriteAskSettings(filepath.Dir(permCfg), asks); sp != "" {
+			args = append(args, "--settings", sp)
+		}
 		defer a.stopPermServer()
 	}
 	if len(mcpArgs) > 0 {
@@ -682,7 +711,7 @@ func (a *uiAgent) run(m *uiManager) {
 		a.mu.Unlock()
 	}
 	a.mu.Lock()
-	a.runInfo = m.describeRun(a, permission, allowed, denied, mcpArgs)
+	a.runInfo = m.describeRun(a, permission, allowed, denied, mcpArgs, asks)
 	a.mu.Unlock()
 	if a.req.appendSystem != "" {
 		args = append(args, "--append-system-prompt", a.req.appendSystem)
@@ -780,6 +809,12 @@ func (a *uiAgent) handleLine(line []byte) {
 			ev.Text = strings.ReplaceAll(ev.Text, a.worktree+string(os.PathSeparator), "")
 		}
 		a.add(ev)
+		switch ev.Kind {
+		case "tool":
+			a.watch.call(ev.Tool, ev.Text)
+		case "tool_result":
+			a.watch.result(ev.Failed, ev.Text)
+		}
 	}
 	for _, r := range p.Results {
 		a.mu.Lock()
@@ -843,8 +878,10 @@ func (a *uiAgent) handleLine(line []byte) {
 		a.turns++
 		a.mu.Unlock()
 	}
+	a.enforceLimits()
 	if p.TurnDone {
 		a.mu.Lock()
+		a.doneTurns++
 		if a.pending > 0 {
 			a.pending--
 		}
@@ -856,6 +893,7 @@ func (a *uiAgent) handleLine(line []byte) {
 		if a.mgr != nil {
 			a.mgr.saveTask(a) // a turn ended: keep what the task now looks like
 		}
+		a.enforceLimits()
 		if turnOver && a.harness != nil {
 			go a.harnessAfterTurn()
 		}
@@ -1209,3 +1247,25 @@ const uiNearFull = 92
 // uiCompactedOften is how many compactions make a task worth restarting from a handoff:
 // each one loses detail from early on.
 const uiCompactedOften = 3
+
+// enforceLimits stops the task when it reaches the cost or turn limit set when it started. The stop is
+// typed (cost_limit or turn_limit), so the board can say why, and what the task did stays on its branch.
+func (a *uiAgent) enforceLimits() {
+	a.mu.Lock()
+	reason, text := "", ""
+	if a.stopReason == "" {
+		switch {
+		case a.req.MaxCost > 0 && a.cost >= a.req.MaxCost:
+			reason, text = "cost_limit", "Stopped: the task reached its cost limit of $"+strconv.FormatFloat(a.req.MaxCost, 'f', -1, 64)+" (list price)."
+		case a.req.MaxTurns > 0 && a.doneTurns >= a.req.MaxTurns:
+			reason, text = "turn_limit", "Stopped: the task reached its limit of "+strconv.Itoa(a.req.MaxTurns)+" turns."
+		}
+		a.stopReason = reason
+	}
+	a.mu.Unlock()
+	if reason == "" {
+		return
+	}
+	a.add(uiEvent{Kind: "note", Text: text})
+	a.stop()
+}

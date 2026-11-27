@@ -16,6 +16,7 @@ type uiRunInfo struct {
 	Groups      []string `json:"groups"`  // tool groups allowed, in words
 	Allowed     []string `json:"allowed"` // tool names allowed
 	Blocked     []string `json:"blocked"` // tool names always refused
+	Asks        []string `json:"asks"`    // calls that stop and ask you first (a card in the task window)
 	McpMode     string   `json:"mcpMode"` // all or chosen
 	McpChosen   []string `json:"mcpChosen,omitempty"`
 	Isolation   string   `json:"isolation"` // worktree or in place
@@ -30,9 +31,9 @@ type uiRunInfo struct {
 	HelperNames []string `json:"helpers,omitempty"`
 }
 
-func (m *uiManager) describeRun(a *uiAgent, permission, allowed, denied string, mcpArgs []string) *uiRunInfo {
+func (m *uiManager) describeRun(a *uiAgent, permission, allowed, denied string, mcpArgs []string, asks []string) *uiRunInfo {
 	r := &uiRunInfo{Harness: "Claude Code", Interface: "Headless, talking over a JSON stream", Permission: permission, Model: a.req.Model,
-		Allowed: uiSplitTools(allowed), Blocked: uiSplitTools(denied), McpMode: "all", Isolation: "worktree", Identity: a.req.identityName, Loop: a.harness != nil}
+		Allowed: uiSplitTools(allowed), Blocked: uiSplitTools(denied), Asks: append([]string{}, asks...), McpMode: "all", Isolation: "worktree", Identity: a.req.identityName, Loop: a.harness != nil}
 	if r.Model == "" {
 		r.Model = "its default"
 	}

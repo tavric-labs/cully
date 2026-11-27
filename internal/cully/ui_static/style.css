@@ -955,3 +955,10 @@ details.sgroup > summary { cursor: pointer; } details.sgroup > summary::-webkit-
 .tp-sec[open] > summary::before { transform: rotate(45deg); }
 .tp-sec:not([open]) { padding-top: 8px; padding-bottom: 8px; }
 .view.agents-view.rail-hidden .rail { display: none; }
+
+.chip.risk-low { background: var(--add-bg); color: var(--add-ink); } .chip.risk-medium { background: var(--peach); color: var(--peach-ink); } .chip.risk-high { background: var(--red-bg); color: var(--red); font-weight: 600; }
+
+.activity.stuck { background: var(--red-bg); color: var(--red); font-weight: 600; } .activity.stuck .adot { background: var(--red); animation: pulse 1s ease-in-out infinite; }
+.limits { gap: 10px; } .limit { display: inline-flex; gap: 6px; align-items: center; } .limitin { width: 84px; border: 1px solid var(--line2); border-radius: 8px; padding: 3px 8px; background: var(--raised); font: inherit; }
+
+.cap { display: inline-block; padding: 1px 9px; border-radius: 10px; font-size: 12px; font-weight: 600; } .cap-yes { background: var(--add-bg); color: var(--add-ink); } .cap-partial { background: var(--peach); color: var(--peach-ink); } .cap-no { background: var(--surface2); color: var(--faint); }
