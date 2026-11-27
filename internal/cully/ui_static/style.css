@@ -976,3 +976,5 @@ details.sgroup > summary { cursor: pointer; } details.sgroup > summary::-webkit-
 .navmore > summary::after { content: "⌄"; font-size: 12px; } .navmore > summary:hover { color: var(--hd-ink); } .navmore.active > summary { color: var(--hd-ink); border-bottom-color: var(--amber); }
 .navpop { left: 0; right: auto; min-width: 180px; } nav#nav .navpop a { height: auto; padding: 9px 12px; border-bottom: 0; border-radius: 8px; color: var(--ink); } nav#nav .navpop a:hover { background: var(--surface2); } nav#nav .navpop a.active { background: var(--surface2); font-weight: 600; border-bottom: 0; }
 @media (max-width: 760px) { nav#nav { overflow: visible; } .navpop { position: fixed; left: 8px; right: 8px; top: 52px; } }
+
+.tasks-page h1 { font: 600 28px var(--serif); margin: 0 0 4px; } .tcard.closed { opacity: .72; }

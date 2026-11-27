@@ -169,6 +169,7 @@ type uiManager struct {
 	}
 	lastMCPAt  int64 // when lastMCP was last reported, unix seconds
 	lastMCP    map[string]string
+	taskSyncAt time.Time // when tasks were last saved to Cully memory
 	syncMu     sync.Mutex
 	initNames  *uiInitNames
 	idxWritten map[string]string // session documents as last written, so only changes are saved
@@ -569,7 +570,11 @@ func (a *uiAgent) setState(s string) {
 		a.mgr.saveTask(a) // the task is kept in the database, so it survives a restart
 	}
 	if a.mgr != nil && (s == uiDone || s == uiFailed || s == uiStopped) {
-		go a.mgr.drainQueue()
+		a.mgr.bg.Add(1)
+		go func() {
+			defer a.mgr.bg.Done()
+			a.mgr.drainQueue()
+		}()
 		a.mgr.recordUsage(a)
 	}
 }

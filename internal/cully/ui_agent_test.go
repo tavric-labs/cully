@@ -96,20 +96,23 @@ func uiTestManager(t *testing.T, bin string, tokens ...string) (*uiManager, stri
 	t.Cleanup(func() {
 		// Stop every task and wait for it to finish, so nothing still running writes into the
 		// database or the repository after this test's folders are gone (or into the next test's).
-		m.stopAll()
-		m.mu.Lock()
-		var live []*uiAgent
-		for _, a := range m.agents {
-			live = append(live, a)
-		}
-		m.mu.Unlock()
-		for _, a := range live {
-			select {
-			case <-a.done:
-			case <-time.After(10 * time.Second):
+		// Finishing a task can start a queued one, so go round until nothing is left.
+		for round := 0; round < 3; round++ {
+			m.stopAll()
+			m.mu.Lock()
+			var live []*uiAgent
+			for _, a := range m.agents {
+				live = append(live, a)
 			}
+			m.mu.Unlock()
+			for _, a := range live {
+				select {
+				case <-a.done:
+				case <-time.After(10 * time.Second):
+				}
+			}
+			m.bg.Wait() // and the bookkeeping that follows a run, which writes to the database
 		}
-		m.bg.Wait() // and the bookkeeping that follows a run, which writes to the database
 	})
 	return m, repo, out
 }

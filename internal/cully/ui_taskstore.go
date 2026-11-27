@@ -44,6 +44,11 @@ type uiTaskRecord struct {
 	Runs     int             `json:"runs"` // how many times Cully has run it
 	Sessions []uiTaskSession `json:"sessions"`
 	Live     string          `json:"live,omitempty"` // the id of the run that is working now, if any
+	Closed   bool            `json:"closed"`         // you closed it: done with, kept for the record
+	ClosedAt time.Time       `json:"closedAt,omitempty"`
+	Synced   string          `json:"synced,omitempty"`   // fingerprint of what was last saved to Cully memory
+	SyncedAt time.Time       `json:"syncedAt,omitempty"` // when
+	Entries  int             `json:"entries,omitempty"`  // summaries of it saved to memory
 }
 
 var uiTaskMu sync.Mutex
@@ -74,6 +79,9 @@ func (m *uiManager) saveTask(a *uiAgent) {
 		if a.req.originID != "" {
 			rec.Sessions = append(rec.Sessions, uiTaskSession{ID: a.req.originID, Agent: a.req.originAgent, At: v.Created, Role: "origin"})
 		}
+	}
+	if a.req.taskRef != "" && rec.Closed {
+		rec.Closed, rec.ClosedAt = false, time.Time{} // continuing a closed task reopens it
 	}
 	rec.State, rec.Branch, rec.Worktree, rec.Updated, rec.Files = v.State, v.Branch, v.Worktree, time.Now().UTC(), len(v.Files)
 	if v.Last != "" {
@@ -223,4 +231,57 @@ func (s *uiServer) taskContinueH(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	uiJSON(w, http.StatusCreated, a.snapshot())
+}
+
+// taskClose closes a task, or reopens it. Closing keeps everything (sessions, summary, what was saved to
+// memory) and takes it off the open list; a run that is still going is stopped first.
+func (m *uiManager) taskClose(id string, closed bool) error {
+	uiTaskMu.Lock()
+	var rec uiTaskRecord
+	ok := uiDB().get("task", id, &rec)
+	uiTaskMu.Unlock()
+	if !ok {
+		return errors.New("no such task")
+	}
+	if closed {
+		m.mu.Lock()
+		var live []*uiAgent
+		for _, a := range m.agents {
+			if a.taskID() == id && uiLive(a.snapshot().State) {
+				live = append(live, a)
+			}
+		}
+		m.mu.Unlock()
+		for _, a := range live {
+			a.stop()
+		}
+	}
+	uiTaskMu.Lock()
+	defer uiTaskMu.Unlock()
+	if !uiDB().get("task", id, &rec) {
+		return errors.New("no such task")
+	}
+	rec.Closed = closed
+	if closed {
+		rec.ClosedAt = time.Now().UTC()
+	} else {
+		rec.ClosedAt = time.Time{}
+	}
+	rec.Synced = "" // what memory holds is out of date: the task changed
+	uiDB().put("task", id, rec)
+	return nil
+}
+
+func (s *uiServer) taskCloseH(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Closed bool `json:"closed"`
+	}
+	if !uiDecode(w, r, &body) {
+		return
+	}
+	if err := s.m.taskClose(r.PathValue("id"), body.Closed); err != nil {
+		uiError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }

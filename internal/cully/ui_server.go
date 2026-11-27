@@ -157,6 +157,7 @@ func newUIServer(m *uiManager, token string, loopback bool) http.Handler {
 	mux.Handle("GET /api/harness/capabilities", s.api(s.capabilitiesGet))
 	mux.Handle("GET /api/tasks", s.api(s.tasksGet))
 	mux.Handle("POST /api/tasks/{id}/continue", s.api(s.taskContinueH))
+	mux.Handle("POST /api/tasks/{id}/close", s.api(s.taskCloseH))
 	mux.Handle("POST /api/limits/refresh", s.api(s.limitsRefresh))
 	mux.Handle("GET /api/harness/tools", s.api(s.harnessToolsGet))
 	mux.Handle("POST /api/agents/{id}/permissions/{pid}", s.api(s.permissionDecide))
