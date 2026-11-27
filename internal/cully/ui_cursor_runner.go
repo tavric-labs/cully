@@ -140,7 +140,12 @@ func (r *uiCursorRunner) turn(text string) {
 		}
 		r.first = false
 	}
-	cmd := exec.Command(r.bin, r.args(prompt)...)
+	bin, binErr := uiAwaitBinary(r.bin)
+	if binErr != nil {
+		r.fail("cannot start cursor-agent: " + binErr.Error())
+		return
+	}
+	cmd := exec.Command(bin, r.args(prompt)...)
 	cmd.Dir = r.spec.Cwd
 	cmd.Env = uiAgentEnv("")
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}

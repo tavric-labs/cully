@@ -105,7 +105,11 @@ func (r *uiCodexRunner) write(v any) error {
 
 func (r *uiCodexRunner) Start(spec uiRunSpec) error {
 	a := r.a
-	cmd := exec.Command(r.bin, "app-server")
+	bin, binErr := uiAwaitBinary(r.bin)
+	if binErr != nil {
+		return errors.New("cannot start codex: " + binErr.Error())
+	}
+	cmd := exec.Command(bin, "app-server")
 	cmd.Dir = spec.Cwd
 	cmd.Env = uiAgentEnv("")
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}

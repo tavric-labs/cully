@@ -224,6 +224,7 @@ func TestTurnResultMovesToWaiting(t *testing.T) {
 }
 
 func TestMissingClaudeFailsWithErrorEvent(t *testing.T) {
+	fastBinaryWait(t) // Cully waits for a missing program, in case it is updating; the test need not
 	m, repo, _ := uiTestManager(t, filepath.Join(t.TempDir(), "no-such-claude"), "tok-aaa1")
 	a, _ := m.start(uiStartRequest{Repo: repo, Prompt: "go"})
 	uiWaitState(t, a, "failed")

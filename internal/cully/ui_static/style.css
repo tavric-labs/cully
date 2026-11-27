@@ -1770,3 +1770,22 @@ details.toolcounts > summary { cursor: pointer; color: var(--forest-hi); font-si
 .sx-row { grid-template-columns: minmax(0, 1fr) 156px; }
 .sx-act { justify-content: flex-end; }
 .sx-act .btn:not(.ghost) { min-width: 104px; justify-content: center; }
+
+/* Graph panel: a story first, then quiet chips and a tidy timeline */
+.gw-h { margin: 8px 0 4px; font: 600 18px var(--serif); overflow-wrap: anywhere; }
+.gw-story { margin: 4px 0 10px; font-size: 14px; line-height: 1.5; color: var(--ink); }
+.gw-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 6px; }
+.gw-live { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--forest-hi); margin-right: 6px; animation: gwpulse 1.6s ease-in-out infinite; }
+@keyframes gwpulse { 50% { opacity: .3; } }
+.gw-call { display: grid; gap: 4px; margin: 0 0 10px; }
+.gw-tl { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 0; position: relative; }
+.gw-ti { display: grid; grid-template-columns: 62px 18px minmax(0, 1fr); gap: 8px; padding: 8px 0; border-top: 1px solid var(--line); align-items: start; }
+.gw-ti:first-child { border-top: 0; }
+.gw-tt { font-size: 11.5px; color: var(--faint); text-align: right; padding-top: 2px; white-space: nowrap; }
+.gw-tg { font: 600 12px var(--mono); color: var(--soft); text-align: center; padding-top: 1px; }
+.gw-ti.bad .gw-tg { color: var(--red); }
+.gw-tb { min-width: 0; display: grid; gap: 3px; }
+.gw-tk { font-size: 12px; font-weight: 600; color: var(--soft); }
+.gw-clamp { font-size: 13px; line-height: 1.45; overflow-wrap: anywhere; white-space: pre-wrap; }
+.gw-clamp.cut { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.gw-more { font-size: 12px; justify-self: start; }

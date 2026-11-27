@@ -1459,28 +1459,38 @@
       const t0 = new Date(n.start).getTime();
       const kv = (a1, v) => (v ? h('div', { class: 'gkv' }, h('span', { class: 'faint' }, a1), h('span', {}, v)) : null);
       const nb = (q, label) => (q ? h('button', { type: 'button', class: 'gw-nb', onclick: () => select(q.id, true) }, h('span', { class: 'gf-node ph-' + q.node.phase }), h('span', {}, label + ': ' + q.label)) : null);
+      // The state in plain words: what it was, for how long, why it began, and what happened inside it.
+      const lower = (t) => (t ? t.charAt(0).toLowerCase() + t.slice(1) : '');
+      const phaseWord = { working: 'The agent was working', tool: 'The agent was waiting on ' + (n.tool || 'a tool'), 'needs-you': 'The task was waiting for you', helper: 'The task was waiting on a helper', checking: 'Cully was checking the work', stuck: 'The task looked stuck', done: 'The task finished', failed: 'The task failed', preparing: 'Cully was getting the task ready', queued: 'The task was queued', stopped: 'The task was stopped', limit: 'A limit was reached', earlier: 'Earlier steps' }[n.phase] || (G.PHASE_LABEL[n.phase] || n.phase);
+      const began = G.reasonLabel(n.cause);
+      const story = phaseWord + (open ? ' for ' + G.dur(ms) + ' so far' : ' for ' + G.dur(ms)) + (began ? ', after ' + (/^(the|a|an|you)\b/i.test(began) ? lower(began) : lower(began)) : '') + '. ' + (sum.sentence ? sum.sentence + '.' : '');
+      const quietTags = (n.tags || []).filter((t) => !t.startsWith('tool:') && t !== 'agent');
+      const chip = (txt, cls, title) => h('span', { class: 'chip ' + (cls || ''), title: title || '' }, txt);
+      const chips = [
+        n.start ? chip('Started ' + new Date(n.start).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }), '', new Date(n.start).toLocaleString()) : null,
+        n.count > 1 ? chip('Repeated ' + n.count + ' times', 'warn', 'The same step, one after another') : null,
+        n.cost ? chip('$' + n.cost.toFixed(2), '', 'Cost at list price') : null,
+        n.tokens ? chip(fmtTokens(n.tokens) + ' tokens') : null,
+        ...quietTags.map((t) => chip(t)),
+        n.ended === 'restart' ? chip('The server restarted here', 'warn') : null].filter(Boolean);
+      const when = (x) => { const off = x.t ? Math.max(0, Math.round((new Date(x.t).getTime() - t0) / 1000)) : null; return off == null ? '' : '+' + (off < 60 ? off + ' s' : Math.floor(off / 60) + ' min ' + (off % 60) + ' s'); };
+      // Long text (a whole reply) stays three lines until you ask for it.
+      const clamp = (text, mono) => { const long = (text || '').length > 170 || (text || '').split('\n').length > 3; const el = h('div', { class: 'gw-clamp' + (mono ? ' gw-mono' : '') + (long ? ' cut' : '') }, text);
+        if (!long) return el; const more = h('button', { type: 'button', class: 'linkbtn gw-more' }, 'Show more'); more.addEventListener('click', () => { const open2 = el.classList.toggle('cut') === false; more.textContent = open2 ? 'Show less' : 'Show more'; }); return h('div', {}, el, more); };
       panel.replaceChildren(
-        h('div', { class: 'gw-ph' }, h('span', { class: 'pill ph-' + n.phase }, G.PHASE_LABEL[n.phase] || n.phase), open ? h('span', { class: 'chip' }, 'happening now') : null, p.suspected ? h('span', { class: 'chip warn' }, 'suspected, only a hint') : null),
+        h('div', { class: 'gw-ph' }, h('span', { class: 'pill ph-' + n.phase }, G.PHASE_LABEL[n.phase] || n.phase), open ? h('span', { class: 'chip ok' }, h('i', { class: 'gw-live' }), 'happening now') : null, p.suspected ? h('span', { class: 'chip warn' }, 'suspected, only a hint') : null),
         h('h3', { class: 'gw-h' }, n.phase === 'tool' && n.tool ? n.tool : p.label),
-        h('div', { class: 'gw-kvs' },
-          kv('How it began', G.reasonLabel(n.cause)),
-          kv('Time', G.dur(ms) + (open ? ' so far' : '')),
-          kv('Started', n.start ? new Date(n.start).toLocaleTimeString() : ''),
-          n.count > 1 ? kv('Repeated', n.count + ' times in a row') : null,
-          n.cost ? kv('Cost', '$' + n.cost.toFixed(2) + ' at list price') : null,
-          n.tokens ? kv('Tokens', fmtTokens(n.tokens)) : null,
-          n.phase === 'needs-you' ? kv('Asked', n.summary || n.tool) : (n.phase === 'tool' ? kv('Call', n.summary) : null),
-          n.phase === 'needs-you' ? kv('You answered', ANSWER_WORDS[n.answer] || (open ? 'Not answered yet' : n.answer || 'No answer recorded')) : null,
-          (n.tags || []).filter((t) => !t.startsWith('tool:')).length ? kv('Tags', (n.tags || []).filter((t) => !t.startsWith('tool:')).join(', ')) : null,
-          n.ended === 'restart' ? kv('Ended', 'The server restarted while this was going') : null),
-        sum.sentence ? h('p', { class: 'gw-sum' }, sum.sentence + '.') : null,
-        acts.length ? h('div', { class: 'gw-sec' }, h('b', {}, 'What it did, and how'), h('span', { class: 'faint small' }, ' ' + (sum.total > sum.shown ? 'latest ' + sum.shown + ' of ' + sum.total : String(sum.total))),
-          h('ol', { class: 'gw-acts' }, ...acts.map((x) => { const off = x.t ? Math.max(0, Math.round((new Date(x.t).getTime() - t0) / 1000)) : null; return h('li', { class: 'gw-act k-' + x.k + (x.ok === 'fail' ? ' bad' : '') },
-            h('span', { class: 'gf-glyph', 'aria-hidden': 'true' }, ACT_GLYPH[x.k] || '-'),
-            h('div', { class: 'gw-actb' },
-              h('div', {}, h('span', { class: 'gw-actk' }, ACT_WORD[x.k] || ''), off != null ? h('span', { class: 'faint small' }, ' +' + (off < 60 ? off + ' s' : Math.floor(off / 60) + ' min ' + (off % 60) + ' s')) : null),
-              h('div', { class: x.k === 'tool' ? 'gw-mono' : '' }, x.l),
-              x.k === 'tool' ? h('div', { class: 'gw-res ' + (x.ok === 'fail' ? 'bad' : x.ok === 'ok' ? 'ok' : '') }, x.ok === 'fail' ? 'Failed' + (x.r ? ': ' + x.r : '') : x.ok === 'ok' ? 'Finished' + (x.r ? ': ' + x.r : '') : 'No result seen yet') : null)); }))) : h('p', { class: 'faint small' }, 'Nothing was recorded inside this state. Cully sees only the events the harness sends, so a quiet stretch can still hide work.'),
+        h('p', { class: 'gw-story' }, story),
+        n.phase === 'needs-you' ? h('p', { class: 'gw-story' }, h('b', {}, 'Asked: '), n.summary || n.tool || '', ' ', h('b', {}, 'You answered: '), ANSWER_WORDS[n.answer] || (open ? 'not answered yet' : n.answer || 'no answer recorded')) : (n.phase === 'tool' && n.summary ? h('div', { class: 'gw-call' }, h('span', { class: 'faint small' }, 'Call'), clamp(n.summary, true)) : null),
+        chips.length ? h('div', { class: 'gw-chips' }, ...chips) : null,
+        acts.length ? h('div', { class: 'gw-sec' }, h('b', {}, 'What happened inside'), h('span', { class: 'faint small' }, ' ' + (sum.total > sum.shown ? 'latest ' + sum.shown + ' of ' + sum.total : String(sum.total))),
+          h('ol', { class: 'gw-tl' }, ...acts.map((x) => h('li', { class: 'gw-ti k-' + x.k + (x.ok === 'fail' ? ' bad' : '') },
+            h('span', { class: 'gw-tt' }, when(x)),
+            h('span', { class: 'gw-tg', 'aria-hidden': 'true' }, ACT_GLYPH[x.k] || '-'),
+            h('div', { class: 'gw-tb' },
+              h('div', { class: 'gw-tk' }, ACT_WORD[x.k] || ''),
+              clamp(x.l, x.k === 'tool'),
+              x.k === 'tool' ? h('div', { class: 'gw-res ' + (x.ok === 'fail' ? 'bad' : x.ok === 'ok' ? 'ok' : '') }, x.ok === 'fail' ? 'Failed' + (x.r ? ': ' + x.r : '') : x.ok === 'ok' ? 'Finished' + (x.r ? ': ' + x.r : '') : 'No result seen yet') : null))))) : h('p', { class: 'faint small' }, 'Nothing was recorded inside this state. Cully sees only the events the harness sends, so a quiet stretch can still hide work.'),
         n.changed ? h('div', { class: 'gw-sec' }, h('b', {}, 'Files'), h('p', { class: 'gf-line' }, n.changed), h('button', { type: 'button', class: 'btn ghost small', onclick: () => { closeGraphWindow(); setTab('changes'); } }, 'Open the Changes tab')) : null,
         n.phase === 'stuck' ? h('p', { class: 'faint small' }, 'Cully thinks the task was going in circles. That is a guess from repeated calls.') : null,
         n.phase === 'failed' ? h('p', { class: 'faint small' }, 'The task failed here. From outside, Cully cannot tell what caused it.') : null,

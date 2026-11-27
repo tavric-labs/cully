@@ -810,6 +810,11 @@ func (a *uiAgent) run(m *uiManager) {
 	for _, dir := range a.req.addDirs {
 		args = append(args, "--add-dir", dir)
 	}
+	bin, binErr := uiAwaitBinary(bin)
+	if binErr != nil {
+		a.fail("cannot start claude: " + binErr.Error())
+		return
+	}
 	cmd := exec.Command(bin, args...)
 	cmd.Dir = a.worktree
 	cmd.Env = uiAgentEnv(tok)
