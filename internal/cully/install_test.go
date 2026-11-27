@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	starterskills "github.com/mcp-runtime/cully/skills/starter"
 )
 
 func TestTheSetupSkillIsInstalledBesideTheMainSkillAndRemovedWhenUnchanged(t *testing.T) {
@@ -38,5 +40,42 @@ func TestTheSetupSkillIsInstalledBesideTheMainSkillAndRemovedWhenUnchanged(t *te
 	_ = removeManagedMemorySkill("claude")
 	if _, err := os.Stat(p); err == nil {
 		t.Fatal("an unchanged setup skill was left behind")
+	}
+}
+
+func TestSetupInstallsTheSessionsAndStarterSkillsAndUninstallRemovesThem(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("CLAUDE_CONFIG_DIR", filepath.Join(home, ".claude"))
+	if err := installMemorySkill("claude"); err != nil {
+		t.Fatal(err)
+	}
+	want := append([]string{"cully-sessions"}, starterskills.Names...)
+	for _, name := range want {
+		p := filepath.Join(runtimeAgentDir("claude"), "skills", name, "SKILL.md")
+		b, err := os.ReadFile(p)
+		if err != nil || !strings.Contains(string(b), "cully:skill:managed") {
+			t.Fatalf("%s not installed: %v", name, err)
+		}
+	}
+	// A skill the user edited is theirs: setup leaves it, and uninstall does not delete it.
+	edited := filepath.Join(runtimeAgentDir("claude"), "skills", "cully-spec", "SKILL.md")
+	if err := os.WriteFile(edited, []byte("---\nname: cully-spec\n---\nmy own version\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := installMemorySkill("claude"); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(edited); !strings.Contains(string(b), "my own version") {
+		t.Fatalf("setup overwrote an edited skill: %s", b)
+	}
+	if err := removeManagedMemorySkill("claude"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(runtimeAgentDir("claude"), "skills", "cully-verify", "SKILL.md")); !os.IsNotExist(err) {
+		t.Fatalf("an untouched skill was left behind: %v", err)
+	}
+	if _, err := os.Stat(edited); err != nil {
+		t.Fatalf("uninstall deleted a skill the user edited: %v", err)
 	}
 }

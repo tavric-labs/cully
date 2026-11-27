@@ -98,6 +98,8 @@ type uiStartRequest struct {
 	rules        string
 	Loop         bool            `json:"loop"`     // keep going until the agent has checked its work
 	DoneWhen     string          `json:"doneWhen"` // checks that say the task is done, one per line
+	Factory      bool            `json:"factory"`  // factory mode: spec, plan, implement, verify against held-back scenarios, then review
+	Holdout      bool            `json:"holdout"`  // keep the checks from the agent: it is told what is missing, never the checks themselves
 	MaxCost      float64         `json:"maxCost"`  // stop the task when its list-price cost reaches this many dollars; 0 means no limit
 	MaxTurns     int             `json:"maxTurns"` // stop it after this many turns; 0 means no limit
 	MaxRounds    int             `json:"maxRounds"`
@@ -363,6 +365,12 @@ func (m *uiManager) start(req uiStartRequest) (*uiAgent, error) {
 	if req.Mode != "" && req.Mode != "edit" && req.Mode != "plan" {
 		return nil, errors.New(`mode must be "edit" or "plan"`)
 	}
+	titlePrompt := req.Prompt
+	if req.Factory {
+		if err := m.applyFactory(&req); err != nil {
+			return nil, err
+		}
+	}
 	if req.MaxCost < 0 || req.MaxCost > 10000 || req.MaxTurns < 0 || req.MaxTurns > 10000 {
 		return nil, errors.New("the cost limit must be 0 to 10000 dollars and the turn limit 0 to 10000 turns (0 means no limit)")
 	}
@@ -387,7 +395,7 @@ func (m *uiManager) start(req uiStartRequest) (*uiAgent, error) {
 	}
 	title := strings.TrimSpace(req.Title)
 	if title == "" {
-		title = uiTaskTitle(req.Prompt)
+		title = uiTaskTitle(titlePrompt)
 	}
 	if r := []rune(title); len(r) > 60 {
 		title = string(r[:60]) + "…"

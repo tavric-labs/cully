@@ -41,6 +41,7 @@ type uiHarness struct {
 	helpers        []string // named agents asked to review the finished work, in order
 	helpersDone    map[string]bool
 	criteriaPassed bool
+	holdout        bool // the checks are held back: the agent hears the gap, never the check text
 }
 
 type uiHarnessView struct {
@@ -57,7 +58,7 @@ func newUIHarness(req uiStartRequest) *uiHarness {
 	if max > uiHarnessMaxRounds {
 		max = uiHarnessMaxRounds
 	}
-	return &uiHarness{max: max, criteria: uiClip(strings.TrimSpace(req.DoneWhen), 1000), status: "working",
+	return &uiHarness{max: max, criteria: uiClip(strings.TrimSpace(req.DoneWhen), 1000), holdout: req.Holdout, status: "working",
 		steered: map[string]bool{}, ids: map[string]string{}, fails: map[string]int{}, helpersDone: map[string]bool{}, helpers: append([]string{}, req.Helpers...)}
 }
 
@@ -214,7 +215,12 @@ func (a *uiAgent) harnessAfterTurn() {
 		}
 		a.harnessSet("steering")
 		say("Not there yet (" + status + "): " + reason)
-		send("A reviewer compared your work with the checks and found it " + status + ": " + reason + "\nChecks: " + criteria + "\nFix what is missing, then say what you did.")
+		if h.holdout {
+			// Holdout: the agent cannot see the checks, so it cannot write to them. It hears only the gap.
+			send("A reviewer who holds checks you cannot see found your work " + status + ": " + reason + "\nFix what is missing, then say what you did.")
+		} else {
+			send("A reviewer compared your work with the checks and found it " + status + ": " + reason + "\nChecks: " + criteria + "\nFix what is missing, then say what you did.")
+		}
 		return
 	}
 	// Reviewers: named agents asked to look at the finished work, one after another.
@@ -266,7 +272,11 @@ func (a *uiAgent) harnessJudge(criteria string) (string, string) {
 	if a.mgr == nil {
 		return "error", ""
 	}
-	out, err := a.mgr.cfg.Advisor("claude", a.worktree, false, uiJudgePrompt+a.tokens.redact(data))
+	prompt := uiJudgePrompt
+	if a.harness != nil && a.harness.holdout {
+		prompt += "The agent must not learn the checks. In your reason, describe what is missing as behaviour a person could observe, and do not quote or list the checks.\n\n"
+	}
+	out, err := a.mgr.cfg.Advisor("claude", a.worktree, false, prompt+a.tokens.redact(data))
 	if err != nil {
 		return "error", ""
 	}

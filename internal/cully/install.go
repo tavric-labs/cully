@@ -10,7 +10,9 @@ import (
 	"time"
 
 	cullyskill "github.com/mcp-runtime/cully/skills/cully"
+	cullysessionsskill "github.com/mcp-runtime/cully/skills/cully-sessions"
 	cullysetupskill "github.com/mcp-runtime/cully/skills/cully-setup"
+	starterskills "github.com/mcp-runtime/cully/skills/starter"
 )
 
 // Install registers cully for one or more coding agents. With no target it
@@ -114,6 +116,23 @@ func installMemorySkill(target string) error {
 		return err
 	} else if !wroteSetup {
 		fmt.Printf("Preserved user-owned Cully setup skill -> %s\n", setupPath)
+	}
+	// The sessions skill: how an agent reads Claude, Codex and Cursor sessions and what to capture from them.
+	sessionsPath := sessionsSkillPath(target)
+	if wroteSessions, err := writeOwnedFile(sessionsPath, "<!-- cully:skill:managed -->", cullysessionsskill.Content); err != nil {
+		return err
+	} else if !wroteSessions {
+		fmt.Printf("Preserved user-owned Cully sessions skill -> %s\n", sessionsPath)
+	}
+	// Starter skills: spec, verify, handoff and repo map. Each is short, and a copy you edited is left alone.
+	for _, name := range starterskills.Names {
+		body, _ := starterskills.Content(name)
+		p := starterSkillPath(target, name)
+		if wrote, err := writeOwnedFile(p, "<!-- cully:skill:managed -->", body); err != nil {
+			return err
+		} else if !wrote {
+			fmt.Printf("Preserved user-owned skill -> %s\n", p)
+		}
 	}
 	linkWorkflowSkill(os.Stdout, dir)
 	return nil
@@ -287,12 +306,31 @@ func removeManagedMemorySkill(target string) error {
 	if err := removeFileIfUnchanged(setupSkillPath(target), cullysetupskill.Content); err != nil {
 		return err
 	}
+	if err := removeFileIfUnchanged(sessionsSkillPath(target), cullysessionsskill.Content); err != nil {
+		return err
+	}
+	for _, name := range starterskills.Names {
+		body, _ := starterskills.Content(name)
+		if err := removeFileIfUnchanged(starterSkillPath(target, name), body); err != nil {
+			return err
+		}
+	}
 	return removeCullySkillIfUnchanged(runtimeSkillPath(target))
 }
 
 // setupSkillPath is where the setup skill lives, beside the main Cully skill.
 func setupSkillPath(agent string) string {
 	return filepath.Join(runtimeAgentDir(agent), "skills", "cully-setup", "SKILL.md")
+}
+
+// starterSkillPath is where one starter skill lives for a harness.
+func starterSkillPath(agent, name string) string {
+	return filepath.Join(runtimeAgentDir(agent), "skills", name, "SKILL.md")
+}
+
+// sessionsSkillPath is where the sessions skill lives, beside the main Cully skill.
+func sessionsSkillPath(agent string) string {
+	return filepath.Join(runtimeAgentDir(agent), "skills", "cully-sessions", "SKILL.md")
 }
 
 func removeFileIfUnchanged(path, want string) error {

@@ -294,3 +294,31 @@ func TestTaskWindowOffersTheCallsTabAndWhatItWaitsOn(t *testing.T) {
 		}
 	}
 }
+
+func TestHoldoutChecksAreNeverSentToTheAgent(t *testing.T) {
+	body := uiFakeHead + uiToolLine("e$n", "Edit", `{"file_path":"'"$PWD"'/a.txt"}`) + uiToolLine("b$n", "Bash", `{"command":"go test ./..."}`) + uiFakeTail
+	m, repo, out := uiTestManager(t, uiWriteScript(t, body), "tok-aaa1")
+	verdicts := []string{"VERDICT: fail\nREASON: The login case is missing.", "VERDICT: pass\nREASON: Done."}
+	var judgePrompt string
+	m.cfg.Advisor = func(_, _ string, _ bool, p string) (string, error) {
+		judgePrompt = p
+		v := verdicts[0]
+		if len(verdicts) > 1 {
+			verdicts = verdicts[1:]
+		}
+		return v, nil
+	}
+	a, err := m.start(uiStartRequest{Repo: repo, Prompt: "fix login", Loop: true, DoneWhen: "SECRETCHECK the admin page hides the delete button", Holdout: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	uiWaitFor(t, "the checks to be met", func() bool { return strings.Contains(uiHNotes(a), "Checks met") })
+	for _, line := range uiHStdin(t, out) {
+		if strings.Contains(line, "SECRETCHECK") || strings.Contains(line, "Checks:") {
+			t.Fatalf("a held-back check reached the agent: %q", line)
+		}
+	}
+	if !strings.Contains(judgePrompt, "must not learn the checks") {
+		t.Fatalf("the judge was not told to keep the checks private: %q", judgePrompt)
+	}
+}

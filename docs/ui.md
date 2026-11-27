@@ -356,3 +356,22 @@ Lifecycle: agents and proposals are active, stale or archived, and can be pinned
 ## Setup
 
 A guided Setup page, new in the next release, walks you through mode, the dev-workflow rules and suggestions. See [Set up Cully](/setup) and [One machine or many?](/choose-a-mode).
+
+
+## Factory mode
+
+Choose **Factory** beside Edit and Plan only when you start a task. It follows how software factories run agents: you state the goal and how a person could tell it is done, and the agent does the building.
+
+- **You write** the goal, and under it the acceptance scenarios, one per line, each something a person could observe ("with an empty cart, checkout shows the empty message"). At least one is required.
+- **The agent** is told to write a short spec first, plan small tasks, build one at a time with a commit each, run the project's own checks after its last edit, and finish by saying what is proven, what is only claimed and what it did not check.
+- **Your scenarios stay hidden.** A reviewer that holds them judges the work after each turn and tells the agent only what is missing, never the scenarios, so it cannot write to a test it never saw. You can untick this under the scenarios.
+- **A second reviewer** is added if you have approved an agent named Independent reviewer (Setup offers one).
+- Factory tasks start now. They cannot be queued, and they cannot be plan only.
+
+Hidden checks are a design choice from published factory practice, not a proven result; [the research page](research.md) says what it rests on and where the evidence is thin.
+
+## Skills and ready-made agents from setup
+
+Setup installs these skills for each harness it links: `cully-sessions` (where Claude, Codex and Cursor keep sessions, how to read them and what to capture), `cully-spec`, `cully-verify`, `cully-handoff` and `cully-repo-map`. Each is short on purpose. A copy you edit is left alone, and uninstall removes only the ones you did not change.
+
+The Setup page also offers ready-made agents (Independent reviewer, Handoff keeper, Loop breaker) and a nightly checks job before Cully has any history to learn from. Each card links to its sources. Nothing is created until you review and approve it.

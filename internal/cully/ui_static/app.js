@@ -490,13 +490,13 @@
     const err = h('div', { class: 'err', hidden: true });
     const start = h('button', { class: 'btn', type: 'submit' }, 'Start task', icon('send'));
     const later = h('button', { class: 'btn ghost', type: 'button', title: 'Hold this task until a slot is free' }, 'Queue for later');
-    const segBtn = (mode, label) => {
-      const b = h('button', { type: 'button', class: S.opts.mode === mode ? 'on' : '' }, label);
-      b.addEventListener('click', () => { S.opts.mode = mode; for (const x of seg.children) x.classList.toggle('on', x === b); });
+    const segBtn = (mode, label, title) => {
+      const b = h('button', { type: 'button', class: S.opts.mode === mode ? 'on' : '', title: title || '' }, label);
+      b.addEventListener('click', () => { S.opts.mode = mode; for (const x of seg.children) x.classList.toggle('on', x === b); syncFactory(); });
       return b;
     };
     const seg = h('div', { class: 'seg', role: 'group', 'aria-label': 'Mode' });
-    seg.append(segBtn('edit', 'Edit'), segBtn('plan', 'Plan only'));
+    seg.append(segBtn('edit', 'Edit', 'The agent edits files as it works'), segBtn('plan', 'Plan only', 'Read only: the agent plans and changes nothing'), segBtn('factory', 'Factory', 'You state the goal and how to tell it is done. The agent specifies, plans, builds and verifies; a reviewer that holds your checks decides.'));
     // Which harness runs the task: one small menu, shown only when more than one is installed.
     const hName = h('span', {}, 'Claude Code');
     const hList = h('div', { class: 'popcol' });
@@ -523,9 +523,11 @@
     const doneIn = h('textarea', { rows: '2', 'aria-label': 'Done when', placeholder: 'For example: the login test passes\nNo new lint errors' });
     doneIn.value = S.opts.doneWhen || '';
     doneIn.addEventListener('input', () => { S.opts.doneWhen = doneIn.value; });
-    const loopBox = h('div', { class: 'loopbox', hidden: !S.opts.loop },
-      h('span', { class: 'opt-label' }, 'Done when'), doneIn,
-      h('p', { class: 'faint small' }, 'After each turn Cully makes sure the agent ran tests, steers it if it repeats the same call, and checks its work against these lines. It stops after 3 rounds.'));
+    const doneLabel = h('span', { class: 'opt-label' }, 'Done when');
+    const loopBox = h('div', { class: 'loopbox', hidden: !S.opts.loop && S.opts.mode !== 'factory' },
+      doneLabel, doneIn,
+      h('label', { class: 'optline', title: 'The agent is told what is missing, never the checks themselves, so it cannot write to them' }, (() => { const c = h('input', Object.assign({ type: 'checkbox', 'aria-label': 'Keep the checks from the agent' }, S.opts.holdout ? { checked: true } : {})); c.addEventListener('change', () => { S.opts.holdout = c.checked; }); return c; })(), h('span', {}, 'Keep these checks hidden from the agent')),
+      h('p', { class: 'faint small' }, 'After each turn Cully makes sure the agent ran tests, steers it if it repeats the same call, and checks its work against these lines. It stops after 3 rounds. Hidden checks work like a holdout set: an agent cannot satisfy a check it never saw, only the real goal.'));
     const helperBox = h('div', { class: 'helperbox' });
     S.opts.helpers = S.opts.helpers || [];
     api('/api/identities').then((list) => {
@@ -537,7 +539,26 @@
     const limitIn = (key, label, ph, step) => { const i = h('input', { type: 'number', min: '0', step, placeholder: ph, 'aria-label': label, class: 'limitin', value: S.opts[key] || '' }); i.addEventListener('input', () => { S.opts[key] = i.value; }); return h('label', { class: 'limit', title: label + ' (empty means no limit)' }, h('span', { class: 'faint small' }, label), i); };
     const limits = h('div', { class: 'row limits' }, limitIn('maxCost', 'Stop at $', 'no limit', '0.5'), limitIn('maxTurns', 'or after turns', 'no limit', '1'));
     const loopToggle = toggle('loop', 'Keep going until checked', 'Cully verifies the work, steers the agent when it loops, and judges it against your checks');
-    loopToggle.querySelector('input').addEventListener('change', () => { loopBox.hidden = !S.opts.loop; });
+    loopToggle.querySelector('input').addEventListener('change', () => { loopBox.hidden = !S.opts.loop && S.opts.mode !== 'factory'; });
+    // Factory mode: acceptance scenarios are required and held back from the agent, and the keep-going loop is on.
+    const factoryNote = h('p', { class: 'faint small factorynote', hidden: true }, 'Factory mode: describe the goal above, and below say how a person could tell it is done. The agent writes a spec, plans small tasks, builds and verifies. It never sees your scenarios; a reviewer that holds them decides when it is done.');
+    const syncFactory = () => {
+      const on = S.opts.mode === 'factory';
+      factoryNote.hidden = !on;
+      doneLabel.textContent = on ? 'Acceptance scenarios (one per line, things a person could observe)' : 'Done when';
+      doneIn.placeholder = on ? 'With an empty cart, checkout shows the empty message\nThe export file opens in a spreadsheet with a header row' : 'For example: the login test passes\nNo new lint errors';
+      if (on) {
+        if (S.opts.loopBeforeFactory === undefined) S.opts.loopBeforeFactory = !!S.opts.loop;
+        S.opts.loop = true; S.opts.holdout = true;
+        const li = loopToggle.querySelector('input'); li.checked = true; loopToggle.classList.add('on');
+        const hc = loopBox.querySelector('input[aria-label="Keep the checks from the agent"]'); if (hc) hc.checked = true;
+        loopBox.hidden = false;
+      } else if (S.opts.loopBeforeFactory !== undefined) {
+        S.opts.loop = S.opts.loopBeforeFactory; delete S.opts.loopBeforeFactory;
+        const li = loopToggle.querySelector('input'); li.checked = !!S.opts.loop; loopToggle.classList.toggle('on', !!S.opts.loop);
+        loopBox.hidden = !S.opts.loop;
+      }
+    };
     const pop = (label, ic, ...kids) => h('details', { class: 'menu pillpop' }, h('summary', { class: 'pillbtn' }, icon(ic), label, icon('down')), h('div', { class: 'menu-pop pop-card' }, ...kids));
     if (!S.opts.repo && S.info && (S.info.repos || []).length) S.opts.repo = S.info.repos[0];
     start.className = 'btn round send'; start.setAttribute('aria-label', 'Start task'); start.title = 'Start the task'; start.replaceChildren(icon('send'));
@@ -553,12 +574,13 @@
     qItem.addEventListener('click', () => { sendMenu.open = false; later.click(); });
     const sendMenu = h('details', { class: 'menu sendmenu' }, h('summary', { class: 'btn ghost round sendmore', 'aria-label': 'More ways to start', title: 'More ways to start' }, icon('down')), h('div', { class: 'menu-pop pop-card send-pop' }, qItem));
     later.hidden = true;
-    const form = h('form', { class: 'composer-card hero-composer' }, ta, loopBox,
+    const form = h('form', { class: 'composer-card hero-composer' }, ta, factoryNote, loopBox,
       h('div', { class: 'cbar' }, hPill, seg, optionsPill, h('span', { class: 'sp' }), voiceEl.querySelector('.mic'), voiceEl.querySelector('.micmeter'), later, start, sendMenu), err);
     voiceRef.form = form;
-    const pills = null;
+    syncFactory();
     later.addEventListener('click', async () => {
       err.hidden = true;
+      if (S.opts.mode === 'factory') { err.textContent = 'Factory tasks start now; they cannot be queued yet.'; err.hidden = false; return; }
       try {
         await api('/api/queue', { method: 'POST', body: JSON.stringify({ prompt: ta.value, repo: S.opts.repo || (repo ? repo.value : ''), mode: S.opts.mode, context: S.opts.context, recall: S.opts.recall, scout: S.opts.scout }) });
         S.draft = ''; ta.value = ''; toast('Queued. It starts when a slot is free.'); location.hash = '#/board';
@@ -568,8 +590,10 @@
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       err.hidden = true; start.disabled = true;
+      const factory = S.opts.mode === 'factory';
+      if (factory && !doneIn.value.trim()) { err.textContent = 'Factory mode needs at least one acceptance scenario: something a person could observe that shows the work is done.'; err.hidden = false; start.disabled = false; doneIn.focus(); return; }
       try {
-        const body = { prompt: ta.value, repo: S.opts.repo || (repo ? repo.value : ''), mode: S.opts.mode, harness: S.opts.harness && S.opts.harness !== 'claude' ? S.opts.harness : '', context: S.opts.context, recall: S.opts.recall, scout: S.opts.scout, maxCost: Number(S.opts.maxCost) || 0, maxTurns: Math.floor(Number(S.opts.maxTurns)) || 0, loop: !!S.opts.loop, doneWhen: S.opts.loop ? (S.opts.doneWhen || '') : '', helpers: S.opts.loop ? (S.opts.helpers || []) : [] };
+        const body = { prompt: ta.value, factory, repo: S.opts.repo || (repo ? repo.value : ''), mode: factory ? 'edit' : S.opts.mode, harness: S.opts.harness && S.opts.harness !== 'claude' ? S.opts.harness : '', context: S.opts.context, recall: S.opts.recall, scout: S.opts.scout, maxCost: Number(S.opts.maxCost) || 0, maxTurns: Math.floor(Number(S.opts.maxTurns)) || 0, loop: !!S.opts.loop || factory, doneWhen: S.opts.loop || factory ? (S.opts.doneWhen || '') : '', holdout: !!((S.opts.loop || factory) && S.opts.holdout), helpers: S.opts.loop ? (S.opts.helpers || []) : [] };
         const view = await api('/api/agents', { method: 'POST', body: JSON.stringify(body) });
         S.draft = '';
         await refresh();
@@ -3503,11 +3527,16 @@
       return h('div', { class: 'su-brow' }, h('span', { class: 'su-bl' }, AGENT_LABEL[b.id] || b.id), h('span', { class: 'su-bt' }, i), h('span', { class: 'su-bv' }, b.value ? fmt(b.value) : 'none'));
     }));
     const ev = (x) => [W.evidenceWord(x.count), W.saves(x.estMinutesPerWeek), W.costs(x.estTokensPerRun)].filter(Boolean);
+    const sources = (x) => ((x.sources || []).length ? h('p', { class: 'faint small su-src' }, 'Backed by: ', ...x.sources.flatMap((r, i) => [i ? ', ' : '', h('a', { class: 'ext', href: r.url, target: '_blank', rel: 'noopener', title: r.kind === 'paper' ? 'A paper' : r.kind === 'vendor' ? 'A vendor engineering post, not independent evidence' : 'A practitioner write-up, not independent evidence' }, r.title)])) : null);
     const sCard = (x, kind) => h('div', { class: 'su-card su-sug' }, h('div', { class: 'row' }, h('b', {}, x.name), h('span', { class: 'pill' }, kind === 'agent' ? (x.replaces ? 'Update to your agent' : 'Agent') : 'Background job')),
-      h('p', {}, x.why || x.role || ''), kind === 'job' && x.command ? h('p', {}, h('code', {}, x.command), x.schedule ? h('span', { class: 'faint small' }, '  ' + x.schedule) : null) : null,
+      h('p', {}, x.role && x.why && x.role !== x.why && !x.replaces ? x.role : (x.why || x.role || '')), x.role && x.why && !x.replaces && x.role !== x.why ? h('p', { class: 'faint small' }, x.why) : null, sources(x), kind === 'job' && x.command ? h('p', {}, h('code', {}, x.command), x.schedule ? h('span', { class: 'faint small' }, '  ' + x.schedule) : null) : null,
       h('div', { class: 'row' }, ...ev(x).map((t) => h('span', { class: 'chip' }, t))),
       (x.evidence || []).length ? h('ul', { class: 'su-evl' }, ...x.evidence.slice(0, 3).map((e) => h('li', { class: 'faint small' }, String(e)))) : null,
       h('div', { class: 'row' }, h('button', { class: 'btn small', onclick: () => (kind === 'agent' ? suAddAgent(x) : suAddJob(x)) }, icon('plus'), kind === 'agent' && x.replaces ? 'Review update' : 'Review and add')));
+    const readyAgents = sg.ready || []; const readyJobs = sg.readyJobs || [];
+    const ready = readyAgents.length || readyJobs.length ? h('div', {}, h('h3', {}, 'Ready-made, from research'),
+      h('p', { class: 'faint small' }, 'These need no history. Each is short, read only where it can be, and tied to a documented failure. Nothing is created until you review and approve it.'),
+      h('div', { class: 'su-cards' }, ...readyAgents.map((x) => sCard(x, 'agent')), ...readyJobs.map((x) => sCard(x, 'job')))) : null;
     let cards;
     if (!W.enough(basis)) cards = h('div', { class: 'su-card' }, h('p', {}, sg.note || 'Cully needs about ' + W.MIN_SESSIONS + ' analysed sessions before it can suggest agents and jobs. Come back after a few more days of work.'));
     else cards = h('div', {}, (sg.agents || []).length ? h('h3', {}, 'Agents') : null, h('div', { class: 'su-cards' }, ...(sg.agents || []).map((x) => sCard(x, 'agent'))),
@@ -3515,7 +3544,7 @@
       !(sg.agents || []).length && !(sg.jobs || []).length ? h('p', { class: 'faint' }, sg.note || 'Nothing to suggest yet.') : null);
     return h('div', {}, head, h('p', { class: 'su-lead' }, W.basisSentence(basis) + '.'), tiles,
       Object.keys(by).length ? h('div', { class: 'su-two' }, bars('hours', 'Hours of work', W.hours), bars('tokens', 'Tokens used', W.tokens)) : null,
-      h('p', { class: 'faint small' }, 'All figures are estimates from your own sessions, so they say about.'), cards);
+      h('p', { class: 'faint small' }, 'All figures are estimates from your own sessions, so they say about.'), ready, cards);
   }
   async function suAddAgent(x) {
     let tools; try { tools = await api('/api/admin/tools'); } catch (e) { toast(e.message, true); return; }
@@ -3524,7 +3553,7 @@
       let cur = null; try { cur = (await api('/api/identities')).find((a) => a.id === x.replaces); } catch (_) {}
       if (cur) { openAgentForm({ ...cur, role: x.role || cur.role }, tools, () => { SU.added.push(x.id || x.name); drawSetupPage(); }); return; }
     }
-    openAgentForm({ id: null, name: x.name, role: x.role || x.why || '', instructions: x.instructions || '', scope: 'project', folder: x.folder || S.opts.repo || (S.info && S.info.repos[0]) || '', groups: Object.fromEntries(tools.presets.map((p) => [p.id, p.on])), mode: 'edit', schedule: '', enabled: false },
+    openAgentForm({ id: null, name: x.name, role: x.role || x.why || '', instructions: x.instructions || '', scope: 'project', folder: x.folder || S.opts.repo || (S.info && S.info.repos[0]) || '', groups: Object.fromEntries(tools.presets.map((p) => [p.id, p.on])), mode: x.mode || 'edit', schedule: '', enabled: false },
       tools, () => { SU.added.push(x.id || x.name); drawSetupPage(); });
   }
   function suAddJob(x) {

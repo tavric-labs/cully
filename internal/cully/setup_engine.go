@@ -335,25 +335,33 @@ type setupAgentSuggestion struct {
 	// Set when an agent you already have covers this work: the suggestion is an update to it, not a new agent.
 	Replaces     string `json:"replaces,omitempty"`
 	ReplacesName string `json:"replacesName,omitempty"`
+	// Ready-made agents carry their own instructions, mode and the sources they rest on.
+	Instructions string           `json:"instructions,omitempty"`
+	Mode         string           `json:"mode,omitempty"`
+	Sources      []researchSource `json:"sources,omitempty"`
 }
 
 type setupJobSuggestion struct {
-	ID                string   `json:"id"`
-	Name              string   `json:"name"`
-	Command           string   `json:"command"`
-	Schedule          string   `json:"schedule"`
-	Why               string   `json:"why"`
-	Evidence          []string `json:"evidence"`
-	Count             int      `json:"count"`
-	EstMinutesPerWeek int      `json:"estMinutesPerWeek"`
-	Folder            string   `json:"folder"`
+	ID                string           `json:"id"`
+	Name              string           `json:"name"`
+	Command           string           `json:"command"`
+	Schedule          string           `json:"schedule"`
+	Why               string           `json:"why"`
+	Evidence          []string         `json:"evidence"`
+	Count             int              `json:"count"`
+	EstMinutesPerWeek int              `json:"estMinutesPerWeek"`
+	Folder            string           `json:"folder"`
+	Sources           []researchSource `json:"sources,omitempty"`
 }
 
 type setupSuggestions struct {
 	Basis  setupBasis             `json:"basis"`
 	Agents []setupAgentSuggestion `json:"agents"`
 	Jobs   []setupJobSuggestion   `json:"jobs"`
-	Note   string                 `json:"note"`
+	// Ready are offered whatever the history: starter agents and jobs, each with the research behind it.
+	Ready     []setupAgentSuggestion `json:"ready"`
+	ReadyJobs []setupJobSuggestion   `json:"readyJobs"`
+	Note      string                 `json:"note"`
 }
 
 type setupBasis struct {
@@ -385,7 +393,8 @@ func evidenceTitles(r uiRepeat) []string {
 func (e *setupEngine) Suggestions() setupSuggestions {
 	use := e.sessionsUsage()
 	lib := e.m.sessionLibrary()
-	out := setupSuggestions{Basis: setupBasis{Sessions: use.Count, Hours: use.Hours, Tokens: use.Tokens, Days: use.Days}, Agents: []setupAgentSuggestion{}, Jobs: []setupJobSuggestion{}}
+	out := setupSuggestions{Basis: setupBasis{Sessions: use.Count, Hours: use.Hours, Tokens: use.Tokens, Days: use.Days}, Agents: []setupAgentSuggestion{}, Jobs: []setupJobSuggestion{},
+		Ready: e.readyAgentsNotYetHad(), ReadyJobs: e.setupReadyJobs()}
 	if lib.Totals.Analyzed < setupMinSessions {
 		out.Note = fmt.Sprintf("Cully has analysed %d sessions. It needs at least %d to suggest agents or background jobs without guessing; keep working and check back.", lib.Totals.Analyzed, setupMinSessions)
 		if !lib.Analysis.On && lib.Totals.Sessions >= setupMinSessions {
@@ -509,4 +518,19 @@ func setupCoveringAgent(existing []uiIdentity, sg setupAgentSuggestion) *uiIdent
 		}
 	}
 	return nil
+}
+
+// readyAgentsNotYetHad drops a starter the person already has, matched by name.
+func (e *setupEngine) readyAgentsNotYetHad() []setupAgentSuggestion {
+	have := map[string]bool{}
+	for _, a := range e.m.identityList() {
+		have[strings.ToLower(a.Name)] = true
+	}
+	out := []setupAgentSuggestion{}
+	for _, r := range setupReadyAgents() {
+		if !have[strings.ToLower(r.Name)] {
+			out = append(out, r)
+		}
+	}
+	return out
 }
