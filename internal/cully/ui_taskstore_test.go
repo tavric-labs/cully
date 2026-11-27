@@ -1,6 +1,7 @@
 package cully
 
 import (
+	"encoding/json"
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
@@ -107,5 +108,61 @@ func TestTheTaskReportIsSelfContainedEscapedAndHoldsNoSecretsOrPaths(t *testing.
 	}
 	if csp := rec.Header().Get("Content-Security-Policy"); !strings.Contains(csp, "default-src 'none'") || strings.Contains(csp, "script-src") {
 		t.Errorf("csp = %q", csp)
+	}
+}
+
+func TestOldShapeTaskRecordStillLoadsAndGetsAStatus(t *testing.T) {
+	m, _, _ := uiTestManager(t, uiWriteScript(t, fakeClaude), "tok-aaa1")
+	old := `{"id":"old1","title":"Old task","repo":"/x","state":"working","created":"2026-01-01T00:00:00Z","updated":"` + time.Now().UTC().Format(time.RFC3339) + `","files":2,"runs":1,"sessions":[{"id":"abc12345","agent":"codex","at":"2026-01-01T00:00:00Z","role":"origin"}],"closed":false}`
+	var rec uiTaskRecord
+	if err := json.Unmarshal([]byte(old), &rec); err != nil {
+		t.Fatal(err)
+	}
+	uiDB().put("task", rec.ID, rec)
+	l := m.taskList("all")
+	if len(l) != 1 || len(l[0].Sessions) != 1 || l[0].Sessions[0].Agent != "codex" || l[0].Sessions[0].State != "" {
+		t.Fatalf("old record = %+v", l)
+	}
+	// It was working and nothing runs it now: a restart left it behind, so it needs attention, not running.
+	if l[0].State != uiStopped || l[0].Status != uiLaneAttention || l[0].Why == "" {
+		t.Fatalf("status = %q state = %q why = %q", l[0].Status, l[0].State, l[0].Why)
+	}
+}
+
+func TestTaskSessionsAreTrackedAndGrouped(t *testing.T) {
+	m, repo, _ := uiTestManager(t, uiWriteScript(t, fakeClaude), "tok-aaa1")
+	a, err := m.start(uiStartRequest{Repo: repo, Prompt: "please tidy the notes folder. It is a mess"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	uiWaitState(t, a, "waiting")
+	a.mu.Lock()
+	a.sessionID = "sess-1234abcd" // the fake harness reports none
+	a.mu.Unlock()
+	m.saveTask(a)
+	uiWaitFor(t, "the session to be listed", func() bool {
+		l := m.taskList("today")
+		return len(l) == 1 && len(l[0].Sessions) == 1 && l[0].Sessions[0].State == "waiting"
+	})
+	r := m.taskList("today")[0]
+	s := r.Sessions[0]
+	if s.Agent != "claude" || s.Run != a.id || s.ID == "" || !s.Ended.IsZero() {
+		t.Fatalf("session = %+v", s)
+	}
+	if r.Status != uiLaneAttention || r.Why == "" {
+		t.Fatalf("a live run waiting for you needs attention: %q %q", r.Status, r.Why)
+	}
+	sum, _, _ := m.taskSummary(r)
+	if !strings.Contains(sum, "1 session (Claude)") {
+		t.Fatalf("summary = %q", sum)
+	}
+	if st, _ := uiTaskStatus(uiTaskRecord{State: uiDone}, uiAgentView{}, false); st != uiLaneFinished {
+		t.Fatal(st)
+	}
+	if st, _ := uiTaskStatus(uiTaskRecord{State: uiStopped, Stop: "cost_limit"}, uiAgentView{}, false); st != uiLaneAttention {
+		t.Fatal(st)
+	}
+	if st, _ := uiTaskStatus(uiTaskRecord{State: uiWorking}, uiAgentView{State: uiWorking}, true); st != uiLaneRunning {
+		t.Fatal(st)
 	}
 }

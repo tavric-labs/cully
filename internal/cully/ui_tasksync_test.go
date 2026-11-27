@@ -83,7 +83,7 @@ func TestOnlySettledTasksAreSavedAndNothingIsSentWithoutTheMCP(t *testing.T) {
 	fresh := uiSettledTask("f1")
 	fresh.Updated = time.Now() // finished a moment ago: wait for it to settle
 	waiting := uiSettledTask("a1")
-	waiting.State, waiting.Updated = uiWaiting, time.Now().Add(-10*time.Minute) // waiting on you, but not for long
+	waiting.State, waiting.Updated = uiWaiting, time.Now().Add(-1*time.Minute) // waiting on you, but not for long (with no run behind it, a record is listed as stopped and settles after five minutes)
 	for _, r := range []uiTaskRecord{working, fresh, waiting} {
 		uiDB().put("task", r.ID, r)
 	}

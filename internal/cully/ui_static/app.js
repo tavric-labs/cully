@@ -1708,45 +1708,69 @@
   // ---------- the task overview ----------
   // Every task, open and closed, with how many sessions it has spawned and on which harnesses, whether it
   // has been saved to Cully memory, and what to do with it: continue it or close it. Closing keeps it.
+  const TASK_LANES = [
+    ['attention', 'Needs attention', 'Waiting for you, stuck, failed, or stopped at a limit or by a restart.'],
+    ['running', 'Running', 'Working now, or starting.'],
+    ['finished', 'Finished', 'Done or closed. Nothing is deleted.'],
+  ];
   async function mountTasks() {
     const stage = $('stage'); stage.className = 'stage';
-    const view = { filter: S.taskFilter || 'open', period: S.taskPeriodAll || 'all', q: '' };
+    const view = { period: S.taskPeriodAll || 'all', q: '' };
+    S.taskLaneShut = S.taskLaneShut || {};
     const wrap = h('div', { class: 'home tasks-page' }); stage.replaceChildren(wrap);
+    const shortDate = (iso) => new Date(iso).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+    const sessionRow = (x) => {
+      const st = TASK_STATE[x.state] || [x.state || 'Unknown', 'info'];
+      const when = x.ended && !x.ended.startsWith('0001') ? 'Started ' + shortDate(x.at) + ', ended ' + shortDate(x.ended) : 'Started ' + shortDate(x.at);
+      const known = x.run && S.agents.some((a) => a.id === x.run);
+      return h('li', { class: 'tsess' }, harnessChip(x.agent), h('code', { title: x.id }, (x.id || '').slice(0, 8)),
+        x.state ? h('span', { class: 'chip fs-' + st[1] }, st[0]) : null, h('span', { class: 'faint small' }, when),
+        x.turns ? h('span', { class: 'faint small' }, x.turns + (x.turns === 1 ? ' turn' : ' turns')) : null,
+        x.cost ? h('span', { class: 'faint small' }, '$' + x.cost.toFixed(2)) : null,
+        known ? h('a', { class: 'btn ghost small', href: '#/task/' + x.run }, 'Open') : null);
+    };
     async function draw() {
       let all = [];
-      try { all = await api('/api/tasks?range=all'); } catch (e) { wrap.replaceChildren(h('div', { class: 'err' }, e.message)); return; }
-      const cutoff = { today: new Date().setHours(0, 0, 0, 0), week: Date.now() - 7 * 864e5, all: 0 }[view.period];
-      const inPeriod = (t) => new Date(t.updated).getTime() >= cutoff;
+      try { all = await api('/api/tasks?range=' + view.period); } catch (e) { wrap.replaceChildren(h('div', { class: 'err' }, e.message)); return; }
       const q = view.q.trim().toLowerCase();
-      const shown = all.filter((t) => inPeriod(t) && (view.filter === 'all' || (view.filter === 'closed') === !!t.closed) && (!q || (t.title + ' ' + (t.last || '')).toLowerCase().includes(q)));
-      const open = all.filter((t) => !t.closed); const sessions = open.reduce((n, t) => n + (t.sessions || []).length, 0);
+      const shown = all.filter((t) => !q || (t.title + ' ' + (t.last || '')).toLowerCase().includes(q));
+      const by = (k) => shown.filter((t) => t.status === k);
+      const sessions = shown.reduce((n, t) => n + (t.sessions || []).length, 0);
       const mem = memoryMode() === 'mcp';
-      const tile = (n, l) => h('div', { class: 'kpi' }, h('b', {}, String(n)), h('span', {}, l));
-      const chip = (k, l, n) => h('button', { type: 'button', class: 'toggle' + (view.filter === k ? ' on' : ''), onclick: () => { view.filter = k; S.taskFilter = k; draw(); } }, l + ' ' + n);
       const per = ([k, l]) => h('button', { type: 'button', class: 'toggle' + (view.period === k ? ' on' : ''), onclick: () => { view.period = k; S.taskPeriodAll = k; draw(); } }, l);
       const search = h('input', { type: 'search', class: 'bsearch', placeholder: 'Search tasks', 'aria-label': 'Search tasks', value: view.q, autocomplete: 'off' });
       search.addEventListener('input', () => { view.q = search.value; const pos = search.selectionStart; draw().then(() => { const el = wrap.querySelector('.bsearch'); if (el) { el.focus(); el.setSelectionRange(pos, pos); } }); });
+      const closeTask = async (t, closed) => { try { await api('/api/tasks/' + t.id + '/close', { method: 'POST', body: JSON.stringify({ closed }) }); await refresh(); draw(); } catch (e) { toast(e.message, true); } };
       const card = (t) => {
         const st = TASK_STATE[t.state] || [t.state, 'info'];
-        const det = h('details', { class: 'rl' }, h('summary', {}, h('span', { class: 'rq' }, (t.sessions || []).length + ((t.sessions || []).length === 1 ? ' session' : ' sessions')), h('span', { class: 'faint small' }, 'see each')),
-          h('ul', { class: 'evlist' }, ...(t.sessions || []).map((x) => h('li', {}, harnessChip(x.agent), h('span', {}, x.role === 'origin' ? 'Started in this harness, continued here' : 'Run by Cully'), h('span', { class: 'faint small' }, new Date(x.at).toLocaleDateString([], { month: 'short', day: 'numeric' }), ' ', h('code', {}, (x.id || '').slice(0, 8)))))));
-        const memChip = t.entries ? h('span', { class: 'chip fs-good', title: 'Summarised and saved to Cully memory (PostgreSQL, indexed by Mem0)' }, 'In memory' + (t.entries > 1 ? ' ×' + t.entries : '')) : (mem ? h('span', { class: 'chip', title: 'It is summarised and saved once it has settled' }, 'Not saved yet') : h('span', { class: 'chip', title: 'Connect the Cully MCP to keep tasks in memory across machines' }, 'Local only'));
+        const ss = t.sessions || [];
+        const det = h('details', { class: 'rl tsessions' }, h('summary', {}, h('span', { class: 'rq' }, 'Sessions (' + ss.length + ')'), h('span', { class: 'faint small' }, 'see each')), h('ul', { class: 'evlist' }, ...ss.map(sessionRow)));
+        const memChip = t.entries ? h('span', { class: 'chip fs-good', title: 'Summarised and saved to Cully memory (PostgreSQL, indexed by Mem0)' }, 'In memory' + (t.entries > 1 ? ' x' + t.entries : '')) : (mem ? h('span', { class: 'chip', title: 'It is summarised and saved once it has settled' }, 'Not saved yet') : h('span', { class: 'chip', title: 'Connect the Cully MCP to keep tasks in memory across machines' }, 'Local only'));
         return h('article', { class: 'tcard' + (t.closed ? ' closed' : '') },
           h('div', { class: 'row' }, h('b', { class: 'ttitle' }, t.title), t.closed ? h('span', { class: 'chip' }, 'Closed') : h('span', { class: 'chip fs-' + (st[1] === 'good' ? 'good' : st[1] === 'bad' ? 'bad' : st[1] === 'wait' ? 'wait' : 'info') }, st[0]), h('span', { class: 'sp' }), h('span', { class: 'faint small' }, ago(t.updated))),
+          t.why ? h('p', { class: 'twhy' }, t.why) : null,
           t.last ? h('p', { class: 'fprev' }, plainPreview(t.last)) : null,
-          h('div', { class: 'row' }, t.repo ? h('span', { class: 'chip', title: t.repo }, icon('folder'), t.repo.split('/').filter(Boolean).pop()) : null, ...[...new Set((t.sessions || []).map((x) => x.agent).filter(Boolean))].map((x) => harnessChip(x)),
+          h('div', { class: 'row' }, t.repo ? h('span', { class: 'chip', title: t.repo }, icon('folder'), t.repo.split('/').filter(Boolean).pop()) : null, ...[...new Set(ss.map((x) => x.agent).filter(Boolean))].map((x) => harnessChip(x)),
             t.files ? h('span', { class: 'chip' }, t.files + (t.files === 1 ? ' file' : ' files')) : null, t.runs ? h('span', { class: 'chip' }, t.runs + (t.runs === 1 ? ' run' : ' runs')) : null, memChip),
-          (t.sessions || []).length ? det : null,
+          ss.length ? det : null,
           h('div', { class: 'row' },
             t.live ? h('a', { class: 'btn small', href: '#/task/' + t.live }, 'Open') : h('button', { class: 'btn small', onclick: () => continueTaskDialog(t) }, icon('send'), t.closed ? 'Reopen and continue' : 'Continue'),
-            t.closed ? h('button', { class: 'btn ghost small', onclick: async () => { try { await api('/api/tasks/' + t.id + '/close', { method: 'POST', body: JSON.stringify({ closed: false }) }); draw(); } catch (e) { toast(e.message, true); } } }, 'Reopen')
-              : h('button', { class: 'btn ghost small', title: 'Done with it: stops any run and moves it to Closed. Nothing is deleted.', onclick: async () => { try { await api('/api/tasks/' + t.id + '/close', { method: 'POST', body: JSON.stringify({ closed: true }) }); await refresh(); draw(); } catch (e) { toast(e.message, true); } } }, icon('check'), 'Close')));
+            t.closed ? h('button', { class: 'btn ghost small', onclick: () => closeTask(t, false) }, 'Reopen')
+              : h('button', { class: 'btn ghost small', title: 'Done with it: stops any run and moves it to Finished. Nothing is deleted.', onclick: () => closeTask(t, true) }, icon('check'), 'Close')));
       };
-      wrap.replaceChildren(h('h1', {}, 'Tasks'), h('p', { class: 'sub' }, 'Everything you have asked Cully to do, with the sessions each task spawned on any harness. Continue one, or close it when you are done.'),
-        h('div', { class: 'kpis' }, tile(open.length, 'Open tasks'), tile(sessions, 'Sessions in open tasks'), tile(all.length - open.length, 'Closed'), tile(all.filter((t) => t.entries).length, 'Saved to memory')),
-        h('div', { class: 'row filters' }, chip('open', 'Open', open.length), chip('closed', 'Closed', all.length - open.length), chip('all', 'All', all.length), h('span', { class: 'sp' }), ...[['today', 'Today'], ['week', 'This week'], ['all', 'All time']].map(per)),
-        h('div', { class: 'row' }, search),
-        shown.length ? h('div', { class: 'tgrid' }, ...shown.map(card)) : emptyCard(view.filter === 'closed' ? 'No closed tasks' : 'No tasks here', 'Tasks you start appear here, with every session they spawn.', 'Start a task', '#/'));
+      const lane = ([k, label, hint]) => {
+        const items = by(k);
+        const d = h('details', { class: 'tlane tlane-' + k, open: !S.taskLaneShut[k] }, h('summary', {}, h('b', {}, label), h('span', { class: 'chip' }, String(items.length)), h('span', { class: 'faint small' }, hint)),
+          items.length ? h('div', { class: 'tgrid' }, ...items.map(card)) : h('p', { class: 'faint small tempty' }, 'Nothing here.'));
+        d.addEventListener('toggle', () => { S.taskLaneShut[k] = !d.open; });
+        return d;
+      };
+      const tile = ([k, label]) => h('div', { class: 'kpi tkpi-' + k }, h('b', {}, String(by(k).length)), h('span', {}, label));
+      const order = by('attention').length ? TASK_LANES : [TASK_LANES[1], TASK_LANES[0], TASK_LANES[2]];
+      wrap.replaceChildren(h('h1', {}, 'Tasks'), h('p', { class: 'sub' }, 'Every task, grouped by where it stands. A task is made of sessions, on any harness. Continue one, or close it when you are done.'),
+        h('div', { class: 'kpis tsummary' }, ...order.map(tile), h('div', { class: 'kpi' }, h('b', {}, String(sessions)), h('span', {}, 'Sessions in all'))),
+        h('div', { class: 'row filters' }, ...[['today', 'Today'], ['week', 'This week'], ['all', 'All time']].map(per), h('span', { class: 'sp' }), search),
+        shown.length ? h('div', { class: 'tlanes' }, ...order.map(lane)) : emptyCard('No tasks here', 'Tasks you start appear here, with every session they spawn.', 'Start a task', '#/'));
     }
     await draw();
   }

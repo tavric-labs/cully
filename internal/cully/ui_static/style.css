@@ -1034,3 +1034,16 @@ details.sgroup > summary { cursor: pointer; } details.sgroup > summary::-webkit-
 .dg-note { color: var(--faint); font-size: var(--t-s); text-align: center; padding: 6px; }
 .dg-note.bad { color: var(--red); }
 .diagram .codeblock { margin: 0; border: 0; border-top: 1px solid var(--line); border-radius: 0; }
+
+/* Task overview by status */
+.tsummary { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
+.tsummary .tkpi-attention b { color: var(--red); }
+.tlanes { display: flex; flex-direction: column; gap: 14px; margin-top: 14px; }
+.tlane { border: 1px solid var(--line); border-radius: 12px; padding: 4px 14px 12px; background: var(--surface); }
+.tlane > summary { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; cursor: pointer; padding: 10px 0; list-style: none; }
+.tlane > summary b { font: 600 16px var(--serif); }
+.tlane-attention { border-color: var(--red); }
+.tempty { margin: 4px 0 0; }
+.twhy { margin: 0; font-weight: 600; color: var(--red); font-size: 13px; }
+.tsessions .evlist { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.tsess { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
