@@ -2778,36 +2778,52 @@
     card.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openFeedItem(it); } });
     return card;
   }
+  // What Cully did, by period. The periods sit in a column on the right with their counts, and the
+  // day-by-day feed fills the left. Everything comes from one call for the last 30 days.
+  const FEED_PERIODS = [['today', 'Today'], ['yesterday', 'Yesterday'], ['7', '7 days'], ['15', '15 days'], ['30', '30 days']];
+  function feedWindow(key) {
+    const now = new Date(); const mid = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    if (key === 'today') return [mid, Infinity];
+    if (key === 'yesterday') return [mid - 86400000, mid];
+    return [Date.now() - Number(key) * 86400000, Infinity];
+  }
   async function renderFeed(out, head) {
-    const kind = S.feedKind || '';
+    const kind = S.feedKind || ''; const period = S.feedPeriod || 'today';
     let all = [];
-    try { all = await api('/api/feed'); } catch (e) { out.replaceChildren(head(), h('div', { class: 'callout' }, e.message)); return; }
+    try { all = await api('/api/feed?days=30'); } catch (e) { out.replaceChildren(head(), h('div', { class: 'callout' }, e.message)); return; }
     const again = () => renderFeed(out, head);
-    const list = kind ? all.filter((i) => i.kind === kind) : all;
-    const dayAgo = Date.now() - 86400000;
-    const recent = all.filter((i) => new Date(i.at).getTime() > dayAgo);
-    const count = (f) => recent.filter(f).length;
-    const tiles = h('div', { class: 'kpis' }, ...[
-      [count((i) => i.kind === 'task' && i.status === 'good'), 'Tasks finished'], [count((i) => i.kind === 'agent'), 'Agent runs'],
+    const inWin = (key) => { const [from, to] = feedWindow(key); return all.filter((i) => { const t = new Date(i.at).getTime(); return t >= from && t < to; }); };
+    const inPeriod = inWin(period);
+    const list = kind ? inPeriod.filter((i) => i.kind === kind) : inPeriod;
+    const count = (f) => inPeriod.filter(f).length;
+    const tasks = inPeriod.filter((i) => i.kind === 'task');
+    const kpis = [
+      [count((i) => i.kind === 'task' && i.status === 'good'), 'Tasks finished'], [tasks.length, 'Tasks worked on'], [count((i) => i.kind === 'agent'), 'Agent runs'],
       [count((i) => i.kind === 'eval' && i.status === 'good'), 'Evals passed'], [count((i) => i.kind === 'eval' && i.status === 'bad'), 'Evals failed'],
       [count((i) => i.kind === 'scout'), 'Scouts'], [count((i) => i.status === 'wait' || i.status === 'bad'), 'Need a look'],
-    ].map(([n, l]) => h('div', { class: 'kpi' }, h('b', {}, String(n)), h('span', {}, l))));
-    const chips = h('div', { class: 'row filters' }, ...FEED_KINDS.map(([k, l]) => { const n = k ? all.filter((i) => i.kind === k).length : all.length; return h('button', { type: 'button', class: 'toggle' + (kind === k ? ' on' : ''), onclick: () => { S.feedKind = k; again(); } }, l + (n ? ' ' + n : '')); }));
-    const attention = list.filter((i) => (i.status === 'wait' || i.status === 'bad') && new Date(i.at).getTime() > Date.now() - 3 * 86400000).slice(0, 6);
+    ];
+    const label = (FEED_PERIODS.find(([k]) => k === period) || FEED_PERIODS[0])[1].toLowerCase();
+    const said = [];
+    if (tasks.length) said.push(tasks.length + (tasks.length === 1 ? ' task' : ' tasks'));
+    const runs = count((i) => i.kind === 'agent'); if (runs) said.push(runs + (runs === 1 ? ' agent run' : ' agent runs'));
+    const evs = count((i) => i.kind === 'eval'); if (evs) said.push(evs + (evs === 1 ? ' eval' : ' evals'));
+    const sc = count((i) => i.kind === 'scout'); if (sc) said.push(sc + (sc === 1 ? ' scout' : ' scouts'));
+    const summary = h('p', { class: 'actsum' }, said.length ? (period === 'today' || period === 'yesterday' ? 'Cully handled ' : 'Over the last ' + label + ', Cully handled ') + said.join(', ') + (period === 'today' ? ' today.' : period === 'yesterday' ? ' yesterday.' : '.') : (period === 'today' ? 'Nothing has happened today yet.' : 'Nothing happened in this period.'));
+    const side = h('aside', { class: 'actside', 'aria-label': 'Period' },
+      h('div', { class: 'actcard' }, h('div', { class: 'opt-label' }, 'Period'),
+        h('div', { class: 'actperiods', role: 'tablist' }, ...FEED_PERIODS.map(([k, l]) => h('button', { type: 'button', role: 'tab', class: 'actp' + (k === period ? ' on' : ''), 'aria-selected': String(k === period), onclick: () => { S.feedPeriod = k; again(); } }, h('span', {}, l), h('span', { class: 'pn' }, String(inWin(k).length)))))),
+      h('div', { class: 'actcard' }, h('div', { class: 'opt-label' }, 'In this period'), h('div', { class: 'actkpis' }, ...kpis.map(([n, l]) => h('div', { class: 'actk' }, h('b', {}, String(n)), h('span', {}, l))))),
+      h('div', { class: 'actcard' }, h('div', { class: 'opt-label' }, 'Show'), h('div', { class: 'actkinds' }, ...FEED_KINDS.map(([k, l]) => { const n = k ? inPeriod.filter((i) => i.kind === k).length : inPeriod.length; return h('button', { type: 'button', class: 'actp' + (kind === k ? ' on' : ''), onclick: () => { S.feedKind = k; again(); } }, h('span', {}, l), h('span', { class: 'pn' }, String(n))); }))));
+    const attention = list.filter((i) => i.status === 'wait' || i.status === 'bad').slice(0, 6);
+    const now = new Date(); const dayName = (iso) => { const d = new Date(iso); const mid = (x) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime(); const diff = Math.round((mid(now) - mid(d)) / 86400000); return diff === 0 ? 'Today' : diff === 1 ? 'Yesterday' : d.toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric' }); };
     const days = [];
-    for (const it of list) {
-      const d = new Date(it.at).toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric' });
-      if (!days.length || days[days.length - 1].d !== d) days.push({ d, items: [] });
-      days[days.length - 1].items.push(it);
-    }
-    out.replaceChildren(head(refreshBtn(again)),
-      activityTabs('feed'),
-      h('p', { class: 'faint small' }, 'Last 24 hours'), tiles,
-      chips,
+    for (const it of list) { const d = dayName(it.at); if (!days.length || days[days.length - 1].d !== d) days.push({ d, items: [] }); days[days.length - 1].items.push(it); }
+    const main = h('div', { class: 'actmain' }, summary,
       attention.length ? h('section', { class: 'fsec' }, h('h3', { class: 'section-h' }, 'Needs a look'), h('div', { class: 'fgrid' }, ...attention.map(feedCard))) : null,
       days.length ? h('div', {}, ...days.map((g) => h('section', { class: 'fsec' }, h('h3', { class: 'section-h' }, g.d, h('span', { class: 'faint small' }, '  ' + g.items.length + (g.items.length === 1 ? ' item' : ' items'))),
         h('div', { class: 'fgrid' }, ...g.items.map(feedCard)))))
-        : emptyCard('Nothing has happened yet', 'Tasks, agent runs, evals, scouts and advice show up here as they happen.', 'Start a task', '#/'));
+        : emptyCard(period === 'today' ? 'Nothing yet today' : 'Nothing in this period', 'Tasks, agent runs, evals, scouts and advice show up here as they happen. Try a longer period.', 'Start a task', '#/'));
+    out.replaceChildren(head(refreshBtn(again)), activityTabs('feed'), h('div', { class: 'actwrap' }, main, side));
   }
   const activityTabs = (on) => h('div', { class: 'row filters' }, h('button', { type: 'button', class: 'toggle' + (on === 'feed' ? ' on' : ''), onclick: () => { S.activityTab = 'feed'; drawPanel('activity', true); } }, 'Feed'), h('button', { type: 'button', class: 'toggle' + (on === 'folder' ? ' on' : ''), onclick: () => { S.activityTab = 'folder'; drawPanel('activity', true); } }, 'This folder'));
   async function renderActivity(out, head, filter) {

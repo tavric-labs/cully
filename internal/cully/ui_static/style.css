@@ -1162,3 +1162,21 @@ details.sgroup > summary { cursor: pointer; } details.sgroup > summary::-webkit-
 .home .card, .home .tcard, .home .welcome, .home .lib-card { border: 1px solid var(--line); border-radius: 12px; padding: 13px 15px; background: var(--raised); margin: 0; }
 .home .welcome { border-left-width: 1px; }
 .home .card.attn { border-color: var(--amber); }
+
+/* Activity: the feed on the left, the period and counts in a column on the right. */
+.actwrap { display: grid; grid-template-columns: minmax(0, 1fr) 250px; gap: 20px; align-items: start; }
+.actside { display: flex; flex-direction: column; gap: 12px; position: sticky; top: 12px; }
+.actcard { border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; background: var(--raised); }
+.actcard .opt-label { margin: 0 0 8px; }
+.actperiods, .actkinds { display: flex; flex-direction: column; gap: 3px; }
+.actp { display: flex; justify-content: space-between; align-items: center; border: 1px solid transparent; background: transparent; border-radius: 8px; padding: 6px 10px; color: var(--soft); text-align: left; }
+.actp:hover { background: var(--surface2); }
+.actp.on { background: var(--forest); color: var(--on-primary); font-weight: 600; }
+.actp .pn { font-variant-numeric: tabular-nums; opacity: .75; font-size: var(--t-s); }
+.actkpis { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 12px; }
+.actk { display: flex; flex-direction: column; }
+.actk b { font: 600 var(--t-l) var(--serif); font-variant-numeric: tabular-nums; }
+.actk span { color: var(--faint); font-size: var(--t-s); }
+.actsum { margin: 0 0 6px; font: 500 var(--t-m) var(--serif); color: var(--ink); }
+.actmain .fsec:first-of-type .section-h { margin-top: 12px; }
+@media (max-width: 860px) { .actwrap { grid-template-columns: 1fr; } .actside { position: static; order: -1; flex-direction: row; flex-wrap: wrap; } .actside .actcard { flex: 1 1 220px; } }

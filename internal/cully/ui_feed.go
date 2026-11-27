@@ -77,6 +77,40 @@ func (m *uiManager) feed(kind string, limit int) []uiFeedItem {
 		}
 		add(uiFeedItem{ID: "task-" + a.ID, Kind: "task", Status: st, Title: a.Title + " " + word, Detail: a.Last, Body: a.Last, Meta: meta, At: a.Updated, Href: "#/task/" + a.ID, Repo: a.Repo})
 	}
+	// tasks that are no longer live come from the saved task records, so a week of work shows up
+	seenTask := map[string]bool{}
+	for _, it := range items {
+		seenTask[it.ID] = true
+	}
+	for _, t := range m.taskList("all") {
+		if seenTask["task-"+t.ID] {
+			continue
+		}
+		st, word := "info", "was worked on"
+		switch t.State {
+		case uiDone:
+			st, word = "good", "finished"
+		case uiFailed:
+			st, word = "bad", "failed"
+		case uiStopped:
+			word = "was stopped"
+		case uiWaiting:
+			st, word = "wait", "was waiting for an answer"
+		}
+		if t.Closed {
+			st, word = "good", "was closed"
+		}
+		harness := map[string]bool{}
+		var names []string
+		for _, x := range t.Sessions {
+			if x.Agent != "" && !harness[x.Agent] {
+				harness[x.Agent] = true
+				names = append(names, x.Agent)
+			}
+		}
+		meta := uiMetaList("Folder", t.Repo, "Branch", t.Branch, "Sessions", uiNonZero(len(t.Sessions)), "Harnesses", strings.Join(names, ", "), "Files changed", uiNonZero(t.Files))
+		add(uiFeedItem{ID: "task-" + t.ID, Kind: "task", Status: st, Title: t.Title + " " + word, Detail: t.Last, Body: t.Last, Meta: meta, At: t.Updated, Href: "#/tasks", Repo: t.Repo})
+	}
 	for _, id := range m.identityList() {
 		for _, r := range id.Runs {
 			st, word := "info", "is running"
@@ -165,6 +199,27 @@ func (s *uiServer) feedGet(w http.ResponseWriter, r *http.Request) {
 	kind := r.URL.Query().Get("kind")
 	if kind != "" && !uiFeedKinds[kind] {
 		uiError(w, http.StatusBadRequest, "kind must be task, agent, eval, scout or advice")
+		return
+	}
+	// days=N returns everything from the last N days (up to 30), for the Activity page's periods
+	if d, err := strconv.Atoi(r.URL.Query().Get("days")); err == nil && d > 0 {
+		if d > 30 {
+			d = 30
+		}
+		cut := time.Now().AddDate(0, 0, -d)
+		var out []uiFeedItem
+		for _, it := range s.m.feed(kind, 0) {
+			if it.At.After(cut) {
+				out = append(out, it)
+			}
+		}
+		if len(out) > 800 {
+			out = out[:800]
+		}
+		if out == nil {
+			out = []uiFeedItem{}
+		}
+		uiJSON(w, http.StatusOK, out)
 		return
 	}
 	uiJSON(w, http.StatusOK, s.m.feed(kind, 150))
