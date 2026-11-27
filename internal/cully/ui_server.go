@@ -96,6 +96,7 @@ func newUIServer(m *uiManager, token string, loopback bool) http.Handler {
 	static, _ := fs.Sub(uiStaticFS, "ui_static")
 	mux := http.NewServeMux()
 	mux.Handle("GET /api/info", s.api(s.info))
+	s.setupRoutes(mux)
 	mux.Handle("GET /api/agents", s.api(s.listAgents))
 	mux.Handle("POST /api/agents", s.api(s.createAgent))
 	mux.Handle("GET /api/agents/{id}", s.api(s.getAgent))
@@ -323,7 +324,7 @@ func (s *uiServer) info(w http.ResponseWriter, r *http.Request) {
 	uiJSON(w, http.StatusOK, map[string]any{
 		"repos": repoPaths(s.m.repoList()), "repoInfo": s.m.repoListNow(), "tokens": accounts, "host": uiHostname(), "user": uiUsername(),
 		"auth":      map[string]any{"mode": mode, "accounts": accounts},
-		"maxAgents": s.m.cfg.MaxAgents, "panels": uiPanels, "memoryOverride": uiMemoryOverride(),
+		"maxAgents": s.m.cfg.MaxAgents, "panels": uiPanels, "memoryOverride": uiMemoryOverride(), "setupDone": SetupDone(),
 	})
 }
 
