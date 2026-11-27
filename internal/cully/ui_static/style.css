@@ -1193,3 +1193,43 @@ details.sgroup > summary { cursor: pointer; } details.sgroup > summary::-webkit-
 .jedit { display: flex; flex-direction: column; gap: 10px; padding-top: 4px; border-top: 1px solid var(--line); }
 .jtext { width: 100%; min-height: 56px; margin: 8px 0; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: var(--ink); padding: 8px 10px; font: inherit; resize: vertical; }
 .jtail { white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--mono, monospace); font-size: 12px; }
+
+/* Switches: the knob was built as a span but styled as an i, so no knob ever showed. One look for both,
+   with the state written next to it so it never depends on colour alone. */
+.switch { width: 44px; height: 26px; background: var(--faint); box-shadow: inset 0 0 0 1px var(--line2); }
+.switch .knob, .switch i { position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%; background: #fff; transition: transform .15s ease; box-shadow: 0 1px 3px rgba(0,0,0,.35); }
+.switch[aria-checked="true"] { background: var(--forest-hi); box-shadow: none; }
+.switch[aria-checked="true"] .knob, .switch[aria-checked="true"] i { transform: translateX(18px); }
+.switch::before { content: "Off"; position: absolute; right: calc(100% + 9px); top: 50%; transform: translateY(-50%); font-size: var(--t-s); font-weight: 600; color: var(--faint); white-space: nowrap; }
+.switch[aria-checked="true"]::before { content: "On"; color: var(--add-ink); }
+.pcard { border-left-width: 4px; }
+.pcard:not(.on) { background: var(--surface); }
+.pcard:not(.on) > .row > b { color: var(--soft); }
+.pcard.on { background: color-mix(in srgb, var(--add-bg) 45%, var(--raised)); }
+.pcard:hover { border-color: var(--line2); border-left-color: inherit; }
+
+/* New task page in the Omnigent manner: one big prompt, options as pills beneath it. */
+.home-bg .home { padding-top: clamp(28px, 11vh, 120px); }
+.herohead { display: flex; align-items: center; justify-content: center; gap: 14px; margin-bottom: 8px; }
+.herohead h1 { margin: 0; font: 650 clamp(26px, 4.2vw, 38px)/1.1 var(--sans); letter-spacing: -.025em; }
+.heromark { width: 44px; height: 44px; border-radius: 14px; display: grid; place-items: center; background: var(--green); color: var(--green-ink); }
+.heromark svg { width: 22px; height: 22px; }
+.home-bg .home > .sub { text-align: center; margin: 0 auto 26px; }
+.hero-composer { border-radius: 22px; padding: 18px 20px 12px; box-shadow: 0 8px 28px rgba(8, 20, 15, .07); }
+.hero-composer textarea { min-height: 92px; }
+.hero-composer .cbar { display: flex; align-items: center; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+.hero-composer .cbar .sp { flex: 1; }
+.btn.round.send { width: 42px; height: 42px; background: var(--forest); color: var(--on-primary); border: 0; }
+.btn.round.send:hover { background: var(--forest-hi); }
+.btn.round.send:disabled { opacity: .5; }
+.pillrow { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 14px 4px 0; }
+.pillbtn { display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--line); background: var(--raised); color: var(--soft); border-radius: 99px; padding: 6px 12px; font-size: 13px; cursor: pointer; list-style: none; white-space: nowrap; }
+.pillbtn:hover { border-color: var(--line2); color: var(--ink); }
+.pillbtn svg { width: 14px; height: 14px; }
+.pillbtn.static { cursor: default; }
+.pillbtn.static select { border: 0; background: transparent; padding: 0 2px; max-width: 220px; color: var(--ink); }
+details.pillpop[open] > summary { border-color: var(--forest-hi); color: var(--ink); box-shadow: 0 0 0 3px var(--focus); }
+details.pillpop > summary::-webkit-details-marker { display: none; }
+.pillpop .pop-card { right: auto; left: 0; min-width: 260px; padding: 12px 14px; }
+.popcol { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+.pillrow .seg { margin: 0; }

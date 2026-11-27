@@ -485,18 +485,21 @@
     const limits = h('div', { class: 'row limits' }, limitIn('maxCost', 'Stop at $', 'no limit', '0.5'), limitIn('maxTurns', 'or after turns', 'no limit', '1'));
     const loopToggle = toggle('loop', 'Keep going until checked', 'Cully verifies the work, steers the agent when it loops, and judges it against your checks');
     loopToggle.querySelector('input').addEventListener('change', () => { loopBox.hidden = !S.opts.loop; });
-    // The options sit in labelled groups on one grid, so every control lines up and none is squeezed.
-    const group = (label, ...kids) => h('div', { class: 'og' }, h('span', { class: 'opt-label' }, label), h('div', { class: 'row' }, ...kids));
-    const form = h('form', { class: 'composer-card' }, ta, loopBox,
-      h('div', { class: 'optgrid' },
-        group('Include', toggle('context', 'Context', "Start from this project's latest journal and git state"),
-          toggle('recall', 'Recall', 'Ask Cully memory what is relevant (needs the Cully MCP signed in)'),
-          toggle('scout', 'Scout', 'Search the web for current practice and pitfalls')),
-        group('Checks', loopToggle),
-        group('Mode', seg, repo),
-        group('Limits', limits)),
-      h('div', { class: 'row actions' }, h('span', { class: 'faint small' }, 'Cmd or Ctrl+Enter starts'), h('span', { class: 'sp' }), later, start), err);
-    form.insertBefore(voiceControls(ta, form), err);
+    // One large rounded prompt, with every option as a small pill under it (the way Omnigent lays it out):
+    // the folder and mode stay in view, and the rest open from a pill.
+    const pop = (label, ic, ...kids) => h('details', { class: 'menu pillpop' }, h('summary', { class: 'pillbtn' }, icon(ic), label, icon('down')), h('div', { class: 'menu-pop pop-card' }, ...kids));
+    const folderPill = repo ? h('label', { class: 'pillbtn static', title: 'The folder the task works in' }, icon('folder'), repo) : null;
+    start.className = 'btn round send'; start.setAttribute('aria-label', 'Start task'); start.title = 'Start the task'; start.replaceChildren(icon('send'));
+    const voiceRef = { form: null }; const voiceEl = voiceControls(ta, { requestSubmit: () => voiceRef.form && voiceRef.form.requestSubmit() });
+    const form = h('form', { class: 'composer-card hero-composer' }, ta, loopBox,
+      h('div', { class: 'cbar' }, voiceEl, h('span', { class: 'sp' }), later, start), err);
+    voiceRef.form = form;
+    const pills = h('div', { class: 'pillrow' }, folderPill, seg,
+      pop('Include', 'plus', h('div', { class: 'popcol' }, toggle('context', 'Context', "Start from this project's latest journal and git state"),
+        toggle('recall', 'Recall', 'Ask Cully memory what is relevant (needs the Cully MCP signed in)'),
+        toggle('scout', 'Scout', 'Search the web for current practice and pitfalls'))),
+      pop('Checks', 'check', h('div', { class: 'popcol' }, loopToggle)),
+      pop('Limits', 'clock', limits));
     later.addEventListener('click', async () => {
       err.hidden = true;
       try {
@@ -522,9 +525,9 @@
     const fleet = h('div', { id: 'fleet' });
     $('stage').className = 'stage home-bg';
     $('stage').replaceChildren(h('div', { class: 'home' },
-      h('h1', {}, 'What should Cully work on?'),
-      h('p', { class: 'sub' }, 'Give a task. Cully prepares context, starts an agent on the next token, and you can keep talking to it. ⌘/Ctrl+Enter to start.'),
-      h('div', { id: 'mcpbanner' }), form, repoLine, fleet));
+      h('div', { class: 'herohead' }, h('span', { class: 'heromark', 'aria-hidden': 'true' }, icon('spark')), h('h1', {}, 'What should we do?')),
+      h('p', { class: 'sub' }, 'Describe a task. Cully gathers context, then runs it in its own worktree. Cmd or Ctrl+Enter starts it.'),
+      h('div', { id: 'mcpbanner' }), form, pills, repoLine, fleet));
     renderFleet();
     drawMCPBanner();
     const welcomeBox = h('div', { class: 'welcomebox' }); const tasksBox = h('div', { class: 'taskhist' }); $('stage').firstChild.append(welcomeBox, tasksBox); renderWelcome(welcomeBox); renderTaskHistory(tasksBox);
