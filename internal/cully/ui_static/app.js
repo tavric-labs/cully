@@ -4406,7 +4406,8 @@
             matchSnippet(x, terms),
             h('div', { class: 'sx-meta' }, folder ? h('span', { class: 'chip', title: x.cwd }, icon('folder'), highlight(folder, terms)) : null,
               x.branch && x.branch !== 'HEAD' ? h('span', { class: 'chip mono', title: x.branch }, icon('branch'), x.branch) : null,
-              x.activeSec ? h('span', { class: 'faint small', title: 'Time spent working in this session' }, dur(x.activeSec) + ' worked') : null)),
+              x.activeSec ? h('span', { class: 'faint small', title: 'Time spent working in this session' }, dur(x.activeSec) + ' worked') : null,
+              x.origin ? h('span', { class: 'faint small', title: 'Where this session was started' }, x.origin) : null)),
           h('div', { class: 'sx-act' }, primary, menu));
         li.addEventListener('click', (e) => { if (e.target.closest('a, button, summary, details, input, select')) return; location.hash = sessionHref(x.id); });
         return li;
