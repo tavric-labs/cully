@@ -179,18 +179,35 @@ func TestCursorRunnerShowsErrorFromStderr(t *testing.T) {
 	a.stop()
 }
 
-func TestCursorDenyRulesAreWrittenOnce(t *testing.T) {
+func TestCursorDenyRulesAreWrittenOnceAndFailClosed(t *testing.T) {
 	wt := t.TempDir()
-	msg := uiCursorDenyRules(wt, []string{"Bash(git push:*)", "Bash(rm:*)", "WebFetch"})
+	msg, ok := uiCursorDenyRules(wt, []string{"Bash(git push:*)", "Bash(rm:*)"})
 	b, err := os.ReadFile(filepath.Join(wt, ".cursor", "cli.json"))
-	if err != nil || !strings.Contains(string(b), "Shell(git push)") || !strings.Contains(string(b), "Shell(rm)") || !strings.Contains(msg, "2 block rules") {
-		t.Fatalf("%v %s %s", err, b, msg)
+	if !ok || err != nil || !strings.Contains(string(b), "Shell(git push)") || !strings.Contains(string(b), "Shell(rm)") || !strings.Contains(msg, "2 block rules") {
+		t.Fatalf("%v %v %s %s", ok, err, b, msg)
 	}
-	if msg := uiCursorDenyRules(wt, []string{"Bash(ls:*)"}); !strings.Contains(msg, "own .cursor/cli.json") {
-		t.Fatal(msg)
+	// the project already has a file: the list could not be applied, so edit mode must not use --force
+	if msg, ok := uiCursorDenyRules(wt, []string{"Bash(ls:*)"}); ok || !strings.Contains(msg, "own .cursor/cli.json") {
+		t.Fatalf("%v %s", ok, msg)
 	}
-	if uiCursorDenyRules(t.TempDir(), nil) != "" {
-		t.Fatal("no rules, no file")
+	// a rule Cursor's file cannot be given is not dropped quietly
+	if msg, ok := uiCursorDenyRules(t.TempDir(), []string{"Bash(git push:*)", "WebFetch"}); ok || !strings.Contains(msg, "WebFetch") {
+		t.Fatalf("%v %s", ok, msg)
+	}
+	if msg, ok := uiCursorDenyRules(t.TempDir(), nil); !ok || msg != "" {
+		t.Fatal("no rules, nothing to apply, nothing written")
+	}
+}
+
+func TestCursorIsTrustedOnlyWhenTheProjectCannotStartPrograms(t *testing.T) {
+	dir := t.TempDir()
+	if got := uiCursorProjectRunsPrograms(dir); got != "" {
+		t.Fatalf("an empty project: %q", got)
+	}
+	_ = os.MkdirAll(filepath.Join(dir, ".cursor"), 0o755)
+	_ = os.WriteFile(filepath.Join(dir, ".cursor", "hooks.json"), []byte("{}"), 0o644)
+	if got := uiCursorProjectRunsPrograms(dir); got != ".cursor/hooks.json" {
+		t.Fatalf("a project with hooks: %q", got)
 	}
 }
 

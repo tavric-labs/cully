@@ -109,7 +109,10 @@ func (r *uiCursorRunner) Stop() { r.a.stop() }
 // args builds the command line of one turn. The prompt follows "--" so text that starts with a dash
 // is never read as a flag.
 func (r *uiCursorRunner) args(prompt string) []string {
-	args := []string{"-p", "--output-format", "stream-json", "--stream-partial-output", "--trust", "--workspace", r.spec.Cwd}
+	args := []string{"-p", "--output-format", "stream-json", "--stream-partial-output", "--workspace", r.spec.Cwd}
+	if uiCursorProjectRunsPrograms(r.spec.Cwd) == "" {
+		args = append(args, "--trust") // trust a folder only when it holds no Cursor setting that can start a program
+	}
 	if r.spec.Model != "" {
 		args = append(args, "--model", r.spec.Model)
 	}
@@ -424,29 +427,51 @@ func (s *uiServer) cursorAvailable() uiHarnessChoice {
 	return c
 }
 
-// uiCursorDenyRules writes Cully's block list as Cursor project deny rules in the task's worktree,
-// unless the project already has its own file, and keeps the file out of git's view. It returns what
-// it did, for the task's note.
-func uiCursorDenyRules(worktree string, deny []string) string {
-	var rules []string
+// uiCursorProjectRunsPrograms names the first Cursor project file that can make Cursor start a program
+// (an MCP server or a hook), or "". A folder with one is never trusted for the user: Cursor's own trust
+// check decides, and the user may already have trusted it.
+func uiCursorProjectRunsPrograms(dir string) string {
+	for _, f := range []string{".cursor/mcp.json", ".cursor/hooks.json"} {
+		if _, err := os.Stat(filepath.Join(dir, f)); err == nil {
+			return f
+		}
+	}
+	return ""
+}
+
+// uiCursorDenyRules writes Cully's block list as Cursor project deny rules in the task's worktree and
+// keeps the file out of git's view. ok is false when the whole list could not be applied: a rule of a
+// kind Cursor's file cannot express here, a project that already has its own file, or a write that
+// failed. An edit task then does not run with --force. The text says what happened, for the task's note.
+func uiCursorDenyRules(worktree string, deny []string) (note string, ok bool) {
+	var rules, skipped []string
 	for _, d := range deny {
-		if inner, ok := strings.CutPrefix(strings.TrimSpace(d), "Bash("); ok && strings.HasSuffix(inner, ")") {
+		d = strings.TrimSpace(d)
+		if d == "" {
+			continue
+		}
+		if inner, isBash := strings.CutPrefix(d, "Bash("); isBash && strings.HasSuffix(inner, ")") {
 			inner = strings.TrimSuffix(strings.TrimSuffix(inner, ")"), ":*")
 			if inner = strings.Join(strings.Fields(inner), " "); inner != "" {
 				rules = append(rules, "Shell("+inner+")")
+				continue
 			}
 		}
+		skipped = append(skipped, d)
+	}
+	if len(skipped) > 0 {
+		return "Your block list has rules Cursor cannot be given (" + strings.Join(skipped, ", ") + ").", false
 	}
 	if len(rules) == 0 {
-		return ""
+		return "", true
 	}
 	p := filepath.Join(worktree, ".cursor", "cli.json")
 	if _, err := os.Stat(p); err == nil {
-		return "The project has its own .cursor/cli.json, so your block list was not added to it."
+		return "The project has its own .cursor/cli.json, so your block list could not be added to it.", false
 	}
 	b, _ := json.MarshalIndent(map[string]any{"version": 1, "permissions": map[string]any{"allow": []string{}, "deny": rules}}, "", "  ")
 	if os.MkdirAll(filepath.Dir(p), 0o755) != nil || os.WriteFile(p, b, 0o644) != nil {
-		return "Your block list could not be written for Cursor."
+		return "Your block list could not be written for Cursor.", false
 	}
 	if out, err := exec.Command("git", "-C", worktree, "rev-parse", "--git-path", "info/exclude").Output(); err == nil {
 		ex := strings.TrimSpace(string(out))
@@ -458,7 +483,7 @@ func uiCursorDenyRules(worktree string, deny []string) string {
 			_ = f.Close()
 		}
 	}
-	return fmt.Sprintf("%d block rules were written to .cursor/cli.json for Cursor to apply.", len(rules))
+	return fmt.Sprintf("%d block rules were written to .cursor/cli.json for Cursor to apply.", len(rules)), true
 }
 
 func (a *uiAgent) runCursor(m *uiManager, prompt string) {
@@ -471,6 +496,17 @@ func (a *uiAgent) runCursor(m *uiManager, prompt string) {
 	if readOnly {
 		mode = "plan" // you have not allowed this task to edit: read only
 	}
+	// Edit mode runs with --force, so it is allowed only when Cully's whole block list can be given to
+	// Cursor. When it cannot, the task runs in plan mode (read only) and says why.
+	var denyNote string
+	if mode == "edit" {
+		if note, ok := uiCursorDenyRules(a.worktree, deny); ok {
+			denyNote = note
+		} else {
+			mode = "plan"
+			a.add(uiEvent{Kind: "note", Text: note + " Without that, Cursor would run commands unchecked, so this task runs in plan mode (read only). Run it on Claude Code or Codex to change files, or change the block list."})
+		}
+	}
 	info := &uiRunInfo{Harness: "Cursor", Interface: "cursor-agent -p, stream-json, one process per turn", Permission: mode, Model: a.req.Model, Groups: []string{}, Allowed: []string{}, Blocked: []string{},
 		Asks: []string{}, McpMode: "all", Isolation: "worktree", Identity: a.req.identityName, Brief: []string{"Only your task"}}
 	if mode == "plan" {
@@ -479,8 +515,8 @@ func (a *uiAgent) runCursor(m *uiManager, prompt string) {
 	} else {
 		r.deny = deny
 		a.add(uiEvent{Kind: "note", Text: uiCursorLimits})
-		if s := uiCursorDenyRules(a.worktree, deny); s != "" {
-			a.add(uiEvent{Kind: "note", Text: s})
+		if denyNote != "" {
+			a.add(uiEvent{Kind: "note", Text: denyNote})
 		}
 		info.Asks = []string{"Nothing: edit mode runs with --force and --sandbox enabled, so commands run without a question"}
 	}
