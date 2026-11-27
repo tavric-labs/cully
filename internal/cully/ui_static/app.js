@@ -179,6 +179,10 @@
     if (S.route.name === 'dashboard' && REDIRECT[S.route.panel]) { location.replace('#/dashboard/' + REDIRECT[S.route.panel]); return; }
     const section = S.route.name === 'harness' ? 'harness' : S.route.name === 'team' ? 'team' : S.route.name === 'board' ? 'board' : S.route.name === 'dashboard' ? 'dashboard' : S.route.name === 'sessions' ? 'sessions' : 'agents';
     for (const a of $('nav').querySelectorAll('a')) a.classList.toggle('active', a.dataset.route === section);
+    { // Agents, Harness and Dashboard live under More: it lights up when you are on one of them, and shows their badge
+      const more = $('navmore');
+      if (more) { more.classList.toggle('active', ['team', 'harness', 'dashboard'].includes(section)); more.open = false; const db = $('dbadge'); const mb = $('morebadge'); if (db && mb) { mb.hidden = db.hidden; mb.textContent = db.textContent; } }
+    }
     for (const s of ['agents', 'board', 'dashboard', 'sessions', 'team', 'harness']) $('view-' + s).hidden = s !== section;
     if (S.es) { S.es.close(); S.es = null; }
     S.feed = null;
@@ -3422,6 +3426,7 @@
     const unread = (S.advice || []).reduce((n, g) => n + g.advice.filter((x) => !x.applied && !x.dismissed).length, 0) + (S.rules && S.rules.proposal ? 1 : 0);
     $('dbadge').hidden = unread === 0;
     $('dbadge').textContent = unread;
+    { const mb = $('morebadge'); if (mb) { mb.hidden = unread === 0; mb.textContent = unread; } }
     renderRail();
     checkAttention();
     if (S.route.name === 'dashboard' && (S.route.panel === 'advisor' || S.route.panel === 'scout')) drawPanel(S.route.panel, false);

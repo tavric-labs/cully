@@ -970,3 +970,9 @@ details.sgroup > summary { cursor: pointer; } details.sgroup > summary::-webkit-
 .askcard2 { border: 1px solid var(--line); border-left: 4px solid var(--peach-ink, #b4690e); border-radius: 10px; padding: 8px 12px; background: var(--surface); display: flex; flex-direction: column; gap: 6px; } .askcard2.risk-b-high { border-left-color: var(--red); } .askcard2.risk-b-low { border-left-color: var(--add-ink); } .askcard2 p { margin: 0; } .askcard2 .row { gap: 8px; align-items: center; }
 
 .welcomebox { margin-top: 18px; } .welcome { border-left: 4px solid var(--forest-hi); margin: 0; } .welcome .row { gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 6px; }
+
+/* slimmer navigation: Tasks, Board, Sessions, and everything else under More */
+.navmore { height: 100%; display: flex; align-items: center; } .navmore > summary { display: flex; align-items: center; gap: 6px; padding: 0 14px; height: 100%; color: var(--hd-soft); font-weight: 500; border-bottom: 2px solid transparent; cursor: pointer; list-style: none; }
+.navmore > summary::after { content: "⌄"; font-size: 12px; } .navmore > summary:hover { color: var(--hd-ink); } .navmore.active > summary { color: var(--hd-ink); border-bottom-color: var(--amber); }
+.navpop { left: 0; right: auto; min-width: 180px; } nav#nav .navpop a { height: auto; padding: 9px 12px; border-bottom: 0; border-radius: 8px; color: var(--ink); } nav#nav .navpop a:hover { background: var(--surface2); } nav#nav .navpop a.active { background: var(--surface2); font-weight: 600; border-bottom: 0; }
+@media (max-width: 760px) { nav#nav { overflow: visible; } .navpop { position: fixed; left: 8px; right: 8px; top: 52px; } }

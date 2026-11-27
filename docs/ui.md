@@ -160,6 +160,10 @@ Cully is a supervisor over harnesses: it does not run the model loop, it steers 
 - **A first minute with nothing to set up.** Before you have started anything, the home page says what Cully already found on this machine: your sessions across Claude, Codex and Cursor, how many are analysed and how many need a second look, with links to see them. Hide it once you have seen it.
 - **A checked contract.** The Harness overview lists what Cully can do with each harness and checks the installed Claude Code's `--help` for every flag Cully passes. If a release drops one, the features that need it turn themselves off with a plain explanation, instead of failing silently or passing a flag Claude Code would reject.
 
+## Navigation
+
+The top bar has three places you use every day: **Tasks**, **Board** and **Sessions**. **Agents**, **Harness** and **Dashboard** are under **More**, which lights up when you are in one of them and shows the Dashboard's unread count. **Needs you** (right of the bar) is where approvals and replies wait. The addresses are unchanged, so existing links and bookmarks still work.
+
 ## Tasks that outlast the page
 
 A task is the unit of work you care about, and it can be more than one session on more than one harness: the run Cully started, the session you resumed later, a Cursor or Codex session it was continued from. Cully keeps each task in its local database (state, title, what it was last doing, how many files it changed, and every session it has had with the harness of each), so work from today and this week is still there after the server restarts. The home page lists them under **Your tasks** (Today, This week, Earlier) as cards with harness badges. **Continue** resumes the task's last Claude session so the conversation carries on; when the work began in another harness, or that session is gone, a new run starts from a handoff of the task (what it was asked, where it stood, the sessions it had) in the folder it worked in, and it is added to the same task.

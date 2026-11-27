@@ -13,11 +13,16 @@
     <a class="brand" href="#/"><img src="/favicon.svg" alt="" width="26" height="26"><span>cully</span></a>
     <nav id="nav" aria-label="Sections">
       <a data-route="agents" href="#/">Tasks <span id="badge" class="badge" hidden></span></a>
-      <a data-route="team" href="#/agents">Agents</a>
-      <a data-route="harness" href="#/harness">Harness</a>
-      <a data-route="sessions" href="#/sessions">Sessions <span id="sbadge" class="badge" hidden></span></a>
       <a data-route="board" href="#/board">Board</a>
-      <a data-route="dashboard" href="#/dashboard">Dashboard <span id="dbadge" class="badge" hidden></span></a>
+      <a data-route="sessions" href="#/sessions">Sessions <span id="sbadge" class="badge" hidden></span></a>
+      <details id="navmore" class="menu navmore">
+        <summary aria-label="More sections">More <span id="morebadge" class="badge" hidden></span></summary>
+        <div class="menu-pop navpop">
+          <a data-route="team" href="#/agents">Agents</a>
+          <a data-route="harness" href="#/harness">Harness</a>
+          <a data-route="dashboard" href="#/dashboard">Dashboard <span id="dbadge" class="badge" hidden></span></a>
+        </div>
+      </details>
     </nav>
     <div class="meta"><button id="inboxbtn" class="inboxbtn" hidden aria-haspopup="true" aria-expanded="false"></button><button id="mcpchip" class="mcpchip" hidden></button><span id="notifywrap" class="themewrap"><button id="notifybtn" class="themebtn" aria-label="Notifications" title="Notifications"></button></span><span id="themewrap" class="themewrap"><button id="themebtn" class="themebtn" aria-label="Change theme" title="Change theme"></button></span><span id="live" class="live" title="Connection to the Cully server">live</span><span id="meta"></span></div>
   </header>
