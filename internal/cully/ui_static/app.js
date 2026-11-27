@@ -203,6 +203,7 @@
   window.addEventListener('hashchange', route);
 
   // ---------- rail ----------
+  function queuedChip(a) { const n = (a.queue || []).length; return n ? h('span', { class: 'chip', title: n + (n === 1 ? ' message is' : ' messages are') + ' waiting to be sent to this task' }, n + ' queued') : null; }
   function dot(state) { return h('span', { class: 'dot ' + state }); }
   function renderRail() {
     const rail = $('rail');
@@ -217,6 +218,7 @@
           h('div', { class: 'r2' }, a.last || (a.state === 'preparing' ? 'Preparing…' : '')),
           h('div', { class: 'r3' }, a.token ? h('span', { class: 'chip' }, 'token ' + a.token) : null,
             a.files && a.files.length ? h('span', { class: 'chip' }, a.files.length + (a.files.length === 1 ? ' file' : ' files')) : null,
+            queuedChip(a),
             h('span', { class: 'chip' }, ago(a.updated || a.created)))));
       }
     }
@@ -567,10 +569,14 @@
     const quick = h('div', { class: 'quick', 'aria-label': 'Suggested replies' });
     const ta = h('textarea', { rows: '1', placeholder: 'Message this task…', 'aria-label': 'Message' });
     ta.addEventListener('input', () => { ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, 160) + 'px'; ta.style.overflowY = ta.scrollHeight > 160 ? 'auto' : 'hidden'; });
-    ta.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); const t = ta.value; ta.value = ''; ta.style.height = 'auto'; sendMessage(a.id, t); } });
-    const composer = h('div', { id: 'composer' }, h('div', { class: 'composer' }, h('div', { class: 'box' }, ta),
-      h('button', { class: 'btn round', title: 'Send', 'aria-label': 'Send', onclick: () => { const t = ta.value; ta.value = ''; ta.style.height = 'auto'; sendMessage(a.id, t); } }, icon('send'))),
-      h('div', { class: 'composer-hint' }, 'Enter sends, Shift+Enter adds a line'));
+    const taskBusy = () => { const cur = S.agents.find((x) => x.id === a.id); return !!cur && (cur.state === 'working' || cur.state === 'preparing'); };
+    const doSend = (mode) => { const t = ta.value; if (!t.trim()) return; ta.value = ''; ta.style.height = 'auto'; sendMessage(a.id, t, mode); };
+    ta.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); doSend(taskBusy() ? (e.altKey ? 'followup' : 'steer') : ''); } });
+    const sendBtn = h('button', { class: 'btn round', title: 'Send', 'aria-label': 'Send', onclick: () => doSend(taskBusy() ? 'steer' : '') }, icon('send'));
+    const afterBtn = h('button', { class: 'btn ghost small afterbtn', hidden: true, title: 'Hold this message and send it when the current turn ends (Alt+Enter)', onclick: () => doSend('followup') }, 'After this turn');
+    const hint = h('div', { class: 'composer-hint' }, 'Enter sends, Shift+Enter adds a line');
+    const msgq = h('div', { class: 'msgq', id: 'msgq', hidden: true });
+    const composer = h('div', { id: 'composer' }, h('div', { class: 'composer' }, h('div', { class: 'box' }, ta), afterBtn, sendBtn), hint, msgq);
     const statusline = h('div', { id: 'statusline', class: 'statusline', role: 'status' });
     const side = h('div', { class: 'col sidecol' }, h('div', { class: 'tabs side', id: 'tabs-side' }), h('div', { class: 'sidehead', id: 'sidehead' }), h('div', { class: 'sidebody', id: 'sidebody' }));
     const activity = h('div', { id: 'activity', class: 'activity off', role: 'status', 'aria-live': 'polite' });
@@ -582,7 +588,7 @@
     body.addEventListener('scroll', () => { const atEnd = body.scrollTop + body.clientHeight >= body.scrollHeight - 60; if (atEnd && S.feed) S.feed.unseen = 0; paintJump(); });
     body.addEventListener('keydown', (e) => { if (e.key === 'End') { e.preventDefault(); body.scrollTo({ top: body.scrollHeight, behavior: 'smooth' }); } else if (e.key === 'Home') { e.preventDefault(); body.scrollTo({ top: 0, behavior: 'smooth' }); } });
     body.tabIndex = 0;
-    S.feed = { body, jump, group: null, tools: 0, typing: null, quick, composer, ta, loaded: false, calls: [], callLast: null, permKeys: [] };
+    S.feed = { body, jump, group: null, tools: 0, typing: null, quick, composer, ta, sendBtn, afterBtn, hint, msgq, loaded: false, calls: [], callLast: null, permKeys: [] };
     installPermKeys();
     setTimeout(() => { if (S.feed) S.feed.loaded = true; }, 900);
     drawAgentChrome(a);
@@ -822,6 +828,7 @@
       S.feed.composer.hidden = finished;
       S.feed.quick.hidden = finished;
       updateQuick(a);
+      drawSteerUI(a);
       setTyping(a.state === 'working' || a.state === 'preparing');
     }
     drawStatusline(a);
@@ -878,11 +885,41 @@
     if (S.feed !== f || f.quickKey !== key) return;
     f.quick.replaceChildren(...quickReplies(a, sum).map((r) => h('button', { type: 'button', title: r.text, onclick: () => sendMessage(a.id, r.text) }, r.label)));
   }
-  async function sendMessage(id, text) {
+  // Steer and follow-up: while a task works, a message either goes in now (steer) or waits for the turn to end.
+  function drawSteerUI(a) {
+    const f = S.feed;
+    if (!f || !f.sendBtn) return;
+    const busy = a.state === 'working' || a.state === 'preparing';
+    f.afterBtn.hidden = !busy;
+    f.sendBtn.className = busy ? 'btn small steerbtn' : 'btn round';
+    f.sendBtn.title = busy ? 'Deliver this message as soon as it is safe (Enter)' : 'Send';
+    f.sendBtn.setAttribute('aria-label', busy ? 'Steer now' : 'Send');
+    f.sendBtn.replaceChildren(...(busy ? ['Steer now'] : [icon('send')]));
+    f.hint.textContent = busy ? 'Enter steers now, Alt+Enter sends after this turn, Shift+Enter adds a line' : 'Enter sends, Shift+Enter adds a line';
+    const items = a.queue || [];
+    f.msgq.hidden = !items.length;
+    if (!items.length) { f.msgq.replaceChildren(); return; }
+    const call = (path, opts) => api('/api/agents/' + a.id + path, opts).catch((x) => toast(x.message, true));
+    const chips = items.map((m) => {
+      const label = m.sent ? 'Sent, applies at the next step' : m.mode === 'steer' ? 'Steer' : 'After this turn';
+      return h('span', { class: 'mchip ' + m.mode + (m.sent ? ' sent' : ''), title: m.note || m.text },
+        h('span', { class: 'mtext' }, m.text.length > 48 ? m.text.slice(0, 48) + '…' : m.text),
+        h('span', { class: 'mmode faint' }, label),
+        !m.sent && m.mode === 'followup' ? h('button', { type: 'button', class: 'mbtn', title: 'Send it now instead of after this turn', onclick: () => call('/queue/' + m.id + '/promote', { method: 'POST' }) }, 'Send now') : null,
+        !m.sent ? h('button', { type: 'button', class: 'mbtn', title: 'Remove this message', 'aria-label': 'Remove this message', onclick: () => call('/queue/' + m.id, { method: 'DELETE' }) }, icon('x')) : null);
+    });
+    const down = items.find((m) => m.downgraded);
+    f.msgq.replaceChildren(h('div', { class: 'mrow' }, ...chips),
+      h('div', { class: 'faint small' }, (down ? down.note + ' ' : '') + 'Stopping the task drops these messages.'));
+  }
+  async function sendMessage(id, text, mode) {
     text = (text || '').trim();
     if (!text) return;
     if (S.feed) S.feed.forceStick = true; // your own message always scrolls into view
-    try { await api('/api/agents/' + id + '/message', { method: 'POST', body: JSON.stringify({ text }) }); } catch (e) { toast(e.message, true); }
+    try {
+      const r = await api('/api/agents/' + id + '/message', { method: 'POST', body: JSON.stringify(mode ? { text, mode } : { text }) });
+      if (r && r.item && r.item.downgraded) toast(r.item.note);
+    } catch (e) { toast(e.message, true); }
   }
   async function continueFrom(a) {
     try {
@@ -951,6 +988,11 @@
   function appendEvent(ev) {
     const f = S.feed;
     if (!f) return;
+    if (ev.kind === 'queue_update') {
+      const ag = S.agents.find((x) => x.id === S.route.id);
+      if (ag) { try { ag.queue = JSON.parse(ev.text); } catch (_) { return; } drawSteerUI(ag); if (S.route.name === 'board') renderBoard(); renderRail(); }
+      return;
+    }
     const b = f.body;
     const stick = b.scrollTop + b.clientHeight >= b.scrollHeight - 60;
     if (f.typing) f.typing.remove();
@@ -1186,6 +1228,7 @@
         h('span', { class: 'chip mono', title: 'Branch' }, icon('branch'), a.branch.replace(/^cully\//, '')),
         a.option ? h('span', { class: 'chip' }, 'Option ' + a.option) : null,
         a.token ? h('span', { class: 'chip' }, 'token ' + a.token) : null,
+        queuedChip(a),
         files.length ? h('span', { class: 'chip', title: files.slice(0, 8).join('\n') }, files.length + (files.length === 1 ? ' file changed' : ' files changed')) : null,
         a.stuck ? h('span', { class: 'chip warn', title: a.stuck.detail }, icon('alert'), 'Stuck: ' + a.stuck.label.toLowerCase()) : null,
         a.stopReason ? h('span', { class: 'chip warn' }, icon('stop'), a.stopReason === 'cost_limit' ? 'Stopped at the cost limit' : 'Stopped at the turn limit') : null,
@@ -1287,7 +1330,7 @@
     let queue = [];
     try { queue = await api('/api/queue'); } catch (_) { /* optional */ }
     const prefs = boardPrefs();
-    const sigOf = JSON.stringify([S.agents.map((a) => [a.id, a.state, a.stuck && a.stuck.kind, a.stopReason, a.last, (a.files || []).length, a.updated, a.context && a.context.percent, a.group, a.option, a.usage && a.usage.tokens, a.harness && a.harness.status]), queue.map((x) => x.id), S.overlaps, prefs, S.finishedAll]);
+    const sigOf = JSON.stringify([S.agents.map((a) => [a.id, a.state, (a.queue || []).length, a.stuck && a.stuck.kind, a.stopReason, a.last, (a.files || []).length, a.updated, a.context && a.context.percent, a.group, a.option, a.usage && a.usage.tokens, a.harness && a.harness.status]), queue.map((x) => x.id), S.overlaps, prefs, S.finishedAll]);
     const box = $('board');
     if (S.boardSig === sigOf && box.childElementCount) { refreshRunning(); return; }
     S.boardSig = sigOf;

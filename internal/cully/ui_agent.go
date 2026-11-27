@@ -142,6 +142,7 @@ type uiAgentView struct {
 	Run         *uiRunInfo     `json:"run,omitempty"`         // how the harness underneath was set up for this task
 	Permissions []uiPermView   `json:"permissions,omitempty"` // tool uses waiting for your answer
 	Stuck       *uiStuck       `json:"stuck,omitempty"`       // the task is going in circles
+	Queue       []uiMsg        `json:"queue"`                 // messages sent while it works
 	StopReason  string         `json:"stopReason,omitempty"`  // cost_limit or turn_limit: Cully stopped it at the limit you set
 	MaxCost     float64        `json:"maxCost,omitempty"`
 	MaxTurns    int            `json:"maxTurns,omitempty"`
@@ -476,6 +477,7 @@ type uiAgent struct {
 	stopReason                        string       // why Cully stopped it: cost_limit or turn_limit
 	doneTurns                         int          // turns the harness has finished, for the turn limit
 	perm                              uiPermState  // questions about tools the task is not already allowed to use
+	mq                                uiMsgQueue   // messages sent while it works: steers and follow-ups
 
 	mu      sync.Mutex
 	state   string
@@ -523,7 +525,7 @@ func (a *uiAgent) snapshot() uiAgentView {
 	return uiAgentView{
 		ID: a.id, Title: a.title, Repo: a.repo, Branch: a.branch, Worktree: a.worktree,
 		Token: a.token, State: a.state, Created: a.created,
-		Stages: a.stagesCopyLocked(), Events: len(a.events), Files: a.sortedFilesLocked(), Last: a.last, Updated: a.updated, Group: a.req.group, Option: a.req.option, Harness: a.harnessView(), Usage: usageOf(a.usage), Run: a.runInfo, Context: contextOf(a.model, a.ctx, a.window, a.compactions), Cost: a.cost, Limits: a.limitsView(), MCP: append([]uiMCPServer(nil), a.mcp...), Permissions: a.pendingPermissions(), Stuck: a.watch.current(), StopReason: a.stopReason, MaxCost: a.req.MaxCost, MaxTurns: a.req.MaxTurns,
+		Stages: a.stagesCopyLocked(), Events: len(a.events), Files: a.sortedFilesLocked(), Last: a.last, Updated: a.updated, Group: a.req.group, Option: a.req.option, Harness: a.harnessView(), Usage: usageOf(a.usage), Run: a.runInfo, Context: contextOf(a.model, a.ctx, a.window, a.compactions), Cost: a.cost, Limits: a.limitsView(), MCP: append([]uiMCPServer(nil), a.mcp...), Permissions: a.pendingPermissions(), Stuck: a.watch.current(), Queue: a.mq.list(), StopReason: a.stopReason, MaxCost: a.req.MaxCost, MaxTurns: a.req.MaxTurns,
 	}
 }
 
@@ -576,6 +578,9 @@ func (a *uiAgent) setState(s string) {
 			a.mgr.drainQueue()
 		}()
 		a.mgr.recordUsage(a)
+	}
+	if s == uiDone || s == uiFailed || s == uiStopped {
+		a.dropQueue()
 	}
 }
 
@@ -899,6 +904,9 @@ func (a *uiAgent) handleLine(line []byte) {
 			a.mgr.saveTask(a) // a turn ended: keep what the task now looks like
 		}
 		a.enforceLimits()
+		if turnOver {
+			a.turnEnded()
+		}
 		if turnOver && a.harness != nil {
 			go a.harnessAfterTurn()
 		}
@@ -1003,6 +1011,7 @@ func (a *uiAgent) stop() {
 	a.stopped = true
 	stdin := a.stdin
 	a.mu.Unlock()
+	a.dropQueue() // a stopped task takes no more messages
 	a.kill()
 	if stdin != nil {
 		_ = stdin.Close()

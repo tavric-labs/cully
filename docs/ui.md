@@ -180,6 +180,10 @@ Scrolling follows the same rule as other chat apps: only the conversation scroll
 
 The **Board** is a kanban: Up next, Working, Needs you and Finished side by side, each scrolling on its own. Press + in Up next to add a task, drag one from Up next to Working to start it, and a running one to Finished to stop it.
 
+## Steer or follow up while a task works
+
+While a task is working the composer offers two ways to send. **Steer now** (Enter) writes the message at once; Claude Code holds it and applies it at its next step. **After this turn** (Alt+Enter) holds the message and sends it when the turn ends, one per turn and in order. A harness that cannot take input mid-turn sends a steer as a follow-up, and the page says so. When the task is waiting there is one **Send**. Queued messages show as chips under the composer with Send now (promote) and a remove button, and a count appears on the task's Board card and in the left list. Stopping a task drops its queue. The queue is per task and is not the Board's Up next list. API: `POST /api/agents/{id}/message` takes `mode` (steer or followup), the agent view has `queue`, `DELETE /api/agents/{id}/queue/{qid}` cancels and `POST /api/agents/{id}/queue/{qid}/promote` sends now. Changes arrive as a quiet `queue_update` event.
+
 ## Tools, permissions and suggested replies
 
 The **Tools** page of the Harness lists every tool on the servers tasks connect to, grouped by server, and lets you choose for each one: **Ask** (the default: the task pauses and asks you in its window), **Allow** (it may use it freely) or **Block** (it never gets it). Bulk buttons set every read-only tool to Allow or every deleting tool to Block, and descriptions and parameters can be loaded for one server or all of them. The **Permissions** page was redesigned the same way: switches for what a task may do on its own with a plain-words summary on top, the extra rules and the never-allowed rules shown as readable chips ("Commands starting with git push") with quick-add suggestions, and one save bar.

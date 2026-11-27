@@ -105,6 +105,7 @@ func (m *uiManager) capabilities() uiCapabilities {
 		{ID: "mcp", Label: "Choose which servers a task loads", Why: "Fewer servers means fewer tool descriptions sent every turn.", Claude: yn(have("--strict-mcp-config")), Codex: "no", Cursor: "no"},
 		{ID: "resume", Label: "Resume and fork a session", Why: "Carry on the same conversation, or branch from it.", Claude: yn(have("--resume") && have("--fork-session")), Codex: "partial", Cursor: "partial", Note: "Codex and Cursor sessions continue as a new task from a handoff."},
 		{ID: "events", Label: "See each tool call as it happens", Why: "Plan checklist, tool rows, stuck detection and live activity.", Claude: "yes", Codex: "partial", Cursor: "partial", Note: "Claude streams them. Codex and Cursor record them in transcripts, read afterwards."},
+		{ID: "midturn", Label: "Send a message while it works", Why: "Steer a task now, or queue a follow-up for when its turn ends.", Claude: yn(have("--input-format")), Codex: "no", Cursor: "no", Note: "Claude Code queues a message written mid-turn and applies it at its next step. Elsewhere a message waits for the turn to end."},
 		{ID: "usage", Label: "Usage limits and context size", Why: "How much room is left in the window and in your plan.", Claude: "yes", Codex: "partial", Cursor: "no", Note: "Cursor does not record limits or tokens."},
 		{ID: "history", Label: "Session library, health and evals", Why: "Every past session, scored, searchable and turned into tests.", Claude: "yes", Codex: "yes", Cursor: "yes"},
 	}
