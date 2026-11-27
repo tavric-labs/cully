@@ -27,7 +27,20 @@ type uiTaskSession struct {
 	Agent string    `json:"agent"` // claude, codex or cursor
 	At    time.Time `json:"at"`
 	Role  string    `json:"role"` // origin: where the task came from; run: a run Cully made
+	// Added later; records stored before them load with these empty.
+	Run   string    `json:"run,omitempty"`   // the Cully run that drives this session, which has a task page
+	State string    `json:"state,omitempty"` // working, waiting, done, failed or stopped
+	Ended time.Time `json:"ended,omitempty"` // when it last finished; zero while it is going
+	Turns int       `json:"turns,omitempty"`
+	Cost  float64   `json:"cost,omitempty"` // list price in dollars, when known
 }
+
+// The three groups the overview shows.
+const (
+	uiLaneRunning   = "running"
+	uiLaneAttention = "attention"
+	uiLaneFinished  = "finished"
+)
 
 type uiTaskRecord struct {
 	ID       string          `json:"id"`
@@ -44,6 +57,9 @@ type uiTaskRecord struct {
 	Runs     int             `json:"runs"` // how many times Cully has run it
 	Sessions []uiTaskSession `json:"sessions"`
 	Live     string          `json:"live,omitempty"` // the id of the run that is working now, if any
+	Stop     string          `json:"stop,omitempty"` // cost_limit or turn_limit when Cully stopped it at a limit
+	Status   string          `json:"status"`         // running, attention or finished: worked out when listed, never stored
+	Why      string          `json:"why,omitempty"`  // in words, what needs attention
 	Closed   bool            `json:"closed"`         // you closed it: done with, kept for the record
 	ClosedAt time.Time       `json:"closedAt,omitempty"`
 	Synced   string          `json:"synced,omitempty"`   // fingerprint of what was last saved to Cully memory
@@ -68,7 +84,7 @@ func (m *uiManager) saveTask(a *uiAgent) {
 	}
 	v := a.snapshot()
 	a.mu.Lock()
-	sid := a.sessionID
+	sid, turns, cost := a.sessionID, a.turns, a.cost
 	a.mu.Unlock()
 	uiTaskMu.Lock()
 	defer uiTaskMu.Unlock()
@@ -87,13 +103,26 @@ func (m *uiManager) saveTask(a *uiAgent) {
 	if v.Last != "" {
 		rec.Last = uiClip(m.cfg.Tokens.redact(v.Last), uiTaskLast)
 	}
-	if sid != "" {
-		known := false
-		for _, s := range rec.Sessions {
-			known = known || s.ID == sid
+	rec.Stop = v.StopReason
+	now := time.Now().UTC()
+	idx := -1
+	for i, s := range rec.Sessions {
+		if s.Run == a.id || (sid != "" && s.ID == sid) {
+			idx = i
+			break
 		}
-		if !known {
-			rec.Sessions = append(rec.Sessions, uiTaskSession{ID: sid, Agent: "claude", At: time.Now().UTC(), Role: "run"})
+	}
+	if idx < 0 && sid != "" { // a new session: a run, a resume, or a handoff in another harness
+		rec.Sessions = append(rec.Sessions, uiTaskSession{ID: sid, Agent: "claude", At: now, Role: "run"})
+		idx = len(rec.Sessions) - 1
+	}
+	if idx >= 0 {
+		s := &rec.Sessions[idx]
+		s.Run, s.State, s.Turns, s.Cost = a.id, v.State, turns, cost
+		if uiLive(v.State) {
+			s.Ended = time.Time{}
+		} else {
+			s.Ended = now
 		}
 	}
 	a.mu.Lock()
@@ -118,11 +147,11 @@ func (m *uiManager) taskList(period string) []uiTaskRecord {
 	default:
 		cut = now.AddDate(0, 0, -uiTaskKeepDays)
 	}
-	live := map[string]string{}
+	live := map[string]uiAgentView{}
 	m.mu.Lock()
 	for _, a := range m.agents {
-		if uiLive(a.snapshot().State) {
-			live[a.taskID()] = a.id
+		if v := a.snapshot(); uiLive(v.State) {
+			live[a.taskID()] = v
 		}
 	}
 	m.mu.Unlock()
@@ -132,14 +161,58 @@ func (m *uiManager) taskList(period string) []uiTaskRecord {
 		if json.Unmarshal(raw, &r) != nil || r.ID == "" || r.Updated.Before(cut) || uiHidden(r.Repo, m.cfg.HideSessionsIn) {
 			continue
 		}
-		r.Live = live[r.ID]
-		if r.Live != "" && !uiLive(r.State) {
+		v, isLive := live[r.ID]
+		r.Live = v.ID
+		if isLive && !uiLive(r.State) {
 			r.State = uiWorking
 		}
+		if !isLive && uiLive(r.State) { // it was going when the server stopped, and nothing is running it now
+			r.State, r.Stop = uiStopped, "restart"
+			for i := range r.Sessions {
+				if uiLive(r.Sessions[i].State) {
+					r.Sessions[i].State, r.Sessions[i].Ended = uiStopped, r.Updated
+				}
+			}
+		}
+		r.Status, r.Why = uiTaskStatus(r, v, isLive)
 		out = append(out, r)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Updated.After(out[j].Updated) })
 	return out
+}
+
+// uiTaskStatus puts a task in one of three groups: running, needs attention or finished.
+func uiTaskStatus(r uiTaskRecord, v uiAgentView, isLive bool) (status, why string) {
+	if r.Closed {
+		return uiLaneFinished, ""
+	}
+	if isLive {
+		switch {
+		case len(v.Permissions) > 0:
+			return uiLaneAttention, "A tool is waiting for your approval"
+		case v.Stuck != nil:
+			return uiLaneAttention, "It looks stuck, going in circles"
+		case v.State == uiWaiting:
+			return uiLaneAttention, "Waiting for your reply"
+		}
+		return uiLaneRunning, ""
+	}
+	switch r.State {
+	case uiFailed:
+		return uiLaneAttention, "It failed"
+	case uiWaiting:
+		return uiLaneAttention, "Waiting for your reply"
+	case uiStopped:
+		switch r.Stop {
+		case "cost_limit":
+			return uiLaneAttention, "Stopped at the cost limit"
+		case "turn_limit":
+			return uiLaneAttention, "Stopped at the turn limit"
+		case "restart":
+			return uiLaneAttention, "Stopped when the server restarted"
+		}
+	}
+	return uiLaneFinished, ""
 }
 
 // taskContinue runs the next step of a task. When its last Claude session can be resumed, that session
