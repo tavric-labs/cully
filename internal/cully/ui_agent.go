@@ -147,6 +147,9 @@ type uiAgentView struct {
 	MaxTurns    int            `json:"maxTurns,omitempty"`
 	Group       string         `json:"group,omitempty"`  // fan-out: options of one task share it
 	Option      string         `json:"option,omitempty"` // fan-out: "A", "B", ...
+	Phase       string         `json:"phase"`            // what it is doing now, in one word: see ui_phase.go
+	PhaseLabel  string         `json:"phaseLabel"`       // the same in plain words
+	Tags        []string       `json:"tags,omitempty"`
 }
 
 type uiManager struct {
@@ -504,6 +507,8 @@ type uiAgent struct {
 	usageRecorded bool
 	mcpFiltered   bool // the task loaded only chosen MCP servers
 	uses          map[string]uiToolUse
+	openTools     map[string]string // tool calls started and not yet returned, by id, to the tool's name
+	openLast      string            // the id of the latest of them
 	files         map[string]struct{}
 	base          string // commit the worktree started from
 	mgr           *uiManager
@@ -520,11 +525,31 @@ type uiAgent struct {
 func (a *uiAgent) snapshot() uiAgentView {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	h := a.harnessView()
+	hs := ""
+	if h != nil {
+		hs = h.Status
+	}
+	stuck := a.watch.current()
+	perms := a.pendingPermissions()
+	phase, label, tags := uiPhase(uiPhaseIn{State: a.state, StopReason: a.stopReason, Permission: len(perms) > 0, Stuck: stuck != nil, Harness: hs, OpenTool: a.openToolLocked()})
 	return uiAgentView{
+		Phase: phase, PhaseLabel: label, Tags: tags,
 		ID: a.id, Title: a.title, Repo: a.repo, Branch: a.branch, Worktree: a.worktree,
 		Token: a.token, State: a.state, Created: a.created,
 		Stages: a.stagesCopyLocked(), Events: len(a.events), Files: a.sortedFilesLocked(), Last: a.last, Updated: a.updated, Group: a.req.group, Option: a.req.option, Harness: a.harnessView(), Usage: usageOf(a.usage), Run: a.runInfo, Context: contextOf(a.model, a.ctx, a.window, a.compactions), Cost: a.cost, Limits: a.limitsView(), MCP: append([]uiMCPServer(nil), a.mcp...), Permissions: a.pendingPermissions(), Stuck: a.watch.current(), StopReason: a.stopReason, MaxCost: a.req.MaxCost, MaxTurns: a.req.MaxTurns,
 	}
+}
+
+// openToolLocked is the name of the tool the task is waiting on, if one has started and not returned.
+func (a *uiAgent) openToolLocked() string {
+	if n, ok := a.openTools[a.openLast]; ok {
+		return n
+	}
+	for _, n := range a.openTools {
+		return n
+	}
+	return ""
 }
 
 func (a *uiAgent) add(ev uiEvent) {
@@ -796,6 +821,13 @@ func (a *uiAgent) handleLine(line []byte) {
 	a.mu.Lock()
 	for id, u := range p.Uses {
 		a.uses[id] = u
+		if a.openTools == nil {
+			a.openTools = map[string]string{}
+		}
+		a.openTools[id], a.openLast = u.Name, id
+	}
+	for _, r := range p.Results {
+		delete(a.openTools, r.ID)
 	}
 	uses := p.Uses
 	if len(p.MCP) > 0 {
@@ -891,6 +923,7 @@ func (a *uiAgent) handleLine(line []byte) {
 			a.pending--
 		}
 		turnOver := a.pending == 0
+		a.openTools = nil
 		if a.pending == 0 && (a.state == uiWorking || a.state == uiPreparing) {
 			a.state = uiWaiting
 		}

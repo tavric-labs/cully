@@ -101,7 +101,15 @@
     ta.remove();
     if (!ok) throw new Error('copy is blocked');
   }
-  const stateLabel = (s) => (s === 'waiting' ? 'needs you' : s);
+  // A task is shown by its phase (what it is doing now); the stored state stays as a class beside it.
+  const STATE_WORDS = { preparing: 'Getting ready', working: 'Working', waiting: 'Needs you', done: 'Done', failed: 'Failed', stopped: 'Stopped', queued: 'Queued' };
+  const stateLabel = (a) => (a && typeof a === 'object' ? a.phaseLabel || STATE_WORDS[a.state] || a.state || '' : STATE_WORDS[a] || a || '');
+  const phaseCls = (a) => (a && typeof a === 'object' ? a.state + ' ph-' + (a.phase || a.state) : a + ' ph-' + a);
+  const taskPair = (t) => {
+    const ph = t.phase || t.state;
+    const tone = { done: 'good', failed: 'bad', limit: 'bad', 'needs-you': 'wait', stuck: 'wait' }[ph] || 'info';
+    return [ph === 'done' ? 'Finished' : stateLabel(t), tone];
+  };
   async function copy(text, what) {
     try { await writeClip(text); toast('Copied ' + what); } catch (_) { toast('Copy is blocked here; select and copy manually', true); }
   }
@@ -203,7 +211,7 @@
   window.addEventListener('hashchange', route);
 
   // ---------- rail ----------
-  function dot(state) { return h('span', { class: 'dot ' + state }); }
+  function dot(a) { return h('span', { class: 'dot ' + phaseCls(a) }); }
   function renderRail() {
     const rail = $('rail');
     const kids = [];
@@ -213,7 +221,7 @@
       kids.push(h('div', { class: 'grp' + (key === 'waiting' ? ' attn' : '') }, label, h('span', { class: 'n' }, list.length)));
       for (const a of list) {
         kids.push(h('a', { class: 'item' + (a.state === 'waiting' ? ' attn' : '') + (S.route.name === 'agent' && S.route.id === a.id ? ' sel' : ''), href: '#/task/' + a.id },
-          h('div', { class: 'r1' }, dot(a.state), h('span', { class: 't' }, a.title)),
+          h('div', { class: 'r1' }, dot(a), h('span', { class: 't' }, a.title)),
           h('div', { class: 'r2' }, a.last || (a.state === 'preparing' ? 'Preparing…' : '')),
           h('div', { class: 'r3' }, a.token ? h('span', { class: 'chip' }, 'token ' + a.token) : null,
             a.files && a.files.length ? h('span', { class: 'chip' }, a.files.length + (a.files.length === 1 ? ' file' : ' files')) : null,
@@ -398,7 +406,7 @@
   // A task is kept in the database with every session it has had, from any harness, so today's and this
   // week's work is still here after a restart and can be continued: the same conversation when it can
   // be resumed, otherwise a new run that starts from a handoff.
-  const TASK_STATE = { preparing: ['Starting', 'info'], working: ['Working', 'info'], waiting: ['Needs you', 'wait'], done: ['Finished', 'good'], failed: ['Failed', 'bad'], stopped: ['Stopped', 'info'] };
+  const agentOr = (id, state) => S.agents.find((x) => x.id === id) || state;
   function continueTaskDialog(t) {
     const ta = h('textarea', { rows: '3', 'aria-label': 'What to do next', placeholder: 'What should it do next? Leave empty to finish what is left.' });
     const err = h('div', { class: 'err', hidden: true });
@@ -427,7 +435,7 @@
     try { list = (await api('/api/tasks?range=' + period)).filter((t) => !t.closed); } catch (_) { return; }
     const tab = ([k, l]) => h('button', { type: 'button', class: 'toggle' + (period === k ? ' on' : ''), onclick: () => { S.taskPeriod = k; renderTaskHistory(box); } }, l);
     const card = (t) => {
-      const st = TASK_STATE[t.state] || [t.state, 'info'];
+      const st = taskPair(t);
       const ag = [...new Set((t.sessions || []).map((x) => x.agent).filter(Boolean))];
       return h('article', { class: 'tcard' },
         h('div', { class: 'row' }, h('b', { class: 'ttitle' }, t.title), h('span', { class: 'chip fs-' + (st[1] === 'good' ? 'good' : st[1] === 'bad' ? 'bad' : st[1] === 'wait' ? 'wait' : 'info') }, st[0]), h('span', { class: 'sp' }), h('span', { class: 'faint small' }, ago(t.updated))),
@@ -532,9 +540,9 @@
   }
   function agentCard(a) {
     return h('a', { class: 'card' + (a.state === 'waiting' ? ' attn' : ''), href: '#/task/' + a.id },
-      h('div', { class: 'r1' }, dot(a.state), h('span', { class: 't' }, a.title)),
+      h('div', { class: 'r1' }, dot(a), h('span', { class: 't' }, a.title)),
       h('div', { class: 'last' }, a.last || (a.state === 'preparing' ? 'Preparing…' : '')),
-      h('div', { class: 'row' }, h('span', { class: 'pill ' + a.state }, stateLabel(a.state)),
+      h('div', { class: 'row' }, h('span', { class: 'pill ' + phaseCls(a) }, stateLabel(a)),
         a.token ? h('span', { class: 'chip' }, 'token ' + a.token) : null, h('span', { class: 'chip' }, ago(a.updated || a.created))));
   }
   function renderFleet() {
@@ -642,7 +650,7 @@
     const elapsedS = Math.round((Date.now() - new Date(a.created).getTime()) / 1000);
     const lim = a.limits;
     const parts = [
-      sec('Now', h('div', { class: 'row' }, h('span', { class: 'pill ' + a.state }, dot(a.state), stateLabel(a.state)), h('span', { class: 'faint small' }, 'for ' + dur(elapsedS))), h('p', { class: 'tp-last' }, a.last || (a.state === 'preparing' ? 'Gathering context…' : 'No activity yet')),
+      sec('Now', h('div', { class: 'row' }, h('span', { class: 'pill ' + phaseCls(a) }, dot(a), stateLabel(a)), h('span', { class: 'faint small' }, 'for ' + dur(elapsedS))), h('p', { class: 'tp-last' }, a.last || (a.state === 'preparing' ? 'Gathering context…' : 'No activity yet')),
         a.harness ? h('div', { class: 'chip ' + (a.harness.status === 'done' ? 'ok' : a.harness.status === 'stopped' ? 'warn' : '') }, icon('check'), 'Checking: round ' + a.harness.round + ' of ' + a.harness.max + ', ' + a.harness.status) : null),
       sec('Context window', c ? h('div', { class: 'tp-gauge' }, gauge(c.percent, 68, 'Context'), h('div', {}, kv('Used', fmtTokens(c.used)), kv('Left', fmtTokens(c.left)), kv('Window', fmtTokens(c.window)))) : h('p', { class: 'faint small' }, 'Shows after its first reply.'),
         c && c.model ? h('div', { class: 'faint small' }, c.model) : null,
@@ -788,7 +796,7 @@
     const railHidden = (() => { try { return localStorage.getItem('cully-rail-hidden') === '1'; } catch (_) { return false; } })();
     $('view-agents').classList.toggle('rail-hidden', railHidden);
     const railBtn = h('button', { class: 'btn ghost small', title: railHidden ? 'Show the task list and usage panel' : 'Hide the task list and usage panel so the chat has the whole window', 'aria-pressed': String(!railHidden), onclick: () => { try { localStorage.setItem('cully-rail-hidden', railHidden ? '0' : '1'); } catch (_) { /* optional */ } drawAgentChrome(a); } }, icon('branch'), railHidden ? 'Show panel' : 'Hide panel');
-    $('ahead').replaceChildren(railBtn, h('h2', {}, a.title), h('span', { class: 'pill ' + a.state }, dot(a.state), stateLabel(a.state)),
+    $('ahead').replaceChildren(railBtn, h('h2', {}, a.title), h('span', { class: 'pill ' + phaseCls(a) }, dot(a), stateLabel(a)),
       h('span', { class: 'sp' }, sideBtn, more, finished ? null : stop));
     drawContextNote(a);
     drawTaskPanel(a);
@@ -838,7 +846,7 @@
     const model = (a.context && a.context.model) || '';
     const harness = a.run ? a.run.harness : '';
     el.replaceChildren(
-      seg('st ' + ((a.permissions || []).length ? 'ask' : a.state), glyph + ' ' + ((a.permissions || []).length ? 'needs you' : stateLabel(a.state))),
+      seg('st ' + ((a.permissions || []).length ? 'ask' : a.state) + ' ph-' + (a.phase || a.state), glyph + ' ' + stateLabel(a)),
       harness || model ? seg('', [harness, model].filter(Boolean).join(' ')) : null,
       a.context ? seg(a.context.near ? 'warn' : '', 'ctx ' + a.context.percent + '%') : null,
       a.usage ? seg('', fmtTokens(a.usage.tokens) + ' tokens') : null,
@@ -1180,7 +1188,7 @@
     if (!live) actions.push(act('Copy handoff', 'copy', async () => { try { await writeClip(await api('/api/agents/' + a.id + '/handoff')); toast('Handoff copied. Paste it into the session you are continuing.'); } catch (x) { toast(x.message, true); } }));
     if (live) actions.push(act('Stop', 'stop', () => api('/api/agents/' + a.id + '/stop', { method: 'POST' }).then(refresh).catch((x) => toast(x.message, true))));
     return h('a', { class: 'card bcard' + (a.state === 'waiting' ? ' attn' : ''), href: '#/task/' + a.id },
-      h('div', { class: 'r1' }, dot(a.state), h('span', { class: 't' }, a.title), h('span', { class: 'sp faint small' }, live ? elapsed(a.created) : ago(a.updated || a.created))),
+      h('div', { class: 'r1' }, dot(a), h('span', { class: 't' }, a.title), h('span', { class: 'sp faint small' }, live ? elapsed(a.created) : ago(a.updated || a.created))),
       h('div', { class: 'last' }, a.last || (a.state === 'preparing' ? 'Gathering context…' : 'No activity yet')),
       h('div', { class: 'row' },
         h('span', { class: 'chip mono', title: 'Branch' }, icon('branch'), a.branch.replace(/^cully\//, '')),
@@ -1199,7 +1207,7 @@
   }
   function queueCard(q) {
     const card = h('div', { class: 'card bcard queued', draggable: 'true' },
-      h('div', { class: 'r1' }, h('span', { class: 'dot queued' }), h('span', { class: 't' }, q.title), h('span', { class: 'sp faint small' }, ago(q.added))),
+      h('div', { class: 'r1' }, h('span', { class: 'dot queued ph-queued' }), h('span', { class: 't' }, q.title), h('span', { class: 'sp faint small' }, ago(q.added))),
       h('div', { class: 'last' }, q.error ? 'Cannot start: ' + q.error : q.prompt),
       q.option ? h('div', { class: 'row' }, h('span', { class: 'chip' }, 'Option ' + q.option)) : null,
       h('div', { class: 'row bactions' },
@@ -1230,7 +1238,7 @@
     const opts = S.agents.filter((a) => a.group === group).sort((x, y) => (x.option || '').localeCompare(y.option || ''));
     const live = (a) => ['preparing', 'working', 'waiting'].includes(a.state);
     const cols = opts.map((a) => h('section', { class: 'cmp' },
-      h('h3', {}, 'Option ' + a.option, h('span', { class: 'pill ' + a.state }, stateLabel(a.state))),
+      h('h3', {}, 'Option ' + a.option, h('span', { class: 'pill ' + phaseCls(a) }, stateLabel(a))),
       h('p', { class: 'last' }, a.last || 'No activity yet'),
       h('div', { class: 'row' }, h('span', { class: 'chip' }, (a.files || []).length + ' files changed')),
       h('ul', { class: 'files' }, ...(a.files || []).slice(0, 12).map((f) => h('li', {}, f))),
@@ -1841,7 +1849,7 @@
     const wrap = h('div', { class: 'home tasks-page' }); stage.replaceChildren(wrap);
     const shortDate = (iso) => new Date(iso).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
     const sessionRow = (x) => {
-      const st = TASK_STATE[x.state] || [x.state || 'Unknown', 'info'];
+      const st = taskPair(x);
       const when = x.ended && !x.ended.startsWith('0001') ? 'Started ' + shortDate(x.at) + ', ended ' + shortDate(x.ended) : 'Started ' + shortDate(x.at);
       const known = x.run && S.agents.some((a) => a.id === x.run);
       return h('li', { class: 'tsess' }, harnessChip(x.agent), h('code', { title: x.id }, (x.id || '').slice(0, 8)),
@@ -1863,7 +1871,7 @@
       search.addEventListener('input', () => { view.q = search.value; const pos = search.selectionStart; draw().then(() => { const el = wrap.querySelector('.bsearch'); if (el) { el.focus(); el.setSelectionRange(pos, pos); } }); });
       const closeTask = async (t, closed) => { try { await api('/api/tasks/' + t.id + '/close', { method: 'POST', body: JSON.stringify({ closed }) }); await refresh(); draw(); } catch (e) { toast(e.message, true); } };
       const card = (t) => {
-        const st = TASK_STATE[t.state] || [t.state, 'info'];
+        const st = taskPair(t);
         const ss = t.sessions || [];
         const det = h('details', { class: 'rl tsessions' }, h('summary', {}, h('span', { class: 'rq' }, 'Sessions (' + ss.length + ')'), h('span', { class: 'faint small' }, 'see each')), h('ul', { class: 'evlist' }, ...ss.map(sessionRow)));
         const memChip = t.entries ? h('span', { class: 'chip fs-good', title: 'Summarised and saved to Cully memory (PostgreSQL, indexed by Mem0)' }, 'In memory' + (t.entries > 1 ? ' x' + t.entries : '')) : (mem ? h('span', { class: 'chip', title: 'It is summarised and saved once it has settled' }, 'Not saved yet') : h('span', { class: 'chip', title: 'Connect the Cully MCP to keep tasks in memory across machines' }, 'Local only'));
@@ -2414,7 +2422,7 @@
       const open = g.advice.filter((x) => !x.dismissed);
       const asking = g.status === 'asking';
       return h('section', { class: 'group' },
-        h('header', {}, dot(g.agentState), h('a', { class: 'gt', href: '#/task/' + g.agentId }, g.agentTitle), h('span', { class: 'pill ' + g.agentState }, g.agentState === 'waiting' ? 'needs you' : g.agentState),
+        h('header', {}, dot(agentOr(g.agentId, g.agentState)), h('a', { class: 'gt', href: '#/task/' + g.agentId }, g.agentTitle), h('span', { class: 'pill ' + phaseCls(agentOr(g.agentId, g.agentState)) }, stateLabel(agentOr(g.agentId, g.agentState))),
           h('button', { class: 'btn ghost small sp', disabled: asking, onclick: async () => { try { await api('/api/agents/' + g.agentId + '/advise', { method: 'POST' }); drawPanel('advisor', true); } catch (e) { toast(e.message, true); } } }, icon('spark'), asking ? 'Reviewing…' : 'Ask advisor')),
         asking ? h('p', { class: 'status pulse' }, "The advisor is reviewing this agent's work…") : null,
         g.status === 'failed' ? h('p', { class: 'err' }, g.error) : null,
@@ -2465,7 +2473,7 @@
     if (!used.length && !(runs || []).length) kids.push(emptyCard('Scout was off for these tasks', 'Turn on Scout or Recall when you start a task. Cully then searches the web and your memory first, and you can see what it found here.', 'Start a task', '#/'));
     for (const v of used) {
       kids.push(h('section', { class: 'group' },
-        h('header', {}, dot(v.state), h('a', { class: 'gt', href: '#/task/' + v.agentId }, v.title)),
+        h('header', {}, dot(agentOr(v.agentId, v.state)), h('a', { class: 'gt', href: '#/task/' + v.agentId }, v.title)),
         h('p', { class: 'faint' }, 'Looking into: ' + v.task),
         v.scout.status !== 'skipped' ? stageBlock('Web research', v.scout, 'search') : null,
         v.recall.status !== 'skipped' ? stageBlock('Memory recall', v.recall, 'eye') : null));
@@ -2605,8 +2613,8 @@
       avgHealth == null ? kpi('Not judged', 'Session health', 'Start analysing sessions') : kpi(String(avgHealth), 'Session health', judged.filter((x) => x.completed === 'yes').length + ' of ' + judged.length + ' finished the job'));
     // Right now.
     const live = S.agents.filter((x) => ['preparing', 'working', 'waiting'].includes(x.state));
-    const taskRow = (x) => h('li', {}, h('span', { class: 'dot ' + x.state }), h('a', { class: 'rt', href: '#/task/' + x.id }, x.title),
-      x.context ? h('span', { class: 'chip ' + (x.context.near ? 'warn' : ''), title: 'How full this task\'s context window is' }, x.context.percent + '% of context') : null, h('span', { class: 'faint small' }, stateLabel(x.state)));
+    const taskRow = (x) => h('li', {}, dot(x), h('a', { class: 'rt', href: '#/task/' + x.id }, x.title),
+      x.context ? h('span', { class: 'chip ' + (x.context.near ? 'warn' : ''), title: 'How full this task\'s context window is' }, x.context.percent + '% of context') : null, h('span', { class: 'faint small' }, stateLabel(x)));
     const open = running ? running.sessions.filter((x) => !x.detached) : [];
     const nowCard = h('section', { class: 'lib-card' }, h('div', { class: 'row' }, h('b', {}, 'Right now'), h('a', { class: 'linkbtn sp', href: '#/board' }, 'Open the board')),
       h('ul', { class: 'rn-list' },
@@ -3371,7 +3379,7 @@
       const list = targets.length
         ? h('div', { class: 'targets', role: 'radiogroup', 'aria-label': 'Send to' }, ...targets.map((x) =>
           h('button', { type: 'button', role: 'radio', 'aria-checked': to === x.id ? 'true' : 'false', class: 'target' + (to === x.id ? ' on' : ''), onclick: () => { to = x.id; draw(); } },
-            dot(x.state), h('span', { class: 't' }, x.title), h('span', { class: 'chip mono' }, x.branch.replace(/^cully\//, '')))))
+            dot(x), h('span', { class: 't' }, x.title), h('span', { class: 'chip mono' }, x.branch.replace(/^cully\//, '')))))
         : h('div', { class: 'callout' }, 'No other task is running. Start one first, then send to it.');
       const noteIn = h('input', { type: 'text', placeholder: 'Optional note, for example: please check the error handling', 'aria-label': 'Note' });
       noteIn.value = note;

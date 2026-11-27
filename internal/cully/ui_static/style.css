@@ -1162,3 +1162,30 @@ details.sgroup > summary { cursor: pointer; } details.sgroup > summary::-webkit-
 .home .card, .home .tcard, .home .welcome, .home .lib-card { border: 1px solid var(--line); border-radius: 12px; padding: 13px 15px; background: var(--raised); margin: 0; }
 .home .welcome { border-left-width: 1px; }
 .home .card.attn { border-color: var(--amber); }
+
+/* Task graph */
+/* Phase colours, made from the existing tokens so every theme keeps working. */
+:root {
+  --ph-tool: var(--forest-hi);
+  --ph-helper: color-mix(in srgb, var(--forest-hi) 55%, var(--red));
+  --ph-check: color-mix(in srgb, var(--forest-hi) 60%, var(--add-ink));
+  --ph-stuck: color-mix(in srgb, var(--amber) 55%, var(--red));
+  --ph-muted: var(--faint);
+}
+.dot.ph-queued, .dot.ph-closed { background: transparent; border: 1.5px solid var(--faint); }
+.dot.ph-tool { background: var(--ph-tool); animation: pulse 1.4s ease-in-out infinite; }
+.dot.ph-needs-you { background: var(--amber); animation: none; }
+.dot.ph-helper { background: var(--ph-helper); animation: pulse 1.4s ease-in-out infinite; }
+.dot.ph-checking { background: var(--ph-check); animation: pulse 1.4s ease-in-out infinite; }
+.dot.ph-stuck { background: var(--ph-stuck); animation: none; }
+.dot.ph-limit { background: transparent; border: 2px solid var(--red); }
+.pill.ph-tool { background: var(--ph-tool); color: var(--on-primary); border-color: transparent; }
+.pill.ph-needs-you { background: var(--peach); color: var(--peach-ink); border-color: transparent; }
+.pill.ph-helper { background: var(--ph-helper); color: var(--on-primary); border-color: transparent; }
+.pill.ph-checking { background: var(--ph-check); color: var(--on-primary); border-color: transparent; }
+.pill.ph-stuck { background: var(--ph-stuck); color: var(--on-primary); border-color: transparent; }
+.pill.ph-limit { background: transparent; color: var(--red); border-color: var(--red); }
+.pill.ph-closed, .pill.ph-queued { background: transparent; color: var(--soft); border-color: var(--line2); }
+.statusline .sl.ph-tool, .statusline .sl.ph-checking, .statusline .sl.ph-helper { color: var(--forest-hi); }
+.statusline .sl.ph-stuck, .statusline .sl.ph-needs-you { color: var(--peach-ink, #b4690e); }
+.statusline .sl.ph-limit { color: var(--red); }
