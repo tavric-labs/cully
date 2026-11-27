@@ -709,7 +709,7 @@
       sec('Usage limits', lim ? [limitBar('Last 5 hours', lim.fiveHour), limitBar('Last 7 days', lim.sevenDay), limitsCheckBtn(lim.seen), h('small', { class: 'faint' }, 'Account: ' + (a.token ? 'token ' + a.token : 'ambient login') + (lim.status && lim.status !== 'allowed' ? '. ' + lim.status.replace(/_/g, ' ') : ''))] : h('p', { class: 'faint small' }, 'The harness reports these after its first reply.')),
       sec('Tokens', u ? [kv('This task', fmtTokens(u.tokens)), kv('From cache', u.cachedShare + '%'), kv('Saved by cache', '~' + fmtTokens(u.saved))] : h('p', { class: 'faint small' }, 'Counted after each turn.'),
         d.day ? kv('Tasks today', fmtTokens(d.day.tokens)) : null, d.week ? kv('Tasks this week', fmtTokens(d.week.tokens)) : null, a.cost ? kv('List price so far', '$' + a.cost.toFixed(a.cost < 1 ? 3 : 2)) : null),
-      sec('Harness', h('div', { class: 'row' }, harnessChip('claude'), run ? h('button', { class: 'linkbtn', onclick: () => openRunInfo(a) }, 'How it is set up') : null),
+      sec('Harness', h('div', { class: 'row' }, harnessChip(a.agent || 'claude'), run ? h('button', { class: 'linkbtn', onclick: () => openRunInfo(a) }, 'How it is set up') : null),
         run ? h('div', { class: 'faint small' }, (run.permission === 'plan' ? 'Read only' : 'Can edit') + ', ' + (run.mcpMode === 'chosen' ? run.mcpChosen.length + ' servers' : 'all servers') + ', ' + (run.isolation === 'worktree' ? 'own worktree' : 'in place')) : null),
       sec('Work so far', kv('Files changed', String((a.files || []).length)), kv('Tool calls', String(a.events || 0) + ' events'), a.run && a.run.loop ? kv('Tool budget', String(a.run.toolBudget)) : null),
     ];

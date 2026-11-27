@@ -69,6 +69,7 @@ type uiConfig struct {
 	Tokens      *uiTokenPool
 	ClaudeBin   string // default: claudeExecutable()
 	CodexBin    string // default: the codex found on the PATH
+	CursorBin   string // default: cursor-agent or agent on the PATH
 	MaxAgents   int    // live agents at once; default 4
 	// NoConflictAlerts stops Cully telling two agents that they edited the same file.
 	NoConflictAlerts bool
@@ -715,12 +716,12 @@ func (a *uiAgent) run(m *uiManager) {
 	defer close(a.done)
 	a.graphSync("started")
 	var prompt string
-	if a.req.resumeID != "" || a.req.resumeDir != "" || a.req.inPlaceDir != "" || a.req.Harness == "codex" {
+	if a.req.resumeID != "" || a.req.resumeDir != "" || a.req.inPlaceDir != "" || uiOwnRunner(a.req.Harness) {
 		prompt = a.req.Prompt
 		for _, st := range []string{"context", "recall", "scout"} {
 			a.setStage(st, "skipped", "")
 		}
-		if a.req.Harness == "codex" && a.req.inPlaceDir == "" && a.req.resumeDir == "" { // Codex works in its own worktree too
+		if uiOwnRunner(a.req.Harness) && a.req.inPlaceDir == "" && a.req.resumeDir == "" { // Codex and Cursor work in its own worktree too
 			if err := a.addWorktree(); err != nil {
 				a.fail("could not create worktree: " + err.Error())
 				return
@@ -741,6 +742,10 @@ func (a *uiAgent) run(m *uiManager) {
 	a.checkpointBefore()
 	if a.req.Harness == "codex" {
 		a.runCodex(m, prompt)
+		return
+	}
+	if a.req.Harness == "cursor" {
+		a.runCursor(m, prompt)
 		return
 	}
 	bin := m.cfg.ClaudeBin

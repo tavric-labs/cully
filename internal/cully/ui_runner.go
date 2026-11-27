@@ -90,6 +90,8 @@ func (m *uiManager) prepareHarness(req *uiStartRequest) error {
 		req.ResumeThread = ""
 		return nil
 	case "codex":
+	case "cursor":
+		return m.prepareCursor(req)
 	default:
 		return errors.New("tasks cannot run on " + req.Harness + " yet")
 	}
@@ -171,7 +173,7 @@ func (s *uiServer) harnessAvailable(w http.ResponseWriter, r *http.Request) {
 		cx.Available = true
 	}
 	out = append(out, cx)
-	out = append(out, uiHarnessChoice{ID: "cursor", Name: "Cursor", Installed: uiAgentInstalled("cursor"), Reason: "not supported yet", Steering: "no", Resume: "no"})
+	out = append(out, s.cursorAvailable())
 	m.markExhausted(out)
 	uiJSON(w, http.StatusOK, out)
 }
