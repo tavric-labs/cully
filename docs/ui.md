@@ -286,3 +286,15 @@ On the Harness page each connected MCP server is a card with a switch for whethe
 ## What is not stored
 
 Agent transcripts live in memory and are lost when `cully ui` stops. The journal receives only what it always does: event class, outcome, project-relative path and a command hash. Worktrees and branches stay on disk until you remove them.
+
+## History of changes
+
+Every create, update, delete, approve, pause or resume of an agent, a background job, the workflow rules file or the tool policy is written to a change ledger in `cully.db` (newest 500 kept). Each entry has the time, the subject, who asked (a proposal id, you, or a schedule), and a before and after snapshot. Agent snapshots leave out notes and run history, and token values are redacted; an entry whose snapshot had to be redacted is marked lossy and cannot be rolled back.
+
+- `GET /api/ledger?kind=agent|job|rule|policy` lists entries with a plain field diff.
+- `POST /api/ledger/{id}/rollback` puts the before snapshot back (a created item is removed, a deleted one is re-created). It answers 409 when the subject changed since the entry, unless the body is `{"force": true}`. Restored agents pass `validateIdentity` and restored jobs pass the command allowlist. A rollback is itself recorded and is not rolled back again.
+- The page is `#/dashboard/history`, linked from the Agents page, the Background jobs page and the advisor inbox.
+
+Proposals carry a `preview` ("What will change": fields, old to new) worked out from the same snapshots before you approve.
+
+Lifecycle: agents and proposals are active, stale or archived, and can be pinned. An agent not run for 30 days is stale; a proposal nobody acted on for 14 days is archived on its own, unless pinned. Archived things are hidden, never deleted. `POST /api/identities/{id}/pin` and `/archive`, `POST /api/suggestions/{id}/pin` and `/archive` take `{"on": false}` to undo; `GET /api/identities?archived=1` and `GET /api/suggestions?archived=1` list the archived ones.

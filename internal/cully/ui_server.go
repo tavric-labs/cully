@@ -176,6 +176,7 @@ func newUIServer(m *uiManager, token string, loopback bool) http.Handler {
 	mux.Handle("POST /api/voice/setup", s.api(s.voiceSetup))
 	mux.Handle("POST /api/voice/transcribe", s.api(s.voiceTranscribe))
 	mux.Handle("GET /api/suggestions", s.api(s.suggestionsGet))
+	s.ledgerRoutes(mux)
 	mux.Handle("GET /api/job-suggestions", s.api(s.jobSuggestionsGet))
 	mux.Handle("POST /api/job-suggestions/run", s.api(s.jobSuggestRunH))
 	mux.Handle("POST /api/job-suggestions/{id}/accept", s.api(s.jobSuggestAcceptH))
@@ -929,10 +930,12 @@ func (s *uiServer) adminToolsPut(w http.ResponseWriter, r *http.Request) {
 	if !uiDecode(w, r, &in) {
 		return
 	}
+	before := s.m.policySnap()
 	if err := s.m.setToolPolicy(in); err != nil {
 		uiError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	s.m.ledgerPolicy(before, "user")
 	uiJSON(w, http.StatusOK, s.m.toolsView())
 }
 
@@ -1030,7 +1033,7 @@ func (s *uiServer) autoScoutSet(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *uiServer) identityListH(w http.ResponseWriter, r *http.Request) {
-	uiJSON(w, http.StatusOK, s.m.identityList())
+	uiJSON(w, http.StatusOK, uiIdentitiesByLifecycle(s.m.identityList(), r.URL.Query().Get("archived") == "1"))
 }
 
 func (s *uiServer) identityCreateH(w http.ResponseWriter, r *http.Request) {
@@ -1077,7 +1080,12 @@ func (s *uiServer) identityRunH(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *uiServer) agentSuggestListH(w http.ResponseWriter, r *http.Request) {
-	uiJSON(w, http.StatusOK, s.m.agentSuggestionsList())
+	s.m.proposalsCurate()
+	out := []uiAgentSuggestionView{}
+	for _, x := range s.m.agentSuggestionsList() {
+		out = append(out, uiAgentSuggestionView{x, s.m.agentPreview(x)})
+	}
+	uiJSON(w, http.StatusOK, out)
 }
 
 func (s *uiServer) agentSuggestRunH(w http.ResponseWriter, r *http.Request) {

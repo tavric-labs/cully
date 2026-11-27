@@ -53,6 +53,9 @@ type uiIdentity struct {
 	Created      time.Time       `json:"created"`
 	LastRun      time.Time       `json:"lastRun,omitempty"`
 	Runs         []uiIdentityRun `json:"runs"`
+	Pinned       bool            `json:"pinned,omitempty"`    // never goes stale
+	Archived     bool            `json:"archived,omitempty"`  // hidden by default, never deleted
+	Lifecycle    string          `json:"lifecycle,omitempty"` // active, stale or archived; worked out when listed
 }
 
 type uiIdentityInput struct {
@@ -67,6 +70,7 @@ type uiIdentityInput struct {
 	Enabled      bool            `json:"enabled"`
 	Approve      bool            `json:"approve"` // make it part of your agents; until then it is a draft
 	ClearMemory  bool            `json:"clearMemory"`
+	Proposal     string          `json:"proposal,omitempty"` // the proposal this came from, for the change ledger
 }
 
 var (
@@ -162,7 +166,9 @@ func (m *uiManager) identityList() []uiIdentity {
 		if id.Folder != "" && uiHidden(id.Folder, m.cfg.HideSessionsIn) {
 			continue
 		}
-		out = append(out, id.clone())
+		c := id.clone()
+		c.Lifecycle = c.lifecycle(time.Now())
+		out = append(out, c)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Created.Before(out[j].Created) })
 	return out
@@ -256,6 +262,7 @@ func (m *uiManager) identityCreate(in uiIdentityInput) (uiIdentity, error) {
 	id.Synced = false
 	m.identities = append(all, id)
 	m.saveIdentitiesLocked()
+	m.ledgerAgent(nil, uiAgentSnapOf(id), uiLedgerSource(in.Proposal))
 	return id.clone(), nil
 }
 
@@ -278,6 +285,7 @@ func (m *uiManager) identityUpdate(id string, in uiIdentityInput) (uiIdentity, e
 	if cur == nil {
 		return uiIdentity{}, errors.New("no such agent")
 	}
+	before := uiAgentSnapOf(cur)
 	cur.Name, cur.Role, cur.Instructions, cur.Scope, cur.Folder, cur.Groups, cur.Mode = in.Name, in.Role, in.Instructions, in.Scope, in.Folder, in.Groups, in.Mode
 	if in.Approve {
 		cur.Approved = true
@@ -288,6 +296,7 @@ func (m *uiManager) identityUpdate(id string, in uiIdentityInput) (uiIdentity, e
 		cur.Memory = ""
 	}
 	m.saveIdentitiesLocked()
+	m.ledgerAgent(before, uiAgentSnapOf(cur), uiLedgerSource(in.Proposal))
 	return cur.clone(), nil
 }
 
@@ -297,6 +306,7 @@ func (m *uiManager) identityDelete(id string) error {
 	all := m.loadIdentitiesLocked()
 	for i, x := range all {
 		if x.ID == id {
+			m.ledgerAgent(uiAgentSnapOf(x), nil, "user")
 			uiDB().del("agent", x.ID)
 			uiDB().del("agenteval", x.ID)
 			m.identities = append(all[:i:i], all[i+1:]...)
@@ -497,7 +507,7 @@ done:
 func (m *uiManager) identitiesDue() {
 	for _, id := range m.identityList() {
 		d, _ := uiScheduleInterval(id.Schedule)
-		if !id.Approved || !id.Enabled || d == 0 || uiScheduleSkips(id.Schedule, time.Now()) || id.busy() || (!id.LastRun.IsZero() && time.Since(id.LastRun) < d) || !m.hasRoom() {
+		if !id.Approved || !id.Enabled || id.Archived || d == 0 || uiScheduleSkips(id.Schedule, time.Now()) || id.busy() || (!id.LastRun.IsZero() && time.Since(id.LastRun) < d) || !m.hasRoom() {
 			continue
 		}
 		_, _ = m.identityRun(id.ID)
@@ -511,9 +521,11 @@ func (m *uiManager) identityApprove(id string) (uiIdentity, error) {
 	defer uiIdentityMu.Unlock()
 	for _, x := range m.loadIdentitiesLocked() {
 		if x.ID == id {
+			before := uiAgentSnapOf(x)
 			x.Approved = true
 			x.Synced = false
 			m.saveIdentitiesLocked()
+			m.ledgerAgent(before, uiAgentSnapOf(x), "user")
 			return x.clone(), nil
 		}
 	}

@@ -327,6 +327,7 @@ func (m *uiManager) rulesApprove(id string) ([]uiRulesTarget, error) {
 	if err := uiValidRules(p.Text); err != nil {
 		return nil, err
 	}
+	prev := uiRulesCurrent()
 	var written []uiRulesTarget
 	for _, t := range uiRulesTargets() {
 		if err := os.MkdirAll(filepath.Dir(t.Path), 0o755); err != nil {
@@ -346,6 +347,7 @@ func (m *uiManager) rulesApprove(id string) ([]uiRulesTarget, error) {
 	}
 	p.State = "approved"
 	uiWriteRulesProposal(p)
+	m.ledgerRules(prev, p.Text, "proposal:"+p.ID)
 	return written, nil
 }
 

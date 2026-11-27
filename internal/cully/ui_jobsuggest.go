@@ -50,6 +50,7 @@ type uiJobSuggestion struct {
 	Evidence []uiEvidence `json:"evidence,omitempty"` // the sessions this was drawn from
 	Count    int          `json:"count,omitempty"`
 	Days     int          `json:"days,omitempty"`
+	Pinned   bool         `json:"pinned,omitempty"` // never goes stale
 }
 
 var uiJobSuggestMu sync.Mutex
@@ -238,7 +239,7 @@ func uiParseJobSuggestions(out string, folders map[string]string, existing []sch
 			dup = dup || uiSameArgv(x.Command, cmd)
 		}
 		for _, x := range prior {
-			if uiSameArgv(x.Command, cmd) || (x.State == "new" && x.Updates == updates && x.Updates != "" && uiJobFolderArg(x.Command) == uiJobFolderArg(cmd) && x.Command[0] == cmd[0]) ||
+			if uiSameArgv(x.Command, cmd) || ((x.State == "new" || x.State == "archived") && x.Updates == updates && x.Updates != "" && uiJobFolderArg(x.Command) == uiJobFolderArg(cmd) && x.Command[0] == cmd[0]) ||
 				(x.State == "new" && updates == "" && x.Command[0] == cmd[0] && uiJobFolderArg(x.Command) == uiJobFolderArg(cmd)) {
 				dup = true
 			}
@@ -419,9 +420,11 @@ func (m *uiManager) jobSuggestionAccept(id, after string) (string, error) {
 		if err := uiJobCommandOK(s.Command, s.Folder); err != nil {
 			return "", err
 		}
+		jobBefore := uiJobSnapshot(s.Name)
 		if err := uiSaveJob(scheduledJob{Name: s.Name, Command: s.Command, After: after}, s.Updates != ""); err != nil {
 			return "", err
 		}
+		m.ledgerJob(jobBefore, uiJobSnapshot(s.Name), "proposal:"+s.ID)
 		s.State, s.After = "accepted", after
 		uiDB().put("jobsuggest", s.ID, s)
 		return s.Name, nil
@@ -531,11 +534,13 @@ func uiSaveJob(j scheduledJob, update bool) error {
 // uiJobSuggestionView is a proposal as the Background jobs page shows it.
 type uiJobSuggestionView struct {
 	uiJobSuggestion
-	Display string `json:"display"`           // the exact command, quoted
-	Current string `json:"current,omitempty"` // for an update: what the job runs now
+	Display string           `json:"display"`           // the exact command, quoted
+	Current string           `json:"current,omitempty"` // for an update: what the job runs now
+	Preview *uiChangePreview `json:"preview"`
 }
 
 func (s *uiServer) jobSuggestionsGet(w http.ResponseWriter, r *http.Request) {
+	s.m.proposalsCurate()
 	cur := map[string]string{}
 	if jobs, err := loadJobs(jobsConfigFile()); err == nil {
 		for _, j := range jobs {
@@ -544,7 +549,7 @@ func (s *uiServer) jobSuggestionsGet(w http.ResponseWriter, r *http.Request) {
 	}
 	out := []uiJobSuggestionView{}
 	for _, x := range s.m.jobSuggestionsList() {
-		out = append(out, uiJobSuggestionView{x, uiShowArgv(x.Command), cur[x.Updates]})
+		out = append(out, uiJobSuggestionView{x, uiShowArgv(x.Command), cur[x.Updates], s.m.jobPreview(x)})
 	}
 	uiJSON(w, http.StatusOK, out)
 }
