@@ -100,6 +100,8 @@ func newUIServer(m *uiManager, token string, loopback bool) http.Handler {
 	mux.Handle("POST /api/agents", s.api(s.createAgent))
 	mux.Handle("GET /api/agents/{id}", s.api(s.getAgent))
 	mux.Handle("GET /api/agents/{id}/events", s.api(s.events))
+	mux.Handle("GET /api/agents/{id}/graph", s.api(s.agentGraph))
+	mux.Handle("GET /api/tasks/{id}/graph", s.api(s.taskGraph))
 	mux.Handle("POST /api/agents/{id}/message", s.api(s.message))
 	mux.Handle("POST /api/agents/{id}/stop", s.api(s.stop))
 	mux.Handle("GET /api/agents/{id}/handoff", s.api(s.handoff))
