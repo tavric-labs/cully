@@ -1233,3 +1233,16 @@ details.pillpop > summary::-webkit-details-marker { display: none; }
 .pillpop .pop-card { right: auto; left: 0; min-width: 260px; padding: 12px 14px; }
 .popcol { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
 .pillrow .seg { margin: 0; }
+/* steer and follow-up queue */
+.agent-stage .composer .steerbtn { height: 34px; padding: 0 14px; border-radius: var(--tui-radius); background: var(--forest); color: var(--on-primary); font-weight: 600; white-space: nowrap; }
+.afterbtn { align-self: flex-end; height: 34px; white-space: nowrap; }
+.afterbtn[hidden], .msgq[hidden] { display: none; }
+.msgq { padding: 0 20px 10px; display: flex; flex-direction: column; gap: 6px; }
+.mrow { display: flex; flex-wrap: wrap; gap: 6px; }
+.mchip { display: inline-flex; align-items: center; gap: 8px; max-width: 100%; border: 1px dashed var(--line2); border-radius: var(--tui-radius, 8px); padding: 3px 4px 3px 10px; background: var(--surface); font-size: 12px; }
+.mchip.steer { border-style: solid; border-color: var(--forest-hi); }
+.mchip.sent { opacity: .75; padding-right: 10px; }
+.mchip .mtext { font-family: var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.mbtn { border: 0; background: transparent; color: var(--soft); cursor: pointer; padding: 2px 6px; border-radius: 6px; font: inherit; display: inline-flex; align-items: center; }
+.mbtn:hover { background: var(--surface2); color: var(--ink); }
+.mbtn .i { width: 12px; height: 12px; }

@@ -101,6 +101,9 @@ func newUIServer(m *uiManager, token string, loopback bool) http.Handler {
 	mux.Handle("GET /api/agents/{id}", s.api(s.getAgent))
 	mux.Handle("GET /api/agents/{id}/events", s.api(s.events))
 	mux.Handle("POST /api/agents/{id}/message", s.api(s.message))
+	mux.Handle("GET /api/agents/{id}/queue", s.api(s.queueOfAgent))
+	mux.Handle("DELETE /api/agents/{id}/queue/{qid}", s.api(s.queueCancel))
+	mux.Handle("POST /api/agents/{id}/queue/{qid}/promote", s.api(s.queuePromote))
 	mux.Handle("POST /api/agents/{id}/stop", s.api(s.stop))
 	mux.Handle("GET /api/agents/{id}/handoff", s.api(s.handoff))
 	mux.Handle("GET /api/agents/{id}/diff", s.api(s.diff))
@@ -349,15 +352,21 @@ func (s *uiServer) message(w http.ResponseWriter, r *http.Request) {
 	}
 	var body struct {
 		Text string `json:"text"`
+		Mode string `json:"mode"` // steer or followup; empty means steer while the task works
 	}
 	if !uiDecode(w, r, &body) {
 		return
 	}
-	if err := a.send(body.Text); err != nil {
+	res, err := a.submit(body.Text, body.Mode)
+	if err != nil {
 		uiError(w, http.StatusConflict, err.Error())
 		return
 	}
-	w.WriteHeader(http.StatusNoContent)
+	if res.Status == "sent" {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	uiJSON(w, http.StatusOK, res)
 }
 
 func (s *uiServer) stop(w http.ResponseWriter, r *http.Request) {
