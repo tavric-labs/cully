@@ -285,3 +285,12 @@ func TestAReviewerCanNeverChangeTheAgentsNotes(t *testing.T) {
 		return false
 	})
 }
+
+func TestTaskWindowOffersTheCallsTabAndWhatItWaitsOn(t *testing.T) {
+	b, _ := uiStaticFS.ReadFile("ui_static/app.js")
+	for _, want := range []string{"['calls', 'Calls']", "Waiting for you to allow", "function drawCalls", "function drawStatusline", "hash: p.hash"} {
+		if !strings.Contains(string(b), want) {
+			t.Errorf("app.js lacks %q", want)
+		}
+	}
+}
