@@ -127,7 +127,7 @@ func TestSwitchRefusals(t *testing.T) {
 	if _, err := m.switchHarness(a.id, "claude", ""); err == nil || !strings.Contains(err.Error(), "already runs") {
 		t.Fatalf("same harness: %v", err)
 	}
-	if _, err := m.switchHarness(a.id, "cursor", ""); err == nil {
+	if _, err := m.switchHarness(a.id, "nonesuch", ""); err == nil {
 		t.Fatal("an unsupported harness must be refused")
 	}
 	uiMarkExhausted("codex", time.Now().Add(time.Hour), "usage limit")

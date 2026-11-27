@@ -142,3 +142,17 @@ func TestHarnessAvailableMarksExhausted(t *testing.T) {
 		t.Fatalf("json %s", b)
 	}
 }
+
+func TestCursorLimitFailureHidesCursor(t *testing.T) {
+	m, _, _ := uiTestManager(t, "")
+	a := uiTestOutcomeAgent(m, "cursor")
+	a.add(uiEvent{Kind: "user", Text: "go"})
+	a.add(uiEvent{Kind: "error", Text: "team has reached its usage limit, resets 12/1/2026"})
+	m.noteHarnessOutcome(a, uiFailed)
+	list := []uiHarnessChoice{{ID: "cursor", Available: true}}
+	m.markExhausted(list)
+	want := time.Date(2026, 12, 1, 0, 0, 0, 0, time.Local)
+	if !list[0].Exhausted || list[0].Until != want.Unix() {
+		t.Fatalf("%+v want until %d", list[0], want.Unix())
+	}
+}
