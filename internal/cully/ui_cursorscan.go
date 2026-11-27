@@ -142,7 +142,7 @@ func scanCursor(path string, withDigest bool, capture ...*uiSessionActivity) (ui
 							facts.ToolNames = map[string]int{}
 						}
 						facts.ToolNames[b.Name]++
-						activity.call("", b.Name, "")
+						activity.call("", b.Name, "", uiPrettyParams(b.Input))
 						in, _ := json.Marshal(b.Input)
 						hash := b.Name + string(in)
 						if hash == last {

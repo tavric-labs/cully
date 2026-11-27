@@ -4311,10 +4311,13 @@
       const callRows = h('ol', { class: 'session-calls' });
       const drawCalls = (calls) => {
         callRows.replaceChildren(...calls.map((v) => h('li', { value: v.number },
-          h('code', {}, v.name || 'Unnamed tool'),
-          v.kind ? h('span', { class: 'faint small' }, v.kind === 'verification' ? 'Verification' : 'File edit') : null,
-          v.at ? h('time', { datetime: v.at, class: 'faint small' }, sessionDate(v.at)) : null,
-          h('span', { class: 'chip ' + (v.result === 'failed' ? 'warn' : '') }, v.result === 'failed' ? 'Failed' : v.result === 'returned' ? 'Returned' : 'Result unavailable'))));
+          h('details', { class: 'callparams' },
+            h('summary', {},
+              h('code', {}, v.name || 'Unnamed tool'),
+              v.kind ? h('span', { class: 'faint small' }, v.kind === 'verification' ? 'Verification' : 'File edit') : null,
+              v.at ? h('time', { datetime: v.at, class: 'faint small' }, sessionDate(v.at)) : null,
+              h('span', { class: 'chip ' + (v.result === 'failed' ? 'warn' : '') }, v.result === 'failed' ? 'Failed' : v.result === 'returned' ? 'Returned' : 'Result unavailable')),
+            h('pre', { class: 'pre' }, v.params || 'No parameters were recorded for this call.')))));
         pageLabel.textContent = calls.length ? calls[0].number + '–' + calls[calls.length - 1].number + ' of ' + callCount : 'No calls on this page';
         previous.disabled = offset === 0;
         next.disabled = offset + calls.length >= callCount || calls.length === 0;
@@ -4330,6 +4333,18 @@
           drawCalls(page.activity.calls);
         } catch (e) { toast(e.message, true); previous.disabled = offset === 0; next.disabled = false; }
       };
+      // Every call with its parameters as one JSON file, for review outside the page.
+      const exportBtn = h('button', { class: 'btn ghost small', title: 'Download every tool call with its parameters (secrets redacted)' }, 'Export calls');
+      exportBtn.addEventListener('click', async () => {
+        exportBtn.disabled = true;
+        try {
+          const all = []; let off = 0;
+          for (;;) { const pg = await api(path + '?offset=' + off); all.push(...pg.activity.calls); off += pg.activity.calls.length; if (!pg.activity.calls.length || off >= pg.session.tools) break; }
+          const blob = new Blob([JSON.stringify({ session: id, agent: x.agent, title: x.title, calls: all }, null, 2)], { type: 'application/json' });
+          const a = h('a', { href: URL.createObjectURL(blob), download: 'session-' + id.slice(0, 8) + '-calls.json' }); document.body.append(a); a.click(); a.remove();
+        } catch (e) { toast(e.message, true); }
+        exportBtn.disabled = false;
+      });
       const previous = h('button', { class: 'btn ghost small', onclick: () => loadCalls(Math.max(0, offset - activity.calls.length)) }, 'Previous calls');
       const next = h('button', { class: 'btn ghost small', onclick: () => loadCalls(offset + activity.calls.length) }, 'Next calls');
       drawCalls(activity.calls);
@@ -4357,7 +4372,7 @@
         sessionSection('Tool activity',
           tools.length ? h('div', { class: 'row' }, ...tools.map(([name, n]) => h('span', { class: 'chip mono' }, name + ' × ' + n))) : null,
           x.tools ? callRows : h('p', { class: 'faint' }, 'No tool calls were recorded.'),
-          x.tools > activity.calls.length ? h('div', { class: 'row' }, previous, pageLabel, next) : null),
+          x.tools ? h('div', { class: 'row' }, exportBtn, x.tools > activity.calls.length ? previous : null, x.tools > activity.calls.length ? pageLabel : null, x.tools > activity.calls.length ? next : null) : null),
         sessionSection('Files with recorded edits',
           activity.files.length ? h('ul', { class: 'session-files' }, ...activity.files.map((v) => h('li', {}, h('code', {}, v)))) : h('p', { class: 'faint' }, 'No file paths were recorded for edits.')),
         sessionSection('Session information',

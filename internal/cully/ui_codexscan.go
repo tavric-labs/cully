@@ -112,7 +112,7 @@ func scanCodex(path string, withDigest bool, capture ...*uiSessionActivity) (uiS
 							facts.ToolNames = map[string]int{}
 						}
 						facts.ToolNames[p.Name]++
-						activity.call(p.CallID, p.Name, rec.Timestamp)
+						activity.call(p.CallID, p.Name, rec.Timestamp, uiCodexParams(p.Input, p.Arguments))
 						body := p.Input + p.Arguments
 						hash := p.Name + "|" + body
 						if p.CallID != "" {
@@ -198,4 +198,14 @@ func baseName(p string) string {
 // script, so a test command is recognised the way it is in a plain shell line.
 func uiCodexCommandText(body string) string {
 	return strings.NewReplacer(`"`, " ", `'`, " ", "(", " ", ")", " ", "{", " ", "}", " ", "`", " ").Replace(body)
+}
+
+// uiCodexParams returns a Codex call's arguments, indented when they are JSON.
+func uiCodexParams(input, arguments string) string {
+	raw := strings.TrimSpace(input + arguments)
+	var v any
+	if json.Unmarshal([]byte(raw), &v) == nil {
+		return uiPrettyParams(v)
+	}
+	return raw
 }

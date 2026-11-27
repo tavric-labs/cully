@@ -1603,3 +1603,6 @@ button.chip.harness { cursor: pointer; }
 .view.agents-view.rail-hidden .rail-rz { display: none; }
 .gw-hbar { width: 100%; margin: 4px 0 0; accent-color: var(--forest-hi); }
 .gw-hbar:disabled { opacity: .35; }
+
+details.callparams > summary { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; cursor: pointer; }
+details.callparams .pre { margin: 8px 0 4px; max-height: 320px; overflow: auto; }

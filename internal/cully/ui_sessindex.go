@@ -335,7 +335,7 @@ func uiScanRecord(rec uiTRec, facts *uiSessionFacts, dg *uiDigest, files map[str
 					facts.ToolNames = map[string]int{}
 				}
 				facts.ToolNames[b.Name]++
-				activity.call(b.ID, b.Name, rec.Timestamp)
+				activity.call(b.ID, b.Name, rec.Timestamp, uiPrettyParams(b.Input))
 				in, _ := json.Marshal(b.Input)
 				hash := b.Name + string(in)
 				if hash == st.last {

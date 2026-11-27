@@ -1,6 +1,7 @@
 package cully
 
 import (
+	"encoding/json"
 	"errors"
 	"path/filepath"
 	"sort"
@@ -16,10 +17,14 @@ type uiSessionCall struct {
 	Kind   string     `json:"kind,omitempty"`
 	At     *time.Time `json:"at,omitempty"`
 	Result string     `json:"result,omitempty"`
+	Params string     `json:"params,omitempty"` // the call's arguments, redacted and clipped; read from the harness's own record when the page is opened
 }
 
-// Activity is built on demand. It contains tool names, observed results and
-// file paths, with no tool arguments, output or conversation text.
+const uiCallParamsMax = 4000
+
+// Activity is built on demand from the harness's own record; Cully keeps no copy.
+// It holds tool names, observed results, file paths and each call's redacted
+// arguments, with no tool output or conversation text.
 type uiSessionActivity struct {
 	Calls []uiSessionCall `json:"calls"`
 	Files []string        `json:"files"`
@@ -35,7 +40,7 @@ func uiActivityCapture(capture []*uiSessionActivity) *uiSessionActivity {
 	return capture[0]
 }
 
-func (a *uiSessionActivity) call(id, name, stamp string) {
+func (a *uiSessionActivity) call(id, name, stamp, params string) {
 	if a == nil {
 		return
 	}
@@ -44,7 +49,7 @@ func (a *uiSessionActivity) call(id, name, stamp string) {
 	if n < a.start || len(a.Calls) >= uiSessionCallPage {
 		return
 	}
-	call := uiSessionCall{Number: n + 1, Name: name}
+	call := uiSessionCall{Number: n + 1, Name: name, Params: params}
 	if at := uiParseTime(stamp); !at.IsZero() {
 		call.At = &at
 	}
@@ -113,6 +118,9 @@ func (m *uiManager) sessionDetail(id string, offset int) (uiSessionDetail, error
 	}
 	for i := range activity.Calls {
 		activity.Calls[i].Name = m.cfg.Tokens.redact(redactSecrets(activity.Calls[i].Name))
+		if pr := activity.Calls[i].Params; pr != "" {
+			activity.Calls[i].Params = uiClipRaw(m.cfg.Tokens.redact(uiTaskSecretLike.ReplaceAllString(redactSecrets(pr), "[redacted]")), uiCallParamsMax)
+		}
 	}
 	return uiSessionDetail{Session: uiSessionView(e), Activity: activity, Snapshot: snap, Exists: exists}, nil
 }
@@ -132,4 +140,21 @@ func uiFocusFile(files map[string]struct{}) string {
 		}
 	}
 	return ""
+}
+
+// uiClipRaw cuts s to n runes without collapsing its whitespace, so a command or a diff stays readable.
+func uiClipRaw(s string, n int) string {
+	if r := []rune(s); len(r) > n {
+		return string(r[:n]) + "\n… (cut; the full call is in the harness's own record)"
+	}
+	return s
+}
+
+// uiPrettyParams renders a call's arguments as indented JSON.
+func uiPrettyParams(v any) string {
+	b, err := json.MarshalIndent(v, "", "  ")
+	if err != nil || string(b) == "null" || string(b) == "{}" {
+		return ""
+	}
+	return string(b)
 }

@@ -27,7 +27,7 @@ func TestSessionDetailShowsRecordedEvidenceWithoutTranscriptText(t *testing.T) {
 	}
 	r.Body.Close()
 	text := string(body)
-	for _, exposed := range []string{"SECRET", "Done, both fixed", "go test", "FAIL", dir} {
+	for _, exposed := range []string{"SECRET", "Done, both fixed", "FAIL", dir} {
 		if strings.Contains(text, exposed) {
 			t.Fatalf("session detail contains %q", exposed)
 		}
@@ -43,6 +43,9 @@ func TestSessionDetailShowsRecordedEvidenceWithoutTranscriptText(t *testing.T) {
 	if len(activity.Calls) != 2 || activity.Calls[0].Name != "Edit" || activity.Calls[0].Result != "" ||
 		activity.Calls[1].Name != "Bash" || activity.Calls[1].Result != "failed" || activity.Calls[1].At == nil {
 		t.Fatalf("calls = %+v", activity.Calls)
+	}
+	if !strings.Contains(activity.Calls[1].Params, "go test ./...") || !strings.Contains(activity.Calls[0].Params, "login.go") {
+		t.Fatalf("call params = %q, %q", activity.Calls[0].Params, activity.Calls[1].Params)
 	}
 	uiReadJSON(t, uiDo(t, "GET", path+"?offset=1", nil, uiAuthed), &detail)
 	if len(detail.Activity.Calls) != 1 || detail.Activity.Calls[0].Number != 2 || detail.Activity.Calls[0].Result != "failed" {
@@ -97,5 +100,20 @@ func TestDigestKeepsEveryRequest(t *testing.T) {
 	d.reply("did second")
 	if len(d.Turns) != 2 || d.Turns[0].Reply != "did first" || d.Turns[1].Request != "second job" {
 		t.Fatalf("turns = %+v", d.Turns)
+	}
+}
+
+func TestCallParamsAreClippedAndPretty(t *testing.T) {
+	if got := uiPrettyParams(map[string]any{"command": "ls"}); got != "{\n  \"command\": \"ls\"\n}" {
+		t.Fatalf("pretty = %q", got)
+	}
+	if uiPrettyParams(map[string]any{}) != "" || uiPrettyParams(nil) != "" {
+		t.Fatal("empty input should give no params")
+	}
+	if got := uiClipRaw(strings.Repeat("x", uiCallParamsMax+10), uiCallParamsMax); !strings.Contains(got, "cut;") {
+		t.Fatal("long params were not clipped")
+	}
+	if got := uiCodexParams("", `{"cmd":"ls"}`); !strings.Contains(got, "\n  \"cmd\"") {
+		t.Fatalf("codex params = %q", got)
 	}
 }
