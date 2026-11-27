@@ -51,7 +51,7 @@ func (m *uiManager) suggestions() []uiSuggestion {
 		if len(v.Proposal.Changes) > 0 {
 			why = uiClipWords(v.Proposal.Changes[0], 160)
 		}
-		out = append(out, uiSuggestion{ID: v.Proposal.ID, Kind: "rules", Title: "Update your workflow rules", Why: why, At: v.Proposal.Created, Href: "#/dashboard/rules", Preview: m.rulesPreview(v.Proposal, v.Current)})
+		out = append(out, uiSuggestion{ID: v.Proposal.ID, Kind: "rules", Title: "Update your workflow rules", Why: why, At: v.Proposal.Created, Href: "#/improve/rules", Preview: m.rulesPreview(v.Proposal, v.Current)})
 	}
 	for _, r := range m.researchList("digest", 1) {
 		out = append(out, uiSuggestion{ID: r.ID, Kind: "digest", Title: "Suggestions from the scouts", Detail: strings.ReplaceAll(r.Text, "**", ""), At: r.Time, Href: "#/dashboard/scout"})
@@ -121,7 +121,7 @@ func uiCoachHref(kind string) string {
 	case "job":
 		return "#/dashboard/jobs"
 	case "workflow":
-		return "#/dashboard/rules"
+		return "#/improve/rules"
 	case "eval":
 		return "#/dashboard/evals"
 	case "mcp", "skill":

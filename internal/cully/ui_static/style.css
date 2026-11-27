@@ -1624,3 +1624,39 @@ details.callparams .pre { margin: 8px 0 4px; max-height: 320px; overflow: auto; 
 mark { background: rgba(255, 200, 40, .38); color: inherit; border-radius: 3px; padding: 0 1px; }
 .hsnip { margin: 2px 0 4px; }
 .ssempty { max-width: 640px; }
+
+/* New-task composer: prompt on top; tool, mode, options, mic and send in one calm bar */
+.hero-composer .cbar { gap: 8px; flex-wrap: nowrap; }
+.hero-composer .cbar .pillbtn { padding: 5px 11px; }
+.hero-composer .cbar .seg { margin: 0; }
+.hero-composer .cbar .seg button { padding: 4px 11px; font-size: 13px; }
+.hero-composer .cbar .menu { position: relative; }
+.hero-composer .cbar .micmeter { width: 36px; }
+.round.mic { width: 36px; height: 36px; padding: 0; justify-content: center; }
+.round.mic.rec { background: var(--red); color: #fff; border-color: var(--red); }
+.options-pop { width: min(380px, 86vw); display: grid; gap: 14px; left: 0; right: auto; }
+.optsect { display: grid; gap: 6px; }
+.optsect .opt-label { font-size: 12.5px; font-weight: 600; color: var(--soft); }
+.optline { display: flex; align-items: center; gap: 8px; font-size: 13.5px; }
+.sendmenu { display: inline-flex; margin-left: -6px; }
+.sendmore { width: 26px; height: 36px; padding: 0; justify-content: center; border-radius: 0 18px 18px 0; }
+.send-pop { right: 0; left: auto; min-width: 230px; }
+.hero-composer .cbar details > summary { list-style: none; }
+.hero-composer .cbar details > summary::-webkit-details-marker { display: none; }
+@media (max-width: 700px) { .hero-composer .cbar { flex-wrap: wrap; } }
+
+/* Calmer home */
+.hero-composer .cbar .micmeter { display: none; }
+.hero-composer .cbar .mic.rec + .micmeter { display: inline-block; }
+.mcpchip, .pausebtn { white-space: nowrap; }
+@media (max-width: 1500px) { .meta #meta { display: none; } }
+.how.compact { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.how.compact li { font-size: 13px; color: var(--soft); }
+.how.compact li b { display: block; color: var(--ink); font-size: 13.5px; margin-bottom: 2px; }
+@media (max-width: 900px) { .how.compact { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* Task panel: one-line hints on every section, full detail on open */
+.tp-h { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; width: 100%; }
+.tp-hint { font: 400 12px var(--sans); color: var(--faint); text-align: right; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tp-sec[open] .tp-hint { display: none; }
+.tp-lastfull { margin: 0; max-height: 220px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font: 12px/1.5 var(--mono); background: var(--code-bg); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
