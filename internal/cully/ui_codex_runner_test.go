@@ -174,10 +174,10 @@ func TestCodexHarnessSelection(t *testing.T) {
 	if _, err := m.start(uiStartRequest{Prompt: "x", Harness: "codex"}); err == nil || !strings.Contains(err.Error(), "not installed") {
 		t.Fatalf("err %v", err)
 	}
-	if _, err := m.start(uiStartRequest{Prompt: "x", Harness: "cursor"}); err == nil {
-		t.Fatal("cursor tasks must be refused")
+	if _, err := m.start(uiStartRequest{Prompt: "x", Harness: "cursor"}); err == nil || !strings.Contains(err.Error(), "not installed") {
+		t.Fatalf("cursor without the CLI must be refused: %v", err)
 	}
-	if uiRunCapability("run", "codex") != "yes" || uiRunCapability("run", "cursor") != "no" {
+	if uiRunCapability("run", "codex") != "yes" || uiRunCapability("run", "cursor") != "yes" {
 		t.Fatal("matrix")
 	}
 }
