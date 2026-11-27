@@ -12,6 +12,7 @@ import (
 	"strconv"
 
 	"github.com/mcp-runtime/cully/internal/cully"
+	"golang.org/x/term"
 )
 
 var version = "dev"
@@ -19,6 +20,10 @@ var version = "dev"
 const help = `Cully — the harness runtime for coding agents and software projects.
 
 Usage:
+  cully setup                            Guided setup in a terminal: agents, mode, workflow rules, suggestions
+  cully setup --local [--agent AGENT]    One machine: install integrations, no servers, no MCP registration
+  cully setup ... [--no-interview] [--answers FILE] [--yes]
+                                         Skip or script the workflow rules questions
   cully setup --all [--agent claude|codex|cursor|all] [--oauth]
                                          Start the full local stack, integrations and advisor
   cully setup [--agent AGENT] --mcp-url URL [--oauth]
@@ -225,12 +230,74 @@ func runSetup(args []string) error {
 		return fmt.Errorf("Cully setup supports macOS and Linux only")
 	}
 	options, err := parseSetup(args)
+	if errors.Is(err, errSetupNeedsAction) && isTerminal(os.Stdin) && isTerminal(os.Stdout) {
+		return runSetupWizard(args)
+	}
 	if err != nil {
 		return err
 	}
 	fmt.Printf("Cully %s setup\n", version)
+	if err := runSetupFlow(options); err != nil {
+		return err
+	}
+	return setupRulesAfterFlags(options)
+}
+
+func isTerminal(f *os.File) bool { return term.IsTerminal(int(f.Fd())) }
+
+// runSetupWizard is the friendly interactive setup, used when no setup option
+// was given and both ends are a terminal.
+func runSetupWizard(args []string) error {
+	fs := flag.NewFlagSet("setup", flag.ContinueOnError)
+	var o cully.SetupWizardOptions
+	fs.BoolVar(&o.NoInterview, "no-interview", false, "")
+	fs.BoolVar(&o.Yes, "yes", false, "")
+	fs.StringVar(&o.AnswersFile, "answers", "", "")
+	fs.String("agent", "", "")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	o.In, o.Out, o.Index = os.Stdin, os.Stdout, true
+	if cwd, err := os.Getwd(); err == nil {
+		o.Repos = []string{cwd}
+	}
+	fmt.Printf("Cully %s setup\n", version)
+	return cully.RunSetupWizard(o)
+}
+
+// setupRulesAfterFlags records the mode a flag chose and, in a terminal or when
+// answers were supplied, runs the rules and suggestions steps.
+func setupRulesAfterFlags(options setupOptions) error {
+	if options.terminalOnly {
+		return nil
+	}
+	mode, url := "local", ""
+	if options.endpoint != "" {
+		mode, url = "mcp", options.endpoint
+	} else if options.all {
+		mode = "mcp"
+	}
+	cully.RecordSetupMode(mode, url)
+	interactive := isTerminal(os.Stdin) && isTerminal(os.Stdout)
+	if !interactive && options.answers == "" {
+		return nil
+	}
+	cwd, _ := os.Getwd()
+	return cully.RunSetupWizard(cully.SetupWizardOptions{In: os.Stdin, Out: os.Stdout, Mode: mode, MCPURL: url, NoInterview: options.noInterview,
+		AnswersFile: options.answers, Yes: options.yes, Index: true, Repos: []string{cwd}})
+}
+
+func runSetupFlow(options setupOptions) error {
 	if options.terminalOnly {
 		return cully.SetupTerminal(os.Stdin, os.Stdout, options.skipTerminalTest, options.terminal)
+	}
+	if options.local {
+		var targets []string
+		if options.target != "" {
+			targets = append(targets, options.target)
+		}
+		fmt.Println("Local setup: installing the agent integrations; no servers are started and no MCP is registered")
+		return cully.InstallAgentsOnly("", targets...)
 	}
 	if options.endpoint != "" {
 		fmt.Println("Setting up Cully with an existing MCP server")
@@ -274,7 +341,13 @@ type setupOptions struct {
 	terminalOnly, skipTerminalTest bool
 	terminal                       string
 	auth                           mcpAuthOptions
+	all, local, yes, noInterview   bool
+	answers                        string
 }
+
+// errSetupNeedsAction is what parseSetup returns when no way to set up was
+// chosen; in a terminal the friendly wizard runs instead of failing.
+var errSetupNeedsAction = errors.New("setup requires --all to start Cully on this machine, --mcp-url URL to connect to a deployed Cully stack, or --local for one machine without servers")
 
 func parseSetup(args []string) (setupOptions, error) {
 	var options setupOptions
@@ -284,6 +357,10 @@ func parseSetup(args []string) (setupOptions, error) {
 	fs.StringVar(&options.endpoint, "mcp-url", "", "connect to an already deployed Cully MCP server")
 	fs.BoolVar(&options.oauth, "oauth", false, "server uses OAuth; print sign-in instructions")
 	fs.BoolVar(&options.terminalOnly, "terminal-only", false, "install the required zsh/Oh My Zsh and font setup without services or agents")
+	fs.BoolVar(&options.local, "local", false, "one machine: install the agent integrations and keep everything local, with no servers or MCP registration")
+	fs.BoolVar(&options.yes, "yes", false, "approve the proposed dev-workflow rules without asking")
+	fs.BoolVar(&options.noInterview, "no-interview", false, "skip the dev-workflow rules questions")
+	fs.StringVar(&options.answers, "answers", "", "answer the rules questions from a JSON file (question id to answer, null to skip) instead of asking")
 	fs.StringVar(&options.terminal, "terminal", "", "native terminal program; default: detect")
 	fs.BoolVar(&options.skipTerminalTest, "skip-terminal-test", false, "configure terminal settings without the interactive wheel/divider/advisor exercise")
 	fs.StringVar(&options.auth.Image, "mcp-auth-image", "", "testing only: override the automatically selected latest mcp-auth release image")
@@ -295,14 +372,17 @@ func parseSetup(args []string) (setupOptions, error) {
 	if len(fs.Args()) != 0 {
 		return setupOptions{}, fmt.Errorf("setup does not accept positional agents; use cully setup --agent codex --all or cully setup --agent codex --mcp-url URL")
 	}
-	if *all && options.endpoint != "" {
-		return setupOptions{}, fmt.Errorf("choose either --all for a local stack or --mcp-url for a deployed stack")
+	if (*all && options.endpoint != "") || (options.local && (*all || options.endpoint != "")) {
+		return setupOptions{}, fmt.Errorf("choose one of --all for a local stack, --mcp-url for a deployed stack, or --local for one machine")
 	}
-	if options.terminalOnly && (*all || options.endpoint != "" || options.target != "" || options.oauth || options.auth.specified()) {
+	if options.terminalOnly && (*all || options.local || options.endpoint != "" || options.target != "" || options.oauth || options.auth.specified()) {
 		return setupOptions{}, fmt.Errorf("--terminal-only cannot be combined with stack or agent setup options")
 	}
-	if !*all && options.endpoint == "" && !options.terminalOnly {
-		return setupOptions{}, fmt.Errorf("setup requires --all to start Cully on this machine, or --mcp-url URL to connect to a deployed Cully stack")
+	if !*all && options.endpoint == "" && !options.terminalOnly && !options.local {
+		return setupOptions{}, errSetupNeedsAction
+	}
+	if *all {
+		options.all = true
 	}
 	if options.auth.specified() {
 		if !*all || !options.oauth {

@@ -206,6 +206,9 @@ func RunUI(w io.Writer, args []string) error {
 	if warn := uiExposureWarning(o); warn != "" {
 		fmt.Fprintln(w, warn)
 	}
+	if !SetupDone() {
+		fmt.Fprintln(w, "Setup is not finished: open the Setup page in the UI, or run cully setup")
+	}
 	srv := &http.Server{Handler: newUIServer(m, token, uiLoopbackAddr(o.Addr)), ReadHeaderTimeout: 10 * time.Second}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()

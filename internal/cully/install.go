@@ -97,7 +97,9 @@ func installMemorySkill(target string) error {
 	if err := removeOwnedFile(legacy, "<!-- cully:skill:managed -->"); err != nil {
 		return err
 	}
-	removeWorkflowLink(filepath.Join(dir, "skills", "dev-workflow-rules"))
+	if !setupRulesLinked() { // rules the user approved in setup stay linked
+		removeWorkflowLink(filepath.Join(dir, "skills", "dev-workflow-rules"))
+	}
 	path := runtimeSkillPath(target)
 	wrote, err := writeOwnedFile(path, "<!-- cully:skill:managed -->", cullyskill.Content)
 	if err != nil {
