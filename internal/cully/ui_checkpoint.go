@@ -199,6 +199,18 @@ func uiGitRun(dir string, env []string, stdin string, args ...string) (string, e
 	return out.String(), nil
 }
 
+// gitRun runs one git command for this task's checkpoints. For a task in a folder with no git it first pins the
+// private shadow repository, so git is never asked which repository the folder belongs to: a folder nested in
+// someone else's repository, or one that later gains a .git, must not have its snapshots written there.
+func (a *uiAgent) gitRun(env []string, stdin string, args ...string) (string, error) {
+	if a.req.inPlaceDir != "" && a.req.identityName == "" {
+		if _, err := uiShadowGitDir(a.worktree); err != nil {
+			return "", err
+		}
+	}
+	return uiGitRun(a.worktree, env, stdin, args...)
+}
+
 func (a *uiAgent) checkpointsAvailable() (bool, string) {
 	if a.req.inPlaceDir != "" {
 		if a.req.identityName != "" {
@@ -232,11 +244,11 @@ func (a *uiAgent) snapshotTree() (string, error) {
 	}
 	defer os.RemoveAll(dir)
 	env := []string{"GIT_INDEX_FILE=" + filepath.Join(dir, "index")}
-	_, _ = uiGitRun(a.worktree, env, "", "read-tree", "HEAD") // an unborn HEAD just means an empty start
-	if _, err := uiGitRun(a.worktree, env, "", "add", "-A"); err != nil {
+	_, _ = a.gitRun(env, "", "read-tree", "HEAD") // an unborn HEAD just means an empty start
+	if _, err := a.gitRun(env, "", "add", "-A"); err != nil {
 		return "", err
 	}
-	out, err := uiGitRun(a.worktree, env, "", "write-tree")
+	out, err := a.gitRun(env, "", "write-tree")
 	return strings.TrimSpace(out), err
 }
 
@@ -277,7 +289,7 @@ func (a *uiAgent) checkpoint(label string, turn int, force bool) (uiCheckpoint, 
 		}
 		prev, n = last.Tree, last.N+1
 	} else {
-		out, err := uiGitRun(a.worktree, nil, "", "rev-parse", "HEAD^{tree}")
+		out, err := a.gitRun(nil, "", "rev-parse", "HEAD^{tree}")
 		prev = strings.TrimSpace(out)
 		if err != nil || prev == "" {
 			prev = uiGitEmptyTree
@@ -285,15 +297,15 @@ func (a *uiAgent) checkpoint(label string, turn int, force bool) (uiCheckpoint, 
 	}
 	idEnv := []string{"GIT_AUTHOR_NAME=Cully", "GIT_AUTHOR_EMAIL=cully@localhost", "GIT_COMMITTER_NAME=Cully", "GIT_COMMITTER_EMAIL=cully@localhost"}
 	msg := fmt.Sprintf("Cully checkpoint %d of task %s", n, a.taskID())
-	commit, err := uiGitRun(a.worktree, idEnv, "", "commit-tree", "--no-gpg-sign", tree, "-m", msg)
+	commit, err := a.gitRun(idEnv, "", "commit-tree", "--no-gpg-sign", tree, "-m", msg)
 	if err != nil {
 		return uiCheckpoint{}, false, err
 	}
 	commit = strings.TrimSpace(commit)
-	if _, err := uiGitRun(a.worktree, nil, "", "update-ref", uiCheckpointRefBase+a.taskID()+"/"+strconv.Itoa(n), commit); err != nil {
+	if _, err := a.gitRun(nil, "", "update-ref", uiCheckpointRefBase+a.taskID()+"/"+strconv.Itoa(n), commit); err != nil {
 		return uiCheckpoint{}, false, err
 	}
-	changed, _ := uiGitRun(a.worktree, nil, "", "diff-tree", "-r", "--name-status", "--no-renames", prev, tree)
+	changed, _ := a.gitRun(nil, "", "diff-tree", "-r", "--name-status", "--no-renames", prev, tree)
 	files := uiParseNameStatus(changed)
 	cp := uiCheckpoint{N: n, Time: time.Now().UTC(), Turn: turn, Tree: tree, Prev: prev, Label: label, Total: len(files), Safety: force}
 	if len(files) > uiCheckpointFiles {
@@ -313,7 +325,7 @@ func (a *uiAgent) checkpoint(label string, turn int, force bool) (uiCheckpoint, 
 	}
 	uiTaskMu.Unlock()
 	for _, d := range dropped {
-		_, _ = uiGitRun(a.worktree, nil, "", "update-ref", "-d", uiCheckpointRefBase+a.taskID()+"/"+strconv.Itoa(d.N))
+		_, _ = a.gitRun(nil, "", "update-ref", "-d", uiCheckpointRefBase+a.taskID()+"/"+strconv.Itoa(d.N))
 	}
 	return cp, true, nil
 }
@@ -383,10 +395,10 @@ func (a *uiAgent) findCheckpoint(n int) (uiCheckpoint, bool) {
 // checkpointDiff shows what one turn changed.
 func (a *uiAgent) checkpointDiff(cp uiCheckpoint) string {
 	var b strings.Builder
-	if stat, _ := uiGitRun(a.worktree, nil, "", "diff", "--no-ext-diff", "--no-textconv", "--stat", cp.Prev, cp.Tree); strings.TrimSpace(stat) != "" {
+	if stat, _ := a.gitRun(nil, "", "diff", "--no-ext-diff", "--no-textconv", "--stat", cp.Prev, cp.Tree); strings.TrimSpace(stat) != "" {
 		b.WriteString(stat + "\n")
 	}
-	full, _ := uiGitRun(a.worktree, nil, "", "diff", "--no-ext-diff", "--no-textconv", cp.Prev, cp.Tree)
+	full, _ := a.gitRun(nil, "", "diff", "--no-ext-diff", "--no-textconv", cp.Prev, cp.Tree)
 	if len(full) > uiDiffMax {
 		full = full[:uiDiffMax] + "\n... diff cut here\n"
 	}
@@ -424,7 +436,7 @@ func (a *uiAgent) revertTo(n int) (uiRevertResult, int, error) {
 		return res, http.StatusInternalServerError, fmt.Errorf("could not take the safety checkpoint, so nothing was changed: %v", err)
 	}
 	res.Safety, res.Reverted = safety, n
-	out, err := uiGitRun(a.worktree, nil, "", "diff-tree", "-r", "-z", "--name-status", "--no-renames", safety.Tree, target.Tree)
+	out, err := a.gitRun(nil, "", "diff-tree", "-r", "-z", "--name-status", "--no-renames", safety.Tree, target.Tree)
 	if err != nil {
 		return res, http.StatusInternalServerError, err
 	}
@@ -461,7 +473,7 @@ func (a *uiAgent) revertTo(n int) (uiRevertResult, int, error) {
 		}
 		defer os.RemoveAll(dir)
 		env := []string{"GIT_INDEX_FILE=" + filepath.Join(dir, "index")}
-		if _, err := uiGitRun(a.worktree, env, "", "read-tree", target.Tree); err != nil {
+		if _, err := a.gitRun(env, "", "read-tree", target.Tree); err != nil {
 			return res, http.StatusInternalServerError, err
 		}
 		for _, p := range restore {
@@ -469,7 +481,7 @@ func (a *uiAgent) revertTo(n int) (uiRevertResult, int, error) {
 				_ = os.RemoveAll(filepath.Join(a.worktree, p)) // a folder where the checkpoint had a file
 			}
 		}
-		if _, err := uiGitRun(a.worktree, env, strings.Join(restore, "\x00")+"\x00", "checkout-index", "-f", "-q", "--stdin", "-z"); err != nil {
+		if _, err := a.gitRun(env, strings.Join(restore, "\x00")+"\x00", "checkout-index", "-f", "-q", "--stdin", "-z"); err != nil {
 			return res, http.StatusInternalServerError, err
 		}
 	}

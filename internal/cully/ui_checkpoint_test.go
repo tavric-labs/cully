@@ -403,3 +403,33 @@ func TestShadowCheckpointsDiffAndRevertAFolderWithNoGit(t *testing.T) {
 		t.Fatal("a .git appeared in the folder")
 	}
 }
+
+// A folder with no git can sit inside another repository, and a restart forgets which git directory a task
+// uses. Snapshots must still go to the private shadow repository, never into the repository around the folder.
+func TestShadowCheckpointsNeverUseTheRepositoryAroundTheFolder(t *testing.T) {
+	m, _, _ := uiTestManager(t, uiWriteScript(t, fakeEditingClaude), "tok-aaa1")
+	parent := t.TempDir()
+	if out, err := exec.Command("git", "-C", parent, "init", "-q").CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v %s", err, out)
+	}
+	dir := filepath.Join(parent, "a", "b", "proj")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	a, err := m.start(uiStartRequest{Repo: dir, Title: "nested", Prompt: "go", inPlaceDir: dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	uiWaitState(t, a, "waiting")
+	uiGitDirs.Delete(dir) // as after a restart: nothing remembered
+	gd, err := a.gitRun(nil, "", "rev-parse", "--absolute-git-dir")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(strings.TrimSpace(gd), filepath.Join(ConfigDir(), "ui-shadow")) {
+		t.Fatalf("git ran against %q, not the shadow repository", strings.TrimSpace(gd))
+	}
+	if _, err := os.Stat(filepath.Join(parent, ".git", "refs", "cully")); !os.IsNotExist(err) {
+		t.Fatalf("checkpoint refs were written into the surrounding repository: %v", err)
+	}
+}

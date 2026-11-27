@@ -37,6 +37,7 @@ Usage:
   cully update [--check] [--version TAG]   Update this machine's CLI and running advisor
   cully workflow [--skip]                Install starter dev-workflow-rules skill
   cully harness [--cwd DIR]               Audit instructions, guardrails, memory, skills and hooks
+  cully curator [--once]                  Keep sessions named and tasks titled in the background, with no browser open
   cully status [directory]                Show session and agent status
   cully rescue [--cwd DIR] [--agent claude|codex|cursor] [--no-ai]
                                           Diagnose a stuck session from recorded evidence
@@ -185,6 +186,8 @@ func run(args []string) error {
 		return cully.RunAgentOptions(args[0], rest, os.Stdin, os.Stdout, os.Stderr, sidebar)
 	case "ui":
 		return cully.RunUI(os.Stdout, args[1:])
+	case "curator":
+		return cully.RunCurator(os.Stdout, args[1:])
 	case "timeline":
 		return cully.RunTimeline(os.Stdout, args[1:])
 	case "replay":

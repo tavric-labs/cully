@@ -375,3 +375,14 @@ Hidden checks are a design choice from published factory practice, not a proven 
 Setup installs these skills for each harness it links: `cully-sessions` (where Claude, Codex and Cursor keep sessions, how to read them and what to capture), `cully-spec`, `cully-verify`, `cully-handoff` and `cully-repo-map`. Each is short on purpose. A copy you edit is left alone, and uninstall removes only the ones you did not change.
 
 The Setup page also offers ready-made agents (Independent reviewer, Handoff keeper, Loop breaker) and a nightly checks job before Cully has any history to learn from. Each card links to its sources. Nothing is created until you review and approve it.
+
+
+## Keeping the library current without the page open
+
+`cully curator` runs the same background work the page runs, with no browser: it indexes new sessions, names and summarises them, retitles tasks that have weak names, refreshes suggestions and saves summaries to memory. It follows the analysis switch on the Sessions page, so it does nothing while analysis is off, and the hourly limit still applies. Run it in a terminal, under a service manager, or use `cully curator --once` from a schedule.
+
+Only one process indexes at a time, because two would overwrite each other. A lock in Cully's folder decides which: the first to start keeps it, and a second curator says so and exits. A page opened while a curator runs does not index; it re-reads what the curator wrote every few seconds.
+
+## Checkpoints in a folder with no git
+
+A task in a folder with no git still gets checkpoints, diffs and revert. Cully keeps the snapshots in a private git repository under its own folder, pointed at the task's folder, so nothing is added to your folder. It skips dependency and build folders (`node_modules`, `.venv`, `dist`, `build`, `target` and similar) and refuses a folder where a snapshot would be unwise: the root, your home folder or one above it, a path near the top of the disk, and a folder with more than 20,000 files. Revert writes files back into the folder, after taking a safety checkpoint first.

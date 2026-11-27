@@ -212,7 +212,14 @@ func RunUI(w io.Writer, args []string) error {
 	srv := &http.Server{Handler: newUIServer(m, token, uiLoopbackAddr(o.Addr)), ReadHeaderTimeout: 10 * time.Second}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-	go m.runIndexer(ctx)
+	// One process indexes at a time. If a curator already holds the lock, this page follows what it writes.
+	if release, ok := uiIndexerLock(); ok {
+		defer release()
+		go m.runIndexer(ctx)
+	} else {
+		fmt.Fprintln(w, "A Cully curator is keeping the library up to date; this page shows its work.")
+		go m.followIndexer(ctx)
+	}
 	go func() {
 		<-ctx.Done()
 		m.stopAll()

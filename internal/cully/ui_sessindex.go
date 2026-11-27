@@ -770,24 +770,26 @@ func (m *uiManager) analyzeSession(cp uiIndexed) int {
 func uiItoa(n int) string { return strconv.Itoa(n) }
 
 // runIndexer keeps the library up to date for as long as the page's server runs.
-func (m *uiManager) runIndexer(ctx context.Context) {
-	tick := func() {
-		m.indexSessions(200)
-		for i := 0; i < 2; i++ {
-			if m.analyzeNext() == 0 {
-				break
-			}
+func (m *uiManager) indexerTick() {
+	m.indexSessions(200)
+	for i := 0; i < 2; i++ {
+		if m.analyzeNext() == 0 {
+			break
 		}
-		m.coachIfDue()
-		m.scoutIfDue()
-		m.identitiesDue()
-		m.agentSuggestIfDue()
-		m.jobSuggestIfDue()
-		m.rulesIfDue()
-		m.syncAgentsIfDue()
-		m.retitleTasks()
-		m.syncTasksIfDue()
 	}
+	m.coachIfDue()
+	m.scoutIfDue()
+	m.identitiesDue()
+	m.agentSuggestIfDue()
+	m.jobSuggestIfDue()
+	m.rulesIfDue()
+	m.syncAgentsIfDue()
+	m.retitleTasks()
+	m.syncTasksIfDue()
+}
+
+func (m *uiManager) runIndexer(ctx context.Context) {
+	tick := m.indexerTick
 	go m.probeIfDue()
 	tick()
 	t := time.NewTicker(uiIndexTick)
