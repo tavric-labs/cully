@@ -1,6 +1,8 @@
 package cully
 
 import (
+	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -73,5 +75,37 @@ func TestContinuingATaskFromAnotherHarnessRunsInTheSameRecordWithItsHandoff(t *t
 	}
 	if _, err := m.taskContinue("nope", ""); err == nil {
 		t.Fatal("an unknown task was continued")
+	}
+}
+
+func TestTheTaskReportIsSelfContainedEscapedAndHoldsNoSecretsOrPaths(t *testing.T) {
+	m, repo, _ := uiTestManager(t, uiWriteScript(t, fakeClaude), "tok-aaa1")
+	a, err := m.start(uiStartRequest{Repo: repo, Title: `Fix <script>alert(1)</script> & more`, Prompt: "Use tok-aaa1 to fix the login <b>bug</b>"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	uiWaitState(t, a, "waiting")
+	a.handleLine([]byte(`{"type":"assistant","message":{"content":[{"type":"tool_use","id":"p1","name":"TodoWrite","input":{"todos":[{"content":"Find the bug","status":"completed"},{"content":"Fix it","status":"in_progress"}]}}]}}`))
+	s := &uiServer{m: m}
+	req := httptest.NewRequest("GET", "/api/agents/"+a.id+"/report?download=1", nil)
+	req.SetPathValue("id", a.id)
+	rec := httptest.NewRecorder()
+	s.reportGet(rec, req)
+	body := rec.Body.String()
+	if rec.Code != 200 || !strings.Contains(rec.Header().Get("Content-Disposition"), "attachment") {
+		t.Fatalf("%d %v", rec.Code, rec.Header())
+	}
+	for _, bad := range []string{"<script", "tok-aaa1", repo, "<b>bug</b>"} {
+		if strings.Contains(body, bad) {
+			t.Errorf("the report contains %q", bad)
+		}
+	}
+	for _, want := range []string{"Fix &lt;script&gt;", "Find the bug", "1 of 2 done", filepath.Base(repo), "Made with Cully"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the report lacks %q", want)
+		}
+	}
+	if csp := rec.Header().Get("Content-Security-Policy"); !strings.Contains(csp, "default-src 'none'") || strings.Contains(csp, "script-src") {
+		t.Errorf("csp = %q", csp)
 	}
 }

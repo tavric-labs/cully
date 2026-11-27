@@ -219,6 +219,48 @@
     $('badge').hidden = waiting === 0;
     $('badge').textContent = waiting;
     document.title = (waiting ? '(' + waiting + ') ' : '') + 'Cully';
+    mountInbox(); drawInbox();
+  }
+
+  // ---------- approvals from anywhere ----------
+  // Every question a task is waiting on, across all tasks, answerable from the header or the home page, so
+  // an approval never needs you to find the right task window first. A high-risk call is allowed once only.
+  const pendingAsks = () => S.agents.flatMap((a) => (a.permissions || []).map((p) => ({ a, p })));
+  async function answerAsk(a, p, decision) {
+    try { await api('/api/agents/' + a.id + '/permissions/' + p.id, { method: 'POST', body: JSON.stringify({ decision, hash: p.hash }) }); await refresh(); } catch (e) { toast(e.message, true); }
+  }
+  function askCard(a, p) {
+    return h('div', { class: 'askcard2 risk-b-' + p.risk },
+      h('div', { class: 'row' }, h('b', {}, a.title), h('span', { class: 'chip risk-' + p.risk }, ({ low: 'Low risk', medium: 'Medium risk', high: 'High risk' })[p.risk] || p.risk), h('span', { class: 'sp' }), h('a', { class: 'linkbtn', href: '#/task/' + a.id, onclick: () => closeInbox() }, 'Open task')),
+      h('p', { class: 'faint small' }, 'asks to use ' + p.tool + (p.riskWhy ? ', which ' + p.riskWhy : '')),
+      h('pre', { class: 'permcmd' }, p.summary || p.input),
+      h('div', { class: 'row' }, h('button', { class: 'btn small', onclick: () => answerAsk(a, p, 'allow') }, icon('check'), 'Allow once'), h('button', { class: 'btn ghost small', onclick: () => answerAsk(a, p, 'deny') }, 'Deny')));
+  }
+  let inboxPop = null;
+  function closeInbox() { if (inboxPop) { inboxPop.remove(); inboxPop = null; const b = $('inboxbtn'); if (b) b.setAttribute('aria-expanded', 'false'); document.removeEventListener('click', inboxOutside, true); } }
+  function inboxOutside(e) { if (inboxPop && !inboxPop.contains(e.target) && !$('inboxbtn').contains(e.target)) closeInbox(); }
+  function drawInbox() {
+    const btn = $('inboxbtn'); if (!btn) return;
+    const asks = pendingAsks(); const waiting = S.agents.filter((a) => a.state === 'waiting' && !(a.permissions || []).length);
+    const n = asks.length + waiting.length;
+    btn.hidden = n === 0 && !inboxPop;
+    btn.className = 'inboxbtn' + (asks.length ? ' ask' : '');
+    btn.replaceChildren(icon(asks.length ? 'lock' : 'bell'), n + (n === 1 ? ' needs you' : ' need you'));
+    if (!inboxPop) return;
+    inboxPop.replaceChildren(h('div', { class: 'menu-note' }, n ? 'Answer from here; the task carries on at once.' : 'Nothing needs you right now.'),
+      ...asks.map(({ a, p }) => askCard(a, p)),
+      ...waiting.map((a) => h('div', { class: 'askcard2' }, h('div', { class: 'row' }, h('b', {}, a.title), h('span', { class: 'sp' }), h('a', { class: 'btn small', href: '#/task/' + a.id, onclick: () => closeInbox() }, 'Reply')), h('p', { class: 'faint small' }, a.last || 'Waiting for your reply.'))));
+  }
+  function mountInbox() {
+    const btn = $('inboxbtn'); if (!btn || btn.dataset.ready) return; btn.dataset.ready = '1';
+    btn.addEventListener('click', () => {
+      if (inboxPop) { closeInbox(); return; }
+      inboxPop = h('div', { class: 'inboxpop', role: 'dialog', 'aria-label': 'Needs you' });
+      document.body.append(inboxPop); btn.setAttribute('aria-expanded', 'true');
+      document.addEventListener('click', inboxOutside, true);
+      document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeInbox(); }, { once: true });
+      drawInbox();
+    });
   }
 
   // ---------- home ----------
@@ -324,6 +366,25 @@
     }
     btn.onclick = begin;
     return h('div', { class: 'row voice' }, btn, meter, h('label', { class: 'faint small', title: 'Start the task as soon as the words are turned into text' }, auto, ' Start when I stop talking'));
+  }
+
+  // The first minute. Before you have started anything, show what Cully already found on this machine:
+  // your own sessions across the three harnesses, how many are analysed, and where to look. Nothing to set up.
+  async function renderWelcome(box) {
+    let dismissed = false;
+    try { dismissed = localStorage.getItem('cully-welcome-off') === '1'; } catch (_) { /* optional */ }
+    if (dismissed) return;
+    let lib = null;
+    try { lib = await api('/api/sessions/library'); } catch (_) { return; }
+    if (!lib || !lib.sessions.length) return;
+    const by = {}; for (const x of lib.sessions) by[x.agent] = (by[x.agent] || 0) + 1;
+    const t = lib.totals; const total = t.analyzed + t.pending;
+    const bad = lib.sessions.filter((x) => x.source === 'ai' && x.health != null && x.health < 55).length;
+    box.replaceChildren(h('section', { class: 'lib-card welcome' },
+      h('div', { class: 'row' }, h('b', {}, 'Cully found your sessions'), h('span', { class: 'sp' }), h('button', { class: 'linkbtn', onclick: () => { try { localStorage.setItem('cully-welcome-off', '1'); } catch (_) { /* optional */ } box.replaceChildren(); } }, 'Hide')),
+      h('div', { class: 'row' }, ...['claude', 'codex', 'cursor'].filter((a) => by[a]).map((a) => h('span', { class: 'chip harness h-' + a }, AGENT_LABEL[a] + ' ' + by[a]))),
+      h('p', { class: 'faint small' }, lib.sessions.length + ' sessions on this machine, ' + dur(t.activeSec) + ' of work' + (total ? '. ' + t.analyzed + ' of ' + total + ' analysed' + (lib.analysis.on ? ', a few more every hour.' : '. Analysis is off.') : '.') + (bad ? ' ' + bad + ' of the analysed ones need a second look.' : '')),
+      h('div', { class: 'row' }, h('a', { class: 'btn small', href: '#/sessions' }, icon('eye'), 'See them'), h('a', { class: 'btn ghost small', href: '#/dashboard/health' }, 'Session health'), h('a', { class: 'btn ghost small', href: '#/dashboard/library' }, 'Library'))));
   }
 
   // ---------- tasks that outlast the page ----------
@@ -454,7 +515,7 @@
       h('div', { id: 'mcpbanner' }), form, repoLine, fleet));
     renderFleet();
     drawMCPBanner();
-    const tasksBox = h('div', { class: 'taskhist' }); $('stage').firstChild.append(tasksBox); renderTaskHistory(tasksBox);
+    const welcomeBox = h('div', { class: 'welcomebox' }); const tasksBox = h('div', { class: 'taskhist' }); $('stage').firstChild.append(welcomeBox, tasksBox); renderWelcome(welcomeBox); renderTaskHistory(tasksBox);
     ta.focus();
   }
   function agentCard(a) {
@@ -676,6 +737,8 @@
         item('spark', 'Ask advisor', "Ask the advisor to review this agent's work", () => askAdvisor(a)),
         item('eye', 'Review the change', 'Start a read-only review of this change', () => startReview(a)),
         finished ? null : item('send', 'Send to another task', "Send this agent's reply or changes to another agent", () => openRelay(a)),
+        item('copy', 'Open a shareable report', 'A one-page summary: goal, plan, files, checks, cost. No file contents or secrets.', () => window.open('/api/agents/' + a.id + '/report', '_blank', 'noopener')),
+        item('down', 'Download the report', 'Save the report as a single HTML file to attach to a pull request or send to a teammate', () => { location.href = '/api/agents/' + a.id + '/report?download=1'; }),
         item('plus', 'Continue in a new task', 'Start a new task from where this one is', () => continueFrom(a))));
     const railHidden = (() => { try { return localStorage.getItem('cully-rail-hidden') === '1'; } catch (_) { return false; } })();
     $('view-agents').classList.toggle('rail-hidden', railHidden);
@@ -2273,8 +2336,11 @@
     const box = $('needs');
     if (!box) return;
     const rows = [...needsList(), ...(S.extraNeeds || [])];
+    const asks = pendingAsks();
+    const total = rows.length + asks.length;
     box.replaceChildren(
-      h('h2', { class: 'hello' }, rows.length ? (rows.length === 1 ? 'One thing needs you' : rows.length + ' things need you') : 'Nothing needs you right now'),
+      h('h2', { class: 'hello' }, total ? (total === 1 ? 'One thing needs you' : total + ' things need you') : 'Nothing needs you right now'),
+      ...asks.map(({ a, p }) => askCard(a, p)),
       rows.length ? h('ul', { class: 'needs' }, ...rows.map((r) => h('li', {}, icon(r.icon), h('span', {}, r.text),
         r.href ? h('a', { class: 'btn small', href: r.href }, r.label) : h('button', { class: 'btn small', onclick: r.onclick }, r.label))))
         : h('p', { class: 'faint' }, 'Tasks are running smoothly, or none are running. Start one from the Tasks tab.'));
@@ -3148,6 +3214,7 @@
   function attentionKeys() {
     const keys = new Map();
     for (const a of S.agents.filter((x) => x.state === 'waiting')) keys.set('wait:' + a.id, [a.title + ' needs you', '', '#/task/' + a.id]);
+    for (const { a, p } of pendingAsks()) keys.set('perm:' + p.id, [a.title + ' asks to use ' + p.tool, (p.risk === 'high' ? 'High risk: ' : '') + (p.summary || '').slice(0, 120), '#/task/' + a.id]);
     for (const g of S.advice || []) for (const x of g.advice) if (!x.applied && !x.dismissed) keys.set('adv:' + x.id, ['New advice for ' + g.agentTitle, x.text, '#/dashboard/advisor']);
     if (memoryMode() === 'mcp') for (const m of mcpNeeding()) keys.set('auth:' + m.agent, ['Cully MCP needs sign-in', 'for ' + AGENT_NAMES[m.agent], '#/dashboard/setup']);
     if (S.rules && S.rules.proposal) keys.set('rules:' + S.rules.proposal.id, ['Review your workflow rules', 'Cully drafted an update to dev-workflow-rules from your recent sessions. Nothing is saved until you approve it.', '#/dashboard/rules']);
