@@ -177,8 +177,15 @@ func TestCheckpointRevertRefusedWhileWorking(t *testing.T) {
 }
 
 func TestCheckpointAPIAndNonGitFolder(t *testing.T) {
-	srv, m, _ := uiTestServer(t, false)
-	dir := t.TempDir()
+	// A folder with no git gets checkpoints from a private repository under Cully's own folder. Nothing is
+	// added to the folder, and a named agent's own folder is still not snapshotted.
+	m, _, _ := uiTestManager(t, uiWriteScript(t, fakeEditingClaude), "tok-aaa1")
+	srv := httptest.NewServer(newUIServer(m, uiTestToken, false))
+	t.Cleanup(srv.Close)
+	dir := filepath.Join(t.TempDir(), "a", "b", "proj") // deep enough to be snapshotted
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(filepath.Join(dir, "f.txt"), []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -192,12 +199,27 @@ func TestCheckpointAPIAndNonGitFolder(t *testing.T) {
 	if err := json.NewDecoder(res.Body).Decode(&v); err != nil {
 		t.Fatal(err)
 	}
-	if v.Available || v.CanRevert || v.Reason == "" || len(v.Checkpoints) != 0 {
-		t.Fatalf("non-git view = %+v", v)
+	if !v.Available || len(v.Checkpoints) < 1 || v.Checkpoints[0].Turn != 0 {
+		t.Fatalf("no-git view = %+v", v)
 	}
-	res = uiDo(t, "POST", srv.URL+"/api/agents/"+a.id+"/checkpoints/1/revert", nil, uiAuthed)
-	if res.StatusCode != http.StatusConflict {
-		t.Fatalf("revert status = %d", res.StatusCode)
+	if _, err := os.Stat(filepath.Join(dir, ".git")); !os.IsNotExist(err) {
+		t.Fatalf("a .git appeared in the user's folder: %v", err)
+	}
+	if gd, ok := uiGitDirs.Load(dir); !ok || !strings.HasPrefix(gd.(string), filepath.Join(ConfigDir(), "ui-shadow")) {
+		t.Fatalf("snapshots are not in Cully's own folder: %v", gd)
+	}
+	named := &uiAgent{req: uiStartRequest{inPlaceDir: dir, identityName: "Watcher"}, worktree: dir}
+	if ok, _ := named.checkpointsAvailable(); ok {
+		t.Fatal("a named agent's folder was snapshotted")
+	}
+}
+
+func TestShadowSnapshotsRefuseBroadFolders(t *testing.T) {
+	home, _ := os.UserHomeDir()
+	for _, dir := range []string{"/", "/tmp", home, filepath.Dir(home), ConfigDir()} {
+		if _, err := uiShadowGitDir(dir); err == nil {
+			t.Errorf("%q was accepted for snapshots", dir)
+		}
 	}
 }
 
@@ -339,5 +361,45 @@ func TestCheckpointCommitNeverRunsASigningProgramFromTheConfig(t *testing.T) {
 	}
 	if _, err := os.Stat(marker); err == nil {
 		t.Fatal("a signing program planted in the config ran")
+	}
+}
+
+func TestShadowCheckpointsDiffAndRevertAFolderWithNoGit(t *testing.T) {
+	m, _, _ := uiTestManager(t, uiWriteScript(t, fakeEditingClaude), "tok-aaa1")
+	srv := httptest.NewServer(newUIServer(m, uiTestToken, false))
+	t.Cleanup(srv.Close)
+	dir := filepath.Join(t.TempDir(), "a", "b", "proj")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	a, err := m.start(uiStartRequest{Repo: dir, Title: "shadow", Prompt: "go", inPlaceDir: dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	uiWaitState(t, a, "waiting")
+	res := uiDo(t, "GET", srv.URL+"/api/agents/"+a.id+"/checkpoints", nil, uiAuthed)
+	var v uiCheckpointList
+	_ = json.NewDecoder(res.Body).Decode(&v)
+	if len(v.Checkpoints) < 2 || !v.CanRevert {
+		t.Fatalf("view = %+v", v)
+	}
+	last := v.Checkpoints[len(v.Checkpoints)-1]
+	res = uiDo(t, "GET", srv.URL+"/api/agents/"+a.id+"/checkpoints/"+strconv.Itoa(last.N)+"/diff", nil, uiAuthed)
+	raw, _ := io.ReadAll(res.Body)
+	if !strings.Contains(string(raw), "turn1.txt") {
+		t.Fatalf("diff = %q", raw)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "turn1.txt")); err != nil {
+		t.Fatalf("the agent's file should exist before the revert: %v", err)
+	}
+	res = uiDo(t, "POST", srv.URL+"/api/agents/"+a.id+"/checkpoints/"+strconv.Itoa(v.Checkpoints[0].N)+"/revert", nil, uiAuthed)
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("revert status = %d", res.StatusCode)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "turn1.txt")); !os.IsNotExist(err) {
+		t.Fatalf("turn1.txt should be gone after the revert: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".git")); !os.IsNotExist(err) {
+		t.Fatal("a .git appeared in the folder")
 	}
 }

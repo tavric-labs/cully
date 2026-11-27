@@ -2,7 +2,10 @@ package cully
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
+	"io/fs"
 	"net/http"
 	"os"
 	"os/exec"
@@ -22,7 +25,8 @@ import (
 const (
 	uiCheckpointMax     = 100 // per task; the oldest refs are pruned
 	uiCheckpointFiles   = 200 // changed files recorded per checkpoint
-	uiCheckpointNoGit   = "This task works in a folder with no git, so Cully cannot take checkpoints or revert files there."
+	uiCheckpointNoGit   = "This is a named agent's own folder, which Cully does not snapshot."
+	uiShadowMaxFiles    = 20000 // a folder with more files than this is not snapshotted
 	uiGitEmptyTree      = "4b825dc642cb6eb9a060e54bf8d69288fbf2c15"
 	uiCheckpointRefBase = "refs/cully/checkpoints/"
 )
@@ -43,6 +47,7 @@ type uiCheckpoint struct {
 
 type uiCheckpointList struct {
 	Available   bool           `json:"available"`
+	Shadow      bool           `json:"shadow,omitempty"` // the folder has no git: snapshots are kept in a private repository under Cully's own folder
 	Reason      string         `json:"reason,omitempty"`
 	CanRevert   bool           `json:"canRevert"`
 	RevertBlock string         `json:"revertBlock,omitempty"`
@@ -101,6 +106,78 @@ func uiGitDirFor(dir string) (string, error) {
 	return gd, nil
 }
 
+// uiShadowSkip are the folders a snapshot never includes: they are large, rebuilt by a tool, and not work
+// the agent is doing.
+var uiShadowSkip = map[string]bool{"node_modules": true, ".venv": true, "venv": true, "__pycache__": true, "dist": true, "build": true, "target": true, ".next": true, ".cache": true, ".gradle": true, ".tox": true}
+
+var errShadowTooBig = fmt.Errorf("it has more than %d files, so a snapshot would be slow and large; start the task in a smaller folder, or use git there", uiShadowMaxFiles)
+
+// uiShadowGitDir returns the private git repository that snapshots a folder which has no git. The repository
+// lives under Cully's config folder and is pointed at the folder with GIT_DIR and GIT_WORK_TREE, which is how
+// every checkpoint command already runs, so the checkpoint code works on it unchanged. It refuses folders where
+// a snapshot would be unwise: the root, your home folder or a folder above it, a path near the top of the disk,
+// and a folder with a very large number of files. It fails closed.
+func uiShadowGitDir(dir string) (string, error) {
+	if gd, ok := uiGitDirs.Load(dir); ok {
+		return gd.(string), nil
+	}
+	clean := filepath.Clean(dir)
+	sep := string(os.PathSeparator)
+	home, _ := os.UserHomeDir()
+	switch {
+	case !filepath.IsAbs(clean) || strings.Count(clean, sep) < 3:
+		return "", fmt.Errorf("%s is too close to the top of the disk to snapshot", clean)
+	case home != "" && (clean == home || strings.HasPrefix(home+sep, clean+sep)):
+		return "", fmt.Errorf("a home folder or a folder above it is too broad to snapshot")
+	case strings.HasPrefix(clean+sep, filepath.Clean(ConfigDir())+sep):
+		return "", fmt.Errorf("Cully's own folder is not snapshotted")
+	}
+	sum := sha256.Sum256([]byte(clean))
+	gd := filepath.Join(ConfigDir(), "ui-shadow", hex.EncodeToString(sum[:8])+".git")
+	if st, err := os.Stat(filepath.Join(gd, "HEAD")); err == nil && !st.IsDir() {
+		uiGitDirs.Store(dir, gd)
+		return gd, nil
+	}
+	files := 0
+	walkErr := filepath.WalkDir(clean, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if d.IsDir() {
+			if p != clean && (uiShadowSkip[d.Name()] || d.Name() == ".git") {
+				return fs.SkipDir
+			}
+			return nil
+		}
+		if files++; files > uiShadowMaxFiles {
+			return errShadowTooBig
+		}
+		return nil
+	})
+	if walkErr != nil {
+		return "", walkErr
+	}
+	if err := os.MkdirAll(filepath.Dir(gd), 0o700); err != nil {
+		return "", err
+	}
+	cmd := exec.Command("git", "init", "--bare", "-q", gd)
+	cmd.Env = append(os.Environ(), "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=/dev/null")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return "", fmt.Errorf("git init: %v: %s", err, strings.TrimSpace(string(out)))
+	}
+	var ex strings.Builder
+	ex.WriteString("# Cully's snapshots skip these.\n")
+	for name := range uiShadowSkip {
+		ex.WriteString(name + "/\n")
+	}
+	ex.WriteString("*.pyc\n.DS_Store\n")
+	if err := os.WriteFile(filepath.Join(gd, "info", "exclude"), []byte(ex.String()), 0o600); err != nil {
+		return "", err
+	}
+	uiGitDirs.Store(dir, gd)
+	return gd, nil
+}
+
 func uiGitRun(dir string, env []string, stdin string, args ...string) (string, error) {
 	gd, err := uiGitDirFor(dir)
 	if err != nil {
@@ -124,7 +201,14 @@ func uiGitRun(dir string, env []string, stdin string, args ...string) (string, e
 
 func (a *uiAgent) checkpointsAvailable() (bool, string) {
 	if a.req.inPlaceDir != "" {
-		return false, uiCheckpointNoGit
+		if a.req.identityName != "" {
+			return false, uiCheckpointNoGit
+		}
+		// A folder with no git: snapshots go in a private repository under Cully's own folder, so nothing
+		// is added to the folder itself.
+		if _, err := uiShadowGitDir(a.worktree); err != nil {
+			return false, "Cully cannot take checkpoints in this folder: " + err.Error()
+		}
 	}
 	if a.worktree == "" || !uiCheckpointIDRe.MatchString(a.taskID()) {
 		return false, "Checkpoints are not available for this task."
@@ -267,7 +351,7 @@ func (a *uiAgent) checkpointTurn(turn int) {
 }
 
 func (a *uiAgent) checkpointView() uiCheckpointList {
-	out := uiCheckpointList{Checkpoints: []uiCheckpoint{}}
+	out := uiCheckpointList{Checkpoints: []uiCheckpoint{}, Shadow: a.req.inPlaceDir != "" && a.req.identityName == ""}
 	ok, why := a.checkpointsAvailable()
 	if !ok {
 		out.Reason = why

@@ -1658,6 +1658,7 @@
     try { v = await api('/api/agents/' + a.id + '/checkpoints'); } catch (e) { return h('section', { class: 'cpsec' }, h('div', { class: 'err' }, e.message)); }
     const sec = h('section', { class: 'cpsec' }, h('h3', {}, 'Checkpoints'));
     if (!v.available) { sec.append(h('p', { class: 'faint small' }, v.reason || 'Checkpoints are not available for this task.')); return sec; }
+    if (v.shadow) sec.append(h('p', { class: 'faint small' }, 'This folder has no git, so Cully keeps its snapshots in a private repository inside its own folder. Nothing is added to your folder.'));
     if (!v.checkpoints.length) { sec.append(h('p', { class: 'faint small' }, 'No checkpoints yet. One is taken before the first turn and after every turn that changes files.')); return sec; }
     const when = (t) => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     const list = h('div', { class: 'cptl' });
