@@ -615,6 +615,7 @@ func (a *uiAgent) setState(s string) {
 	a.graphSync("state")
 	if a.mgr != nil {
 		a.mgr.saveTask(a) // the task is kept in the database, so it survives a restart
+		a.mgr.noteHarnessOutcome(a, s)
 	}
 	if a.mgr != nil && (s == uiDone || s == uiFailed || s == uiStopped) {
 		a.mgr.bg.Add(1)
@@ -715,7 +716,7 @@ func (a *uiAgent) run(m *uiManager) {
 	defer close(a.done)
 	a.graphSync("started")
 	var prompt string
-	if a.req.resumeID != "" || a.req.inPlaceDir != "" || uiOwnRunner(a.req.Harness) {
+	if a.req.resumeID != "" || a.req.resumeDir != "" || a.req.inPlaceDir != "" || uiOwnRunner(a.req.Harness) {
 		prompt = a.req.Prompt
 		for _, st := range []string{"context", "recall", "scout"} {
 			a.setStage(st, "skipped", "")

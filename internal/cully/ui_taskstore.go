@@ -33,6 +33,8 @@ type uiTaskSession struct {
 	Ended time.Time `json:"ended,omitempty"` // when it last finished; zero while it is going
 	Turns int       `json:"turns,omitempty"`
 	Cost  float64   `json:"cost,omitempty"` // list price in dollars, when known
+	// Reason says why a session ended when it was not by itself: switched to another harness.
+	Reason string `json:"reason,omitempty"`
 }
 
 // The three groups the overview shows.
@@ -125,6 +127,9 @@ func (m *uiManager) saveTask(a *uiAgent) {
 	if idx >= 0 {
 		s := &rec.Sessions[idx]
 		s.Run, s.State, s.Turns, s.Cost = a.id, v.State, turns, cost
+		if s.ID == "" {
+			s.ID = sid // a handoff session is recorded before its harness has named it
+		}
 		if uiLive(v.State) {
 			s.Ended = time.Time{}
 		} else {

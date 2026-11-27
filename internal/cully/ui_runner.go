@@ -135,6 +135,8 @@ type uiHarnessChoice struct {
 	Reason    string `json:"reason,omitempty"` // why not
 	Steering  string `json:"steering"`         // follow-up messages: yes, partial or no, from the matrix
 	Resume    string `json:"resume"`
+	Exhausted bool   `json:"exhausted"`       // its tokens are used up for now; see ui_exhausted.go
+	Until     int64  `json:"until,omitempty"` // when it should work again, unix seconds
 }
 
 // harnessAvailable lists the harnesses the new-task page can offer. Signed-in state is not known.
@@ -172,6 +174,7 @@ func (s *uiServer) harnessAvailable(w http.ResponseWriter, r *http.Request) {
 	}
 	out = append(out, cx)
 	out = append(out, s.cursorAvailable())
+	m.markExhausted(out)
 	uiJSON(w, http.StatusOK, out)
 }
 
