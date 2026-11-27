@@ -551,7 +551,7 @@
   function mountAgent(id) {
     const a = S.agents.find((x) => x.id === id);
     if (!a) { $('stage').replaceChildren(h('div', { class: 'empty' }, S.agents.length ? 'That agent no longer exists.' : 'Loading…')); return; }
-    S.tab = S.tab === 'chat' || S.tab === 'changes' || S.tab === 'handoff' ? S.tab : 'chat';
+    S.tab = ['chat', 'changes', 'handoff', 'calls'].includes(S.tab) ? S.tab : 'chat';
     const ahead = h('div', { class: 'ahead', id: 'ahead' });
     const sub = h('div', { class: 'sub2', id: 'sub2' });
     const ctxnote = h('div', { id: 'ctxnote' });
@@ -566,17 +566,19 @@
     const composer = h('div', { id: 'composer' }, h('div', { class: 'composer' }, h('div', { class: 'box' }, ta),
       h('button', { class: 'btn round', title: 'Send', 'aria-label': 'Send', onclick: () => { const t = ta.value; ta.value = ''; ta.style.height = 'auto'; sendMessage(a.id, t); } }, icon('send'))),
       h('div', { class: 'composer-hint' }, 'Enter sends, Shift+Enter adds a line'));
+    const statusline = h('div', { id: 'statusline', class: 'statusline', role: 'status' });
     const side = h('div', { class: 'col sidecol' }, h('div', { class: 'tabs side', id: 'tabs-side' }), h('div', { class: 'sidehead', id: 'sidehead' }), h('div', { class: 'sidebody', id: 'sidebody' }));
     const activity = h('div', { id: 'activity', class: 'activity off', role: 'status', 'aria-live': 'polite' });
     const permBox = h('div', { id: 'permbox' });
-    const grid = h('div', { class: 'agrid', id: 'agrid', 'data-show': S.tab }, h('div', { class: 'col chatcol' }, body, activity, permBox, quick, composer), side);
+    const grid = h('div', { class: 'agrid', id: 'agrid', 'data-show': S.tab }, h('div', { class: 'col chatcol' }, body, activity, permBox, quick, composer, statusline), side);
     $('stage').className = 'stage agent-stage';
     $('stage').replaceChildren(ahead, sub, ctxnote, stepper, tabs, grid);
     body.after(jump);
     body.addEventListener('scroll', () => { const atEnd = body.scrollTop + body.clientHeight >= body.scrollHeight - 60; if (atEnd && S.feed) S.feed.unseen = 0; paintJump(); });
     body.addEventListener('keydown', (e) => { if (e.key === 'End') { e.preventDefault(); body.scrollTo({ top: body.scrollHeight, behavior: 'smooth' }); } else if (e.key === 'Home') { e.preventDefault(); body.scrollTo({ top: 0, behavior: 'smooth' }); } });
     body.tabIndex = 0;
-    S.feed = { body, jump, group: null, tools: 0, typing: null, quick, composer, ta, loaded: false };
+    S.feed = { body, jump, group: null, tools: 0, typing: null, quick, composer, ta, loaded: false, calls: [], callLast: null, permKeys: [] };
+    installPermKeys();
     setTimeout(() => { if (S.feed) S.feed.loaded = true; }, 900);
     drawAgentChrome(a);
     openFeed(a.id);
@@ -584,6 +586,7 @@
   }
   function setTab(t) {
     S.tab = t;
+    if (t !== 'chat') S.sideTab = t;
     const a = S.agents.find((x) => x.id === S.route.id);
     $('agrid').dataset.show = t;
     if (a) { drawAgentChrome(a); loadSide(a, true); }
@@ -709,15 +712,33 @@
     if (box.dataset.sig === sig) return;
     box.dataset.sig = sig;
     const answer = async (p, decision) => { try { await api('/api/agents/' + a.id + '/permissions/' + p.id, { method: 'POST', body: JSON.stringify({ decision, hash: p.hash }) }); await refresh(); } catch (e) { toast(e.message, true); } };
-    box.replaceChildren(...list.map((p) => h('section', { class: 'permcard', role: 'alertdialog', 'aria-label': 'The task asks to use ' + p.tool },
-      h('div', { class: 'row' }, icon('lock'), h('b', {}, 'The task asks to use ' + p.tool), h('span', { class: 'chip risk-' + p.risk, title: 'Worked out from the call by fixed rules, not by a model' }, ({ low: 'Low risk', medium: 'Medium risk', high: 'High risk' })[p.risk] || p.risk), h('span', { class: 'faint small' }, p.riskWhy ? p.riskWhy + '. Waiting since ' + clockTime(p.at) : 'waiting for you since ' + clockTime(p.at))),
+    if (S.feed) S.feed.permKeys = list.map((p) => ({ p, answer }));
+    const kb = (k) => h('kbd', {}, k);
+    // A dialog in the terminal style. What you allow is exactly the input shown in full, and the answer
+    // quotes the hash of that input, so a call that changed since you looked is refused.
+    box.replaceChildren(...list.map((p, i) => h('section', { class: 'permcard tui-dialog risk-b-' + p.risk, role: 'alertdialog', 'aria-label': 'The task asks to use ' + p.tool },
+      h('div', { class: 'dlg-title' }, icon('lock'), h('b', {}, 'Allow ' + toolLabel(p.tool) + '?'), h('span', { class: 'chip risk-' + p.risk, title: 'Worked out from the call by fixed rules, not by a model' }, ({ low: 'Low risk', medium: 'Medium risk', high: 'High risk' })[p.risk] || p.risk),
+        h('span', { class: 'sp' }), h('span', { class: 'faint small' }, 'waiting since ' + clockTime(p.at))),
+      h('p', { class: 'dlg-why' }, 'The task asks to use ' + p.tool + (p.riskWhy ? ', which ' + p.riskWhy : '') + '.'),
       p.summary ? h('pre', { class: 'permcmd' }, p.summary) : null,
-      h('p', { class: 'faint small' }, 'Everything it sent, in full. What you allow is exactly this:'),
+      h('p', { class: 'faint small' }, 'Everything it sent, in full. What you allow is exactly this' + (typeof p.hash === 'string' && p.hash ? ' (input hash ' + p.hash.slice(0, 8) + '):' : ':')),
       h('pre', { class: 'permcmd' }, p.input),
-      h('div', { class: 'row' },
-        h('button', { class: 'btn small', onclick: () => answer(p, 'allow') }, icon('check'), 'Allow once'),
-        p.risk === 'high' ? null : h('button', { class: 'btn ghost small', title: 'Allow this exact call again without asking, for the rest of this task', onclick: () => answer(p, 'allow_always') }, 'Allow for this task'),
-        h('button', { class: 'btn ghost small', onclick: () => answer(p, 'deny') }, 'Deny')))));
+      h('div', { class: 'dlg-keys' },
+        h('button', { class: 'btn small', onclick: () => answer(p, 'allow') }, icon('check'), 'Allow once', i === 0 ? kb('y') : null),
+        p.risk === 'high' ? null : h('button', { class: 'btn ghost small', title: 'Allow this exact call again without asking, for the rest of this task', onclick: () => answer(p, 'allow_always') }, 'Allow for this task', i === 0 ? kb('a') : null),
+        h('button', { class: 'btn ghost small', onclick: () => answer(p, 'deny') }, 'Deny', i === 0 ? kb('n') : null)))));
+  }
+  // Single-key answers for the first question waiting, only when you are not typing in a field.
+  function installPermKeys() {
+    if (S.permKeysOn) return; S.permKeysOn = true;
+    document.addEventListener('keydown', (e) => {
+      const f = S.feed; if (!f || !S.route || S.route.name !== 'agent' || e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return;
+      const t = e.target; if (t && (/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) || t.isContentEditable)) return;
+      if (S.modal) return;
+      const first = f.permKeys && f.permKeys[0]; if (!first) return;
+      const d = { y: 'allow', a: first.p.risk === 'high' ? null : 'allow_always', n: 'deny' }[e.key];
+      if (d) { e.preventDefault(); first.answer(first.p, d); }
+    });
   }
   document.addEventListener('click', (e) => { for (const d of document.querySelectorAll('details.menu[open]')) if (!d.contains(e.target)) d.open = false; });
   function drawAgentChrome(a) {
@@ -734,6 +755,11 @@
     // open it. With nothing in it, the chat takes the whole window.
     const nChanges = a.files ? a.files.length : 0;
     S.sidePref = S.sidePref || {};
+    // When the task waits on you, open the right column on the calls once per question, so you see which
+    // call is waiting. After that your own choice of tab and of open or closed stands.
+    S.askOpened = S.askOpened || new Set();
+    const fresh = (a.permissions || []).filter((p) => !S.askOpened.has(p.id));
+    if (fresh.length) { fresh.forEach((p) => S.askOpened.add(p.id)); S.sidePref[a.id] = 'open'; S.sideTab = 'calls'; if (S.tab !== 'chat') S.tab = 'calls'; S.diffKey = ''; }
     const showSide = S.sidePref[a.id] ? S.sidePref[a.id] === 'open' : nChanges > 0;
     const grid = $('agrid');
     if (grid) grid.classList.toggle('no-side', !showSide);
@@ -774,11 +800,11 @@
         ? h('button', { class: 'step ' + s.status, title: 'See what the ' + s.name + ' searched and found', onclick: () => { location.hash = '#/dashboard/scout'; } }, label)
         : h('span', { class: 'step ' + s.status, title: s.detail || '' }, label);
     }));
-    const tabLabel = (k, label) => label + (k === 'changes' && a.files && a.files.length ? ' (' + a.files.length + ')' : '');
-    $('tabs').replaceChildren(...[['chat', 'Chat'], ['changes', 'Changes'], ['handoff', 'Summary']].map(([k, label]) =>
+    const tabLabel = (k, label) => label + (k === 'changes' && a.files && a.files.length ? ' (' + a.files.length + ')' : k === 'calls' && S.feed && S.feed.calls.length ? ' (' + S.feed.calls.length + ')' : '');
+    $('tabs').replaceChildren(...[['chat', 'Chat'], ['calls', 'Calls'], ['changes', 'Changes'], ['handoff', 'Summary']].map(([k, label]) =>
       h('button', { class: S.tab === k ? 'on' : '', onclick: () => setTab(k) }, tabLabel(k, label))));
-    const sideKind = S.tab === 'handoff' ? 'handoff' : 'changes';
-    $('tabs-side').replaceChildren(...[['changes', 'Changes'], ['handoff', 'Summary']].map(([k, label]) =>
+    const sideKind = sideKindNow();
+    $('tabs-side').replaceChildren(...[['calls', 'Calls'], ['changes', 'Changes'], ['handoff', 'Summary']].map(([k, label]) =>
       h('button', { class: sideKind === k ? 'on' : '', onclick: () => setTab(k) }, tabLabel(k, label))));
     if (S.feed) {
       S.feed.composer.hidden = finished;
@@ -786,6 +812,26 @@
       updateQuick(a);
       setTyping(a.state === 'working' || a.state === 'preparing');
     }
+    drawStatusline(a);
+    if (sideKind === 'calls' || sideKindNow() === 'calls') loadSide(a, true);
+  }
+  const sideKindNow = () => (['calls', 'changes', 'handoff'].includes(S.tab) ? S.tab : S.sideTab || 'changes');
+  // The bottom status line, like a terminal's: state, harness and model, context, tokens or cost, and the
+  // time since the task last moved.
+  function drawStatusline(a) {
+    const el = $('statusline'); if (!el) return;
+    const secs = Math.max(0, Math.floor((Date.now() - new Date(a.updated || a.created).getTime()) / 1000));
+    const glyph = (a.permissions || []).length ? '!' : a.state === 'working' || a.state === 'preparing' ? '●' : a.state === 'failed' ? '✗' : a.state === 'done' ? '✓' : '○';
+    const seg = (cls, ...kids) => h('span', { class: 'sl ' + cls }, ...kids);
+    const model = (a.context && a.context.model) || '';
+    const harness = a.run ? a.run.harness : '';
+    el.replaceChildren(
+      seg('st ' + ((a.permissions || []).length ? 'ask' : a.state), glyph + ' ' + ((a.permissions || []).length ? 'needs you' : stateLabel(a.state))),
+      harness || model ? seg('', [harness, model].filter(Boolean).join(' ')) : null,
+      a.context ? seg(a.context.near ? 'warn' : '', 'ctx ' + a.context.percent + '%') : null,
+      a.usage ? seg('', fmtTokens(a.usage.tokens) + ' tokens') : null,
+      typeof a.cost === 'number' && a.cost > 0 ? seg('', '$' + a.cost.toFixed(a.cost < 1 ? 3 : 2)) : null,
+      seg('sp', secs < 5 ? 'updated just now' : 'updated ' + (secs < 60 ? secs + 's' : secs < 3600 ? Math.floor(secs / 60) + 'm' : Math.floor(secs / 3600) + 'h') + ' ago'));
   }
   // Replies worth sending next, worked out from this task: what its last message asked, whether files
   // changed, whether the tests ran and how they ended, and how full its context is. All local facts: no
@@ -900,10 +946,10 @@
     if (ev.kind === 'tool' || ev.kind === 'tool_result') addToolRow(ev);
     else {
       f.group = null;
-      if (ev.kind === 'text') { const node = clampLong(h('div', { class: 'msg bot', title: new Date(ev.t).toLocaleTimeString() }, markdown(ev.text)), ev.text); b.append(node); attachSessionActions(node, ev.text); }
+      if (ev.kind === 'text') { const node = clampLong(h('div', { class: 'msg bot' + (/\?\s*$/.test(ev.text.trim()) ? ' asks' : ''), title: new Date(ev.t).toLocaleTimeString() }, markdown(ev.text)), ev.text); b.append(node); attachSessionActions(node, ev.text); }
       else if (ev.kind === 'user') b.append(h('div', { class: 'msg you', title: new Date(ev.t).toLocaleTimeString() }, ev.text));
       else if (ev.kind === 'error') b.append(h('div', { class: 'msg error' }, ev.text));
-      else if (ev.kind === 'result') b.append(h('div', { class: 'rule' }, ev.failed ? 'turn ended with an error' : 'turn done'));
+      else if (ev.kind === 'result') b.append(h('div', { class: 'rule turnend ' + (ev.failed ? 'bad' : 'ok') }, h('span', { class: 'tglyph' }, ev.failed ? '✗' : '✓'), ev.failed ? 'Turn ended with an error' : 'Turn done', h('span', { class: 'faint' }, new Date(ev.t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }))));
       else if (ev.kind === 'note') b.append(h('div', { class: 'note-card' }, ev.text));
       else if (ev.kind === 'stage' && /failed/.test(ev.text)) b.append(h('div', { class: 'note' }, ev.text));
     }
@@ -931,14 +977,19 @@
       g.n += 1; g.names[ev.tool] = (g.names[ev.tool] || 0) + 1;
       const row = h('div', { class: 'trow2 run' }, h('span', { class: 'tspin' }, icon(toolIcon(ev.tool))), h('b', {}, toolLabel(ev.tool)), h('span', { class: 'tsum' }, ev.text || ''));
       g.rows.append(row); g.last = row; f.running = ev.tool + (ev.text ? ' ' + ev.text : '');
+      f.callLast = { n: f.calls.length + 1, tool: ev.tool, input: ev.text || '', t0: new Date(ev.t).getTime() || Date.now(), status: 'run' };
+      f.calls.push(f.callLast);
     } else {
       f.running = '';
       const row = g.last; g.last = null;
       if (row) { row.classList.remove('run'); row.classList.add(ev.failed ? 'bad' : 'ok'); }
       if (ev.failed) { g.bad = true; g.el.classList.add('bad'); g.el.open = true; }
-      g.rows.append(h('div', { class: 'tres' + (ev.failed ? ' f' : '') }, (ev.failed ? '✗ ' : '↳ ') + ((ev.text || 'ok').slice(0, 240))));
+      g.rows.append(h('div', { class: 'tres' + (ev.failed ? ' f' : '') }, (ev.text || 'ok').slice(0, 240)));
+      const c = f.callLast; f.callLast = null;
+      if (c) { c.status = ev.failed ? 'failed' : 'ok'; c.t1 = new Date(ev.t).getTime() || Date.now(); c.result = ev.text || 'ok'; }
     }
     const parts = Object.entries(g.names).map(([k, v]) => toolLabel(k) + (v > 1 ? ' ×' + v : '')).join(', ');
+    if (sideKindNow() === 'calls' && S.agents.some((x) => x.id === S.route.id)) drawCalls(S.agents.find((x) => x.id === S.route.id));
     g.sum.textContent = 'Ran ' + g.n + (g.n === 1 ? ' tool' : ' tools') + (parts ? ' (' + parts + ')' : '') + (g.bad ? ', with a failure' : '');
     updateActivity();
   }
@@ -983,7 +1034,7 @@
     el.replaceChildren(h('span', { class: 'adot' }), h('span', { class: 'awhat' }, uiClipText(what, 120)), live ? h('span', { class: 'faint small' }, secs < 5 ? 'just now' : secs + 's since the last update') : null);
   }
   const uiClipText = (t, n) => (t.length > n ? t.slice(0, n) + '…' : t);
-  setInterval(() => { if (S.route && S.route.name === 'agent') updateActivity(); }, 1000);
+  setInterval(() => { if (S.route && S.route.name === 'agent') { updateActivity(); const a = S.agents.find((x) => x.id === S.route.id); if (a) drawStatusline(a); } }, 1000);
 
   // ---------- changes / handoff ----------
   function parseDiff(text) {
@@ -998,10 +1049,51 @@
     });
     return { head, files };
   }
+  // ---- the calls tab: every tool call this task made, with the one waiting on you pinned on top ----
+  const callTime = (ms) => { const s = Math.max(0, Math.round(ms / 1000)); return s < 60 ? s + 's' : Math.floor(s / 60) + 'm ' + (s % 60) + 's'; };
+  function drawCalls(a) {
+    const body = $('sidebody'); const f = S.feed;
+    if (!body || !f || sideKindNow() !== 'calls') return;
+    const perms = a.permissions || [];
+    const now = Date.now();
+    // The latest running call of the tool that asked is the one waiting for the answer.
+    const claimed = new Map();
+    for (const p of perms) { for (let i = f.calls.length - 1; i >= 0; i--) { const c = f.calls[i]; if (c.status === 'run' && c.tool === p.tool && ![...claimed.values()].includes(c)) { claimed.set(p.id, c); break; } } }
+    const state = (c) => ([...claimed.values()].includes(c) ? 'wait' : c.status);
+    const GLYPH = { run: '', wait: '!', ok: '✓', failed: '✗' };
+    const glyph = (st) => h('span', { class: 'cglyph ' + st, 'aria-hidden': 'true' }, GLYPH[st]);
+    const open = (f.callOpen = f.callOpen || new Set());
+    const row = (c) => {
+      const st = state(c);
+      const dur = callTime((c.t1 || now) - c.t0);
+      const isOpen = open.has(c.n);
+      const label = { run: 'running', wait: 'waiting for you', ok: 'ok', failed: 'failed' }[st];
+      return h('li', { class: 'crow ' + st },
+        h('button', { type: 'button', class: 'chead', 'aria-expanded': String(isOpen), title: 'Show or hide the result', onclick: () => { if (open.has(c.n)) open.delete(c.n); else open.add(c.n); drawCalls(a); } },
+          glyph(st), h('b', {}, toolLabel(c.tool)), h('span', { class: 'csum' }, c.input), h('span', { class: 'cdur faint' }, dur)),
+        h('div', { class: 'cstate faint' }, label),
+        isOpen ? h('pre', { class: 'cres' }, c.result || (st === 'run' ? 'No result yet.' : st === 'wait' ? 'Waiting for your answer before it runs.' : 'No output.')) : null);
+    };
+    const pinned = [];
+    for (const p of perms) pinned.push(h('div', { class: 'cpin wait' }, glyph('wait'), h('div', { class: 'cpinbody' }, h('b', {}, 'Waiting for you to allow'), h('div', {}, toolLabel(p.tool) + (p.summary ? ': ' + uiClipText(p.summary, 160) : '')), h('div', { class: 'faint small' }, 'asked ' + ago(p.at) + '. Answer in the box under the chat.'))));
+    for (const c of f.calls) if (c.status === 'run' && ![...claimed.values()].includes(c)) pinned.push(h('div', { class: 'cpin run' }, glyph('run'), h('div', { class: 'cpinbody' }, h('b', {}, 'Running'), h('div', {}, toolLabel(c.tool) + (c.input ? ': ' + uiClipText(c.input, 160) : '')), h('div', { class: 'faint small' }, callTime(now - c.t0) + ' so far'))));
+    const failed = f.calls.filter((c) => c.status === 'failed').length;
+    body.replaceChildren(
+      ...pinned,
+      f.calls.length ? h('div', { class: 'ccount faint small' }, f.calls.length + (f.calls.length === 1 ? ' call' : ' calls') + (failed ? ', ' + failed + ' failed' : '')) : h('div', { class: 'empty' }, 'No tool calls yet.'),
+      h('ol', { class: 'calls' }, ...f.calls.map(row)));
+  }
+  setInterval(() => { if (S.route && S.route.name === 'agent' && S.feed && sideKindNow() === 'calls') { const a = S.agents.find((x) => x.id === S.route.id); if (a && S.feed.calls.some((c) => c.status === 'run')) drawCalls(a); } }, 1000);
   async function loadSide(a, force) {
     const body = $('sidebody'); const head = $('sidehead');
     if (!body) return;
-    const kind = S.tab === 'handoff' ? 'handoff' : 'changes';
+    const kind = sideKindNow();
+    if (kind === 'calls') {
+      S.diffKey = '';
+      head.replaceChildren(h('span', {}, 'Every tool call this task has made, newest last'));
+      drawCalls(a);
+      return;
+    }
     const key = a.id + kind + (a.events || 0) + a.state;
     if (!force && key === S.diffKey) return;
     S.diffKey = key;
