@@ -15,27 +15,31 @@ import (
 // one place.
 
 type uiSuggestion struct {
-	ID       string       `json:"id"`
-	Kind     string       `json:"kind"` // agent, job, coach, rules, digest
-	Title    string       `json:"title"`
-	Why      string       `json:"why,omitempty"`
-	Detail   string       `json:"detail,omitempty"`
-	Command  string       `json:"command,omitempty"` // jobs: the exact command that would run
-	After    string       `json:"after,omitempty"`   // jobs: the proposed time of day
-	At       time.Time    `json:"at"`
-	Href     string       `json:"href,omitempty"`
-	Evidence []uiEvidence `json:"evidence,omitempty"` // the sessions it is drawn from
-	Count    int          `json:"count,omitempty"`
-	Days     int          `json:"days,omitempty"`
+	ID        string           `json:"id"`
+	Kind      string           `json:"kind"` // agent, job, coach, rules, digest
+	Title     string           `json:"title"`
+	Why       string           `json:"why,omitempty"`
+	Detail    string           `json:"detail,omitempty"`
+	Command   string           `json:"command,omitempty"` // jobs: the exact command that would run
+	After     string           `json:"after,omitempty"`   // jobs: the proposed time of day
+	At        time.Time        `json:"at"`
+	Href      string           `json:"href,omitempty"`
+	Evidence  []uiEvidence     `json:"evidence,omitempty"` // the sessions it is drawn from
+	Count     int              `json:"count,omitempty"`
+	Days      int              `json:"days,omitempty"`
+	Preview   *uiChangePreview `json:"preview,omitempty"`   // what approving it would change
+	Pinned    bool             `json:"pinned,omitempty"`    // never goes stale
+	Lifecycle string           `json:"lifecycle,omitempty"` // active or archived
 }
 
 func (m *uiManager) suggestions() []uiSuggestion {
+	m.proposalsCurate()
 	out := []uiSuggestion{}
 	for _, s := range m.agentSuggestionsList() {
-		out = append(out, uiSuggestion{ID: s.ID, Kind: "agent", Title: "Agent: " + s.Name, Why: s.Why, Detail: s.Role, At: s.Created, Href: "#/dashboard/agents", Evidence: s.Evidence, Count: s.Count, Days: s.Days})
+		out = append(out, uiSuggestion{ID: s.ID, Kind: "agent", Title: "Agent: " + s.Name, Why: s.Why, Detail: s.Role, At: s.Created, Href: "#/dashboard/agents", Evidence: s.Evidence, Count: s.Count, Days: s.Days, Preview: m.agentPreview(s), Pinned: s.Pinned, Lifecycle: "active"})
 	}
 	for _, s := range m.jobSuggestionsList() {
-		out = append(out, uiSuggestion{ID: s.ID, Kind: "job", Title: "Background job: " + s.Name, Why: s.Why, Command: uiShowArgv(s.Command), After: s.After, At: s.Created, Href: "#/dashboard/jobs", Evidence: s.Evidence, Count: s.Count, Days: s.Days})
+		out = append(out, uiSuggestion{ID: s.ID, Kind: "job", Title: "Background job: " + s.Name, Why: s.Why, Command: uiShowArgv(s.Command), After: s.After, At: s.Created, Href: "#/dashboard/jobs", Evidence: s.Evidence, Count: s.Count, Days: s.Days, Preview: m.jobPreview(s), Pinned: s.Pinned, Lifecycle: "active"})
 	}
 	if c := m.coachGet(); !c.At.IsZero() {
 		for i, it := range c.Items {
@@ -47,7 +51,7 @@ func (m *uiManager) suggestions() []uiSuggestion {
 		if len(v.Proposal.Changes) > 0 {
 			why = uiClipWords(v.Proposal.Changes[0], 160)
 		}
-		out = append(out, uiSuggestion{ID: v.Proposal.ID, Kind: "rules", Title: "Update your workflow rules", Why: why, At: v.Proposal.Created, Href: "#/dashboard/rules"})
+		out = append(out, uiSuggestion{ID: v.Proposal.ID, Kind: "rules", Title: "Update your workflow rules", Why: why, At: v.Proposal.Created, Href: "#/dashboard/rules", Preview: m.rulesPreview(v.Proposal, v.Current)})
 	}
 	for _, r := range m.researchList("digest", 1) {
 		out = append(out, uiSuggestion{ID: r.ID, Kind: "digest", Title: "Suggestions from the scouts", Detail: strings.ReplaceAll(r.Text, "**", ""), At: r.Time, Href: "#/dashboard/scout"})
@@ -57,6 +61,11 @@ func (m *uiManager) suggestions() []uiSuggestion {
 }
 
 func (s *uiServer) suggestionsGet(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Query().Get("archived") == "1" {
+		s.m.proposalsCurate()
+		uiJSON(w, http.StatusOK, s.m.archivedSuggestions())
+		return
+	}
 	uiJSON(w, http.StatusOK, s.m.suggestions())
 }
 

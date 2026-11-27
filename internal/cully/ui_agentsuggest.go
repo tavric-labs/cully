@@ -36,6 +36,7 @@ type uiAgentSuggestion struct {
 	Days         int             `json:"days,omitempty"`     // over how many days
 	State        string          `json:"state"`              // new, accepted or dismissed
 	Replaces     string          `json:"replaces,omitempty"` // the id of an existing agent this would change instead of adding another
+	Pinned       bool            `json:"pinned,omitempty"`   // never goes stale
 }
 
 var uiSuggestMu sync.Mutex
@@ -304,7 +305,7 @@ func uiAgentSuggestFilter(fresh []uiAgentSuggestion, existing []uiIdentity, prio
 next:
 	for _, f := range fresh {
 		for _, p := range prior {
-			if (p.State == "new" || p.State == "dismissed") && uiAgentSame(f.Name, f.Role, f.Folder, p.Name, p.Role, p.Folder) {
+			if (p.State == "new" || p.State == "dismissed" || p.State == "archived") && uiAgentSame(f.Name, f.Role, f.Folder, p.Name, p.Role, p.Folder) {
 				continue next
 			}
 		}

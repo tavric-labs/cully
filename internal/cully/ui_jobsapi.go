@@ -189,6 +189,7 @@ func (s *uiServer) jobCreateH(w http.ResponseWriter, r *http.Request) {
 		uiError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	s.m.ledgerJob(nil, uiJobSnapshot(in.Name), "user")
 	w.WriteHeader(http.StatusCreated)
 }
 
@@ -207,6 +208,7 @@ func (s *uiServer) jobEditH(w http.ResponseWriter, r *http.Request) {
 	if sched == "daily" {
 		sched = ""
 	}
+	jobBefore := uiJobSnapshot(name)
 	err := uiEditJobsFile(func(existing []scheduledJob, raw []json.RawMessage) ([]json.RawMessage, error) {
 		var cur *scheduledJob
 		for i := range existing {
@@ -262,11 +264,13 @@ func (s *uiServer) jobEditH(w http.ResponseWriter, r *http.Request) {
 			st.Runs, st.LastSuccess = 0, time.Time{}
 		}
 	})
+	s.m.ledgerJob(jobBefore, uiJobSnapshot(name), "user")
 	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *uiServer) jobRemoveH(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
+	jobBefore := uiJobSnapshot(name)
 	err := uiEditJobsFile(func(existing []scheduledJob, raw []json.RawMessage) ([]json.RawMessage, error) {
 		found := false
 		for _, e := range existing {
@@ -299,6 +303,7 @@ func (s *uiServer) jobRemoveH(w http.ResponseWriter, r *http.Request) {
 	}
 	pruneJobStates(keep)
 	uiDB().logDel(jobHistoryNS(name))
+	s.m.ledgerJob(jobBefore, nil, "user")
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -308,10 +313,12 @@ func (s *uiServer) jobPauseH(paused bool) http.HandlerFunc {
 		jobs, _ := loadJobs(jobsConfigFile())
 		for _, j := range jobs {
 			if j.Name == name {
+				jobBefore := uiJobSnapshot(name)
 				if err := setJobPaused(name, paused); err != nil {
 					uiError(w, http.StatusInternalServerError, err.Error())
 					return
 				}
+				s.m.ledgerJob(jobBefore, uiJobSnapshot(name), "user")
 				w.WriteHeader(http.StatusNoContent)
 				return
 			}

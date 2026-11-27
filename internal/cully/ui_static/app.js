@@ -139,7 +139,7 @@
       let paused = false;
       try { const j = await res.json(); msg = j.error || msg; paused = !!j.paused; } catch (_) { /* not JSON */ }
       if (paused && window.confirm(msg)) return api(path + (path.includes('?') ? '&' : '?') + 'anyway=1', opts);
-      throw new Error(msg);
+      const err = new Error(msg); err.status = res.status; throw err;
     }
     if (res.status === 204) return null;
     return (res.headers.get('Content-Type') || '').includes('json') ? res.json() : res.text();
@@ -172,7 +172,7 @@
     if (p[0] === 'board') return { name: 'board' };
     if (p[0] === 'agents') return { name: 'team' };
     if (p[0] === 'harness') return { name: 'harness', tab: p[1] || '' };
-    if (p[0] === 'dashboard') return { name: 'dashboard', panel: p[1] || 'overview' };
+    if (p[0] === 'dashboard') return { name: 'dashboard', panel: p[1] || 'overview', kind: p[2] || '' };
     return { name: 'home' };
   }
   const REDIRECT = { status: 'setup', timeline: 'activity', replay: 'activity', handoff: 'activity', suggestions: 'advisor', impact: 'savings', rescue: 'overview' };
@@ -202,6 +202,7 @@
     else if (S.route.name === 'sessions') { S.sessSig = ''; renderSessions(); }
     else mountDashboard(S.route.panel);
   }
+  window.CullyKit = { h, api, toast, icon, toolbar, emptyCard, confirmDialog, ago };
   window.addEventListener('hashchange', route);
 
   // ---------- rail ----------
@@ -1631,7 +1632,7 @@
       const last = a.runs[0]; const groups = tools.presets.filter((p) => a.groups[p.id]).map((p) => p.label); const st = stateOf(a); const rate = okRate(a);
       const card = h('section', { class: 'agentcard2 st-' + st },
         h('div', { class: 'ac-head' }, avatar(a),
-          h('div', { class: 'ac-id' }, h('div', { class: 'ac-name' }, a.name, h('span', { class: 'ac-state st-' + st }, STATE_WORD[st])),
+          h('div', { class: 'ac-id' }, h('div', { class: 'ac-name' }, a.name, h('span', { class: 'ac-state st-' + st }, STATE_WORD[st]), ...window.CullyLedger.agentChips(a)),
             h('div', { class: 'ac-meta' }, h('span', {}, icon('folder'), a.folder ? a.folder.split('/').pop() : 'Own workspace'), h('span', {}, a.scope === 'global' ? 'All projects' : 'One project'), h('span', {}, a.mode === 'plan' ? 'Read only' : 'Can edit'), a.approved && a.schedule ? h('span', {}, icon('clock'), (a.enabled ? 'Runs ' : 'Paused, ') + a.schedule) : null))),
         h('p', { class: 'ac-role' }, a.role),
         groups.length ? h('div', { class: 'ac-tools' }, ...groups.map((g) => h('span', { class: 'tg' }, g))) : null,
@@ -1648,6 +1649,7 @@
           h('span', { class: 'sp' }),
           a.approved && a.schedule ? h('button', { class: 'btn ghost small', title: a.enabled ? 'Stop the schedule but keep the agent' : 'Start the schedule again', onclick: () => togglePause(a) }, a.enabled ? 'Pause' : 'Resume') : null,
           h('a', { class: 'btn ghost small', href: '/api/identities/' + a.id + '/export', download: '', title: 'Save this agent as a Markdown file: its settings and instructions, with no notes or paths' }, 'Export'),
+          ...window.CullyLedger.agentButtons(a, again),
           h('button', { class: 'btn ghost small', onclick: () => openAgentForm(a, tools, again) }, 'Edit'),
           h('button', { class: 'btn ghost small', 'aria-label': 'Remove ' + a.name, onclick: () => remove(a) }, icon('x'))),
         a.memory ? h('details', { class: 'rl' }, h('summary', {}, h('span', { class: 'rq' }, 'Its notes'), h('span', { class: 'faint small' }, a.memory.length + ' of 2200 characters')), h('div', { class: 'rbody' }, markdown(a.memory))) : null,
@@ -1684,13 +1686,14 @@
     askBtn.addEventListener('click', () => askNow(askBtn));
     const proposalCard = (p) => { const cur = p.replaces ? list.find((x) => x.id === p.replaces) : null; return h('li', { class: 'hrow' },
       h('div', { class: 'hmain' }, h('div', { class: 'ht' }, p.name, cur ? h('span', { class: 'chip run-partial' }, 'Updates an agent you have') : h('span', { class: 'chip' }, 'New'), p.schedule ? h('span', { class: 'chip' }, 'Runs ' + p.schedule) : h('span', { class: 'chip' }, 'On demand'), h('span', { class: 'chip' }, icon('folder'), p.folder.split('/').pop())),
-        h('p', { class: 'hdesc' }, p.role), h('p', { class: 'faint small' }, h('b', {}, 'Why: '), p.why), evidenceBlock(p),
+        h('p', { class: 'hdesc' }, p.role), h('p', { class: 'faint small' }, h('b', {}, 'Why: '), p.why), evidenceBlock(p), window.CullyLedger.preview(p.preview),
         h('div', { class: 'row' }, ...tools.presets.filter((g) => p.groups[g.id]).map((g) => h('span', { class: 'chip' }, g.label)))),
       h('div', { class: 'row hact' },
         h('button', { class: 'btn small', title: cur ? 'Review the changes to ' + cur.name + ' and save them' : 'Review it, change anything, and create the agent', onclick: () => openAgentForm(cur ? { ...cur, role: p.role, instructions: p.instructions, groups: p.groups, schedule: p.schedule, enabled: !!p.schedule, fromSuggestion: p.id } : { ...p, id: null, enabled: !!p.schedule, mode: 'edit', scope: 'project', fromSuggestion: p.id }, tools, again) }, icon('check'), cur ? 'Review the update' : 'Review and approve'),
-        h('button', { class: 'btn ghost small', onclick: async () => { try { await api('/api/agent-suggestions/' + p.id + '/dismissed', { method: 'POST' }); again(); } catch (e) { toast(e.message, true); } } }, 'Dismiss'))); };
+        h('button', { class: 'btn ghost small', onclick: async () => { try { await api('/api/agent-suggestions/' + p.id + '/dismissed', { method: 'POST' }); again(); } catch (e) { toast(e.message, true); } } }, 'Dismiss'),
+        ...window.CullyLedger.proposalButtons(p, again, false))); };
     box.replaceChildren(
-      toolbar('Agents', 'Named workers with a role of their own. Each keeps notes between runs and can run on a schedule.', h('button', { class: 'btn', onclick: () => openAgentForm(null, tools, again) }, icon('plus'), 'New agent')),
+      toolbar('Agents', 'Named workers with a role of their own. Each keeps notes between runs and can run on a schedule.', window.CullyLedger.link('agent'), h('button', { class: 'btn', onclick: () => openAgentForm(null, tools, again) }, icon('plus'), 'New agent')),
       h('details', { class: 'lib-card', ...(list.length ? {} : { open: true }) }, h('summary', {}, h('b', {}, 'What an agent is and how it works')),
         h('ol', { class: 'how' },
           h('li', {}, h('b', {}, 'Identity'), 'A name, a one-line role and instructions on how it works. Cully adds them to the start of every run, so they stay the same and the prompt cache can reuse them.'),
@@ -1706,6 +1709,7 @@
       list.length ? pills : null,
       list.length ? grid : emptyCard('No agents yet', 'Create one for work you repeat: watching pull requests, guarding the tests, checking dependencies.', null, null));
     if (list.length) applyFilter(want);
+    window.CullyLedger.archivedAgents(again).then((sec) => { if (sec && S.route.name === 'team') box.append(sec); });
     if (live) setTimeout(() => { if (S.route.name === 'team') again(); }, 4000);
   }
   const uiShort = (t, n) => (t.length > n ? t.slice(0, n) + '…' : t);
@@ -1733,7 +1737,7 @@
     const doSave = async (approve, btn) => {
       err.hidden = true; btn.disabled = true;
       try {
-        const body = { name: val.name, role: val.role, instructions: val.instructions, scope: val.scope || 'project', folder: val.scope === 'global' ? '' : val.folder, groups: val.groups, mode: val.mode, schedule: val.schedule, enabled: !!val.schedule, approve, clearMemory: !!val.clearMemory };
+        const body = { name: val.name, role: val.role, instructions: val.instructions, scope: val.scope || 'project', folder: val.scope === 'global' ? '' : val.folder, groups: val.groups, mode: val.mode, schedule: val.schedule, enabled: !!val.schedule, proposal: a && a.fromSuggestion ? a.fromSuggestion : undefined, approve, clearMemory: !!val.clearMemory };
         if (a && a.id) await api('/api/identities/' + a.id, { method: 'PUT', body: JSON.stringify(body) }); else await api('/api/identities', { method: 'POST', body: JSON.stringify(body) });
         if (a && a.fromSuggestion) await api('/api/agent-suggestions/' + a.fromSuggestion + '/accepted', { method: 'POST' }).catch(() => {});
         closeMCP(); toast(approve ? val.name + ' is now one of your agents' : 'Saved ' + val.name + ' as a draft'); again();
@@ -2462,7 +2466,8 @@
   const SUG_LABEL = { agent: 'Agent', job: 'Background job', coach: 'Tip', rules: 'Workflow rules', digest: 'Scouts' };
   async function suggestionInbox(again) {
     let list = [];
-    try { list = await api('/api/suggestions'); } catch (_) { return null; }
+    const archived = !!S.inboxArchived;
+    try { list = await api('/api/suggestions' + (archived ? '?archived=1' : '')); } catch (_) { return null; }
     const ask = async (btn) => { btn.disabled = true; try { const r = await api('/api/job-suggestions/run', { method: 'POST' }); toast(r.added ? r.added + ' background job ' + (r.added === 1 ? 'proposal' : 'proposals') : 'Nothing repeats enough to need a background job yet.'); again(); } catch (e) { toast(e.message, true); btn.disabled = false; } };
     const card = (x) => {
       const acts = [];
@@ -2471,10 +2476,10 @@
       return h('li', { class: 'hrow' }, h('div', { class: 'hmain' }, h('div', { class: 'ht' }, h('span', { class: 'chip' }, SUG_LABEL[x.kind] || x.kind), ' ' + x.title),
         x.why ? h('p', { class: 'hdesc' }, x.why) : null, evidenceBlock(x),
         x.detail ? h('p', { class: 'faint small' }, x.detail) : null,
-        x.command ? h('p', { class: 'small' }, h('span', { class: 'faint' }, 'It will run: '), h('code', {}, x.command)) : null),
-        h('div', { class: 'row hact' }, ...acts));
+        x.command ? h('p', { class: 'small' }, h('span', { class: 'faint' }, 'It will run: '), h('code', {}, x.command)) : null, window.CullyLedger.preview(x.preview)),
+        h('div', { class: 'row hact' }, ...acts, ...(x.kind === 'job' || x.kind === 'agent' ? window.CullyLedger.proposalButtons(x, again, archived) : [])));
     };
-    return h('section', { class: 'lib-card' }, h('div', { class: 'row' }, h('b', {}, 'Suggestions'), h('span', { class: 'faint small' }, list.length ? list.length + ' waiting for you' : 'Nothing waiting'),
+    return h('section', { class: 'lib-card' }, h('div', { class: 'row' }, h('b', {}, archived ? 'Archived suggestions' : 'Suggestions'), h('button', { class: 'btn ghost small', onclick: () => { S.inboxArchived = !archived; again(); } }, archived ? 'Show waiting' : 'Archived'), window.CullyLedger.link(''), h('span', { class: 'faint small' }, list.length ? list.length + (archived ? ' archived' : ' waiting for you') : (archived ? 'Nothing archived' : 'Nothing waiting')),
       h('button', { class: 'btn ghost small sp', title: 'Ask the advisor whether a chore you repeat should be a background job', onclick: (e) => ask(e.target) }, icon('spark'), 'Look for background jobs')),
       h('p', { class: 'faint small' }, 'The Advisor makes every suggestion, from your analysed sessions and what you ask Claude to do again and again, and sends each to where it belongs: agents to Agents, background jobs to Background jobs, rules to Workflow rules. A background job is one fixed command that runs by itself at a time you choose, with no model and no tokens, for chores like running the tests overnight. An agent is for work that needs reading and judgement. Nothing starts until you approve it.'),
       list.length ? h('ul', { class: 'hrows' }, ...list.map(card)) : null);
@@ -2491,6 +2496,7 @@
         h('p', { class: 'hdesc' }, x.why), evidenceBlock(x),
         x.updates && x.current ? h('p', { class: 'small' }, h('span', { class: 'faint' }, 'Now: '), h('code', {}, x.current)) : null,
         h('p', { class: 'small' }, h('span', { class: 'faint' }, x.updates ? 'Would become: ' : 'It will run: '), h('code', {}, x.display)),
+        window.CullyLedger.preview(x.preview),
         h('div', { class: 'row' }, h('span', { class: 'faint small' }, 'Run after'), time, h('span', { class: 'faint small' }, 'while Cully is running'))),
         h('div', { class: 'row hact' },
           h('button', { class: 'btn small', onclick: async (e) => { e.target.disabled = true; try { await api('/api/job-suggestions/' + x.id + '/accept', { method: 'POST', body: JSON.stringify({ after: time.value }) }); toast((x.updates ? 'Updated. It runs after ' : 'Added. It runs after ') + time.value + '.'); again(); } catch (err) { toast(err.message, true); e.target.disabled = false; } } }, icon('check'), 'Approve'),
@@ -2617,7 +2623,7 @@
     const count = (st) => jobs.filter((j) => j.state === st).length;
     const stat = (n, label, tone) => h('div', { class: 'astat' + (tone ? ' ' + tone : '') }, h('b', {}, String(n)), h('span', {}, label));
     const failing = jobs.filter((j) => j.streak > 0).length;
-    out.replaceChildren(head(refreshBtn(again)), describe, props,
+    out.replaceChildren(head(window.CullyLedger.link('job'), refreshBtn(again)), describe, props,
       jobs.length ? h('div', { class: 'astats' }, stat(jobs.length, jobs.length === 1 ? 'job' : 'jobs'), stat(count('running'), 'running now', count('running') ? 'hot' : ''), stat(count('paused'), 'paused'), stat(failing, 'failing')) : null,
       jobs.length ? h('div', { class: 'agentgrid' }, ...jobs.map(card)) : emptyCard(EMPTY_TEXT.jobs[0], EMPTY_TEXT.jobs[1], null, null));
   }
@@ -2737,7 +2743,7 @@
   // ----- structure -----
   const DASH = [
     [null, [['overview', 'Overview', 'What needs you']]],
-    ['Work', [['advisor', 'Advisor', 'Advice for your tasks'], ['library', 'Session library', 'Every past session, analysed'], ['rules', 'Workflow rules', 'How you work, for every harness'], ['health', 'Session health', 'Did sessions finish the job?'], ['evals', 'Evals', 'Test cases and their runs'], ['scout', 'Scout', 'Live searches and findings'], ['activity', 'Activity', 'What was done, step by step']]],
+    ['Work', [['advisor', 'Advisor', 'Advice for your tasks'], ['library', 'Session library', 'Every past session, analysed'], ['rules', 'Workflow rules', 'How you work, for every harness'], ['health', 'Session health', 'Did sessions finish the job?'], ['evals', 'Evals', 'Test cases and their runs'], ['scout', 'Scout', 'Live searches and findings'], ['history', 'History of changes', 'Every change, with undo'], ['activity', 'Activity', 'What was done, step by step']]],
     ['Health', [['setup', 'Setup', 'Is everything connected?'], ['savings', 'Savings', 'What Cully saved and cost']]],
     ['More', [['jobs', 'Background jobs', 'Runs on a schedule']]],
   ];
@@ -3065,6 +3071,7 @@
     const again = () => drawPanel(name, true);
     const live = () => S.route.name === 'dashboard' && S.route.panel === name;
     try {
+      if (name === 'history') { const body = await window.CullyLedger.page(S.route.kind, () => drawPanel('history', true)); if (live()) out.replaceChildren(head(), body); return; }
       if (name === 'advisor' || name === 'scout') {
         const data = await api(name === 'advisor' ? '/api/advice' : '/api/scout');
         const runs = name === 'scout' ? await api('/api/scout/runs').catch(() => []) : null;
