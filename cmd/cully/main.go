@@ -388,6 +388,11 @@ func runInternal(args []string) error {
 			return fmt.Errorf("internal pane-signal requires an agent")
 		}
 		cully.RunPaneSignalHook(args[1], os.Stdin)
+	case "perm-mcp":
+		if len(args) != 2 {
+			return fmt.Errorf("internal perm-mcp requires a socket")
+		}
+		return cully.RunPermissionMCP(args[1])
 	case "daemon":
 		cully.RunDaemon()
 	case "stop-daemon":
