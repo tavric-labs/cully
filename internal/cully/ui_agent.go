@@ -154,6 +154,9 @@ type uiAgentView struct {
 	MaxTurns    int            `json:"maxTurns,omitempty"`
 	Group       string         `json:"group,omitempty"`  // fan-out: options of one task share it
 	Option      string         `json:"option,omitempty"` // fan-out: "A", "B", ...
+	Phase       string         `json:"phase"`            // what it is doing now, in one word: see ui_phase.go
+	PhaseLabel  string         `json:"phaseLabel"`       // the same in plain words
+	Tags        []string       `json:"tags,omitempty"`
 }
 
 type uiManager struct {
@@ -488,6 +491,7 @@ type uiAgent struct {
 	perm                              uiPermState  // questions about tools the task is not already allowed to use
 	mq                                uiMsgQueue   // messages sent while it works: steers and follow-ups
 	runner                            uiRunner     // set when the task runs on a harness other than Claude Code
+	graph                             uiGraph      // what the task did, as nodes and edges; see ui_graph.go
 
 	mu      sync.Mutex
 	state   string
@@ -516,6 +520,8 @@ type uiAgent struct {
 	usageRecorded bool
 	mcpFiltered   bool // the task loaded only chosen MCP servers
 	uses          map[string]uiToolUse
+	openTools     map[string]string // tool calls started and not yet returned, by id, to the tool's name
+	openLast      string            // the id of the latest of them
 	files         map[string]struct{}
 	base          string // commit the worktree started from
 	mgr           *uiManager
@@ -533,11 +539,31 @@ type uiAgent struct {
 func (a *uiAgent) snapshot() uiAgentView {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	h := a.harnessView()
+	hs := ""
+	if h != nil {
+		hs = h.Status
+	}
+	stuck := a.watch.current()
+	perms := a.pendingPermissions()
+	phase, label, tags := uiPhase(uiPhaseIn{State: a.state, StopReason: a.stopReason, Permission: len(perms) > 0, Stuck: stuck != nil, Harness: hs, OpenTool: a.openToolLocked()})
 	return uiAgentView{
+		Phase: phase, PhaseLabel: label, Tags: tags,
 		ID: a.id, Title: a.title, Repo: a.repo, Branch: a.branch, Worktree: a.worktree,
 		Token: a.token, State: a.state, Created: a.created,
 		Stages: a.stagesCopyLocked(), Events: len(a.events), Files: a.sortedFilesLocked(), Last: a.last, Updated: a.updated, Group: a.req.group, Option: a.req.option, Harness: a.harnessView(), Agent: uiHarnessID(a.req.Harness), Usage: usageOf(a.usage), Run: a.runInfo, Context: contextOf(a.model, a.ctx, a.window, a.compactions), Cost: a.cost, Limits: a.limitsView(), MCP: append([]uiMCPServer(nil), a.mcp...), Permissions: a.pendingPermissions(), Stuck: a.watch.current(), Queue: a.mq.list(), StopReason: a.stopReason, MaxCost: a.req.MaxCost, MaxTurns: a.req.MaxTurns,
 	}
+}
+
+// openToolLocked is the name of the tool the task is waiting on, if one has started and not returned.
+func (a *uiAgent) openToolLocked() string {
+	if n, ok := a.openTools[a.openLast]; ok {
+		return n
+	}
+	for _, n := range a.openTools {
+		return n
+	}
+	return ""
 }
 
 func (a *uiAgent) add(ev uiEvent) {
@@ -579,6 +605,7 @@ func (a *uiAgent) setState(s string) {
 	a.mu.Lock()
 	a.state = s
 	a.mu.Unlock()
+	a.graphSync("state")
 	if a.mgr != nil {
 		a.mgr.saveTask(a) // the task is kept in the database, so it survives a restart
 	}
@@ -679,6 +706,7 @@ func (a *uiAgent) isStopped() bool {
 
 func (a *uiAgent) run(m *uiManager) {
 	defer close(a.done)
+	a.graphSync("started")
 	var prompt string
 	if a.req.resumeID != "" || a.req.inPlaceDir != "" || a.req.Harness == "codex" {
 		prompt = a.req.Prompt
@@ -828,8 +856,16 @@ func (a *uiAgent) applyParsed(p uiParsed) {
 	a.mu.Lock()
 	for id, u := range p.Uses {
 		a.uses[id] = u
+		if a.openTools == nil {
+			a.openTools = map[string]string{}
+		}
+		a.openTools[id], a.openLast = u.Name, id
+	}
+	for _, r := range p.Results {
+		delete(a.openTools, r.ID)
 	}
 	uses := p.Uses
+	toolText := ""
 	if len(p.MCP) > 0 {
 		a.mcp = p.MCP
 		if a.mgr != nil {
@@ -848,6 +884,7 @@ func (a *uiAgent) applyParsed(p uiParsed) {
 		a.add(ev)
 		switch ev.Kind {
 		case "tool":
+			toolText = ev.Text
 			a.watch.call(ev.Tool, ev.Text)
 		case "tool_result":
 			a.watch.result(ev.Failed, ev.Text)
@@ -861,6 +898,11 @@ func (a *uiAgent) applyParsed(p uiParsed) {
 			a.journalToolResult(use, r.Failed)
 		}
 		a.harnessResult(r.ID, r.Failed)
+	}
+	if len(uses) > 0 {
+		a.graphSync("tool-started", toolText)
+	} else if len(p.Results) > 0 {
+		a.graphSync("tool-finished")
 	}
 	if len(p.InitTools) > 0 && a.mgr != nil {
 		a.mgr.rememberInit(p.InitTools, p.InitCommands)
@@ -877,6 +919,7 @@ func (a *uiAgent) applyParsed(p uiParsed) {
 		}
 		if p.Cost > 0 {
 			a.cost = p.Cost
+			a.graph.meter(p.Cost, 0)
 		}
 		if p.Limits != nil {
 			p.Limits.Seen = time.Now().Unix()
@@ -895,6 +938,7 @@ func (a *uiAgent) applyParsed(p uiParsed) {
 		first := a.sessionID == ""
 		a.sessionID = p.SessionID
 		a.mu.Unlock()
+		a.graph.setSession(p.SessionID)
 		if first && a.mgr != nil {
 			a.mgr.saveTask(a)
 		}
@@ -912,6 +956,7 @@ func (a *uiAgent) applyParsed(p uiParsed) {
 	if p.Usage != nil {
 		a.mu.Lock()
 		a.usage = a.usage.add(*p.Usage)
+		a.graph.meter(0, a.usage.Input+a.usage.Output)
 		a.turns++
 		a.mu.Unlock()
 	}
@@ -927,10 +972,12 @@ func (a *uiAgent) applyParsed(p uiParsed) {
 			a.pending--
 		}
 		turnOver := a.pending == 0
+		a.openTools = nil
 		if a.pending == 0 && (a.state == uiWorking || a.state == uiPreparing) {
 			a.state = uiWaiting
 		}
 		a.mu.Unlock()
+		a.graphSync("turn-ended")
 		if a.mgr != nil {
 			a.mgr.saveTask(a) // a turn ended: keep what the task now looks like
 		}
@@ -1014,6 +1061,9 @@ func (a *uiAgent) write(text string) error {
 		}
 	}
 	a.mu.Unlock()
+	if stdin != nil {
+		a.graphSync("user-message")
+	}
 	if a.mgr != nil {
 		a.mgr.saveTask(a)
 	}

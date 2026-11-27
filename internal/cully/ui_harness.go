@@ -114,6 +114,11 @@ func (a *uiAgent) harnessSet(status string) {
 	a.harness.mu.Lock()
 	a.harness.status = status
 	a.harness.mu.Unlock()
+	cause := map[string]string{"steering": "nudge", "reviewing": "helper-handed"}[status]
+	if cause == "" {
+		cause = "checks-started"
+	}
+	a.graphSync(cause)
 }
 
 // harnessAfterTurn decides what to do when the agent finishes a turn.
@@ -152,6 +157,7 @@ func (a *uiAgent) harnessAfterTurn() {
 		a.harness.mu.Lock()
 		a.harness.status, a.harness.finished = status, true
 		a.harness.mu.Unlock()
+		a.graphSync("checks-finished")
 		a.harnessNote(note)
 	}
 	send := func(text string) { _ = a.send(text) }
@@ -231,6 +237,7 @@ func (a *uiAgent) harnessAfterTurn() {
 		}
 		a.harnessSet("reviewing")
 		name, report, concerns, err := a.mgr.runHelper(next, a)
+		a.graph.annotate("Review by " + name)
 		switch {
 		case err != nil:
 			a.harnessNote("The reviewer could not look at the work: " + err.Error())

@@ -43,28 +43,32 @@ const (
 )
 
 type uiTaskRecord struct {
-	ID       string          `json:"id"`
-	Title    string          `json:"title"`
-	Repo     string          `json:"repo"`
-	Branch   string          `json:"branch,omitempty"`
-	Worktree string          `json:"worktree,omitempty"`
-	State    string          `json:"state"`
-	Created  time.Time       `json:"created"`
-	Updated  time.Time       `json:"updated"`
-	Prompt   string          `json:"prompt,omitempty"`
-	Last     string          `json:"last,omitempty"`
-	Files    int             `json:"files"`
-	Runs     int             `json:"runs"` // how many times Cully has run it
-	Sessions []uiTaskSession `json:"sessions"`
-	Live     string          `json:"live,omitempty"` // the id of the run that is working now, if any
-	Stop     string          `json:"stop,omitempty"` // cost_limit or turn_limit when Cully stopped it at a limit
-	Status   string          `json:"status"`         // running, attention or finished: worked out when listed, never stored
-	Why      string          `json:"why,omitempty"`  // in words, what needs attention
-	Closed   bool            `json:"closed"`         // you closed it: done with, kept for the record
-	ClosedAt time.Time       `json:"closedAt,omitempty"`
-	Synced   string          `json:"synced,omitempty"`   // fingerprint of what was last saved to Cully memory
-	SyncedAt time.Time       `json:"syncedAt,omitempty"` // when
-	Entries  int             `json:"entries,omitempty"`  // summaries of it saved to memory
+	ID         string          `json:"id"`
+	Title      string          `json:"title"`
+	Repo       string          `json:"repo"`
+	Branch     string          `json:"branch,omitempty"`
+	Worktree   string          `json:"worktree,omitempty"`
+	State      string          `json:"state"`
+	Created    time.Time       `json:"created"`
+	Updated    time.Time       `json:"updated"`
+	Prompt     string          `json:"prompt,omitempty"`
+	Last       string          `json:"last,omitempty"`
+	Files      int             `json:"files"`
+	Runs       int             `json:"runs"` // how many times Cully has run it
+	Sessions   []uiTaskSession `json:"sessions"`
+	Live       string          `json:"live,omitempty"`  // the id of the run that is working now, if any
+	Stop       string          `json:"stop,omitempty"`  // cost_limit or turn_limit when Cully stopped it at a limit
+	Status     string          `json:"status"`          // running, attention or finished: worked out when listed, never stored
+	Why        string          `json:"why,omitempty"`   // in words, what needs attention
+	Graph      *uiTaskGraph    `json:"graph,omitempty"` // what the task did, step by step; kept out of the task list
+	Phase      string          `json:"phase"`           // what it is doing now: see ui_phase.go; worked out when listed, never stored
+	PhaseLabel string          `json:"phaseLabel"`
+	Tags       []string        `json:"tags,omitempty"`
+	Closed     bool            `json:"closed"` // you closed it: done with, kept for the record
+	ClosedAt   time.Time       `json:"closedAt,omitempty"`
+	Synced     string          `json:"synced,omitempty"`   // fingerprint of what was last saved to Cully memory
+	SyncedAt   time.Time       `json:"syncedAt,omitempty"` // when
+	Entries    int             `json:"entries,omitempty"`  // summaries of it saved to memory
 
 	Checkpoints []uiCheckpoint `json:"checkpoints,omitempty"` // Cully's per-turn snapshots of the worktree; old records have none
 }
@@ -133,6 +137,9 @@ func (m *uiManager) saveTask(a *uiAgent) {
 		rec.Runs++
 	}
 	a.mu.Unlock()
+	if g := a.graph.copy(); len(g.Nodes) > 0 {
+		rec.Graph = &g
+	}
 	uiDB().put("task", id, rec)
 }
 
@@ -165,6 +172,7 @@ func (m *uiManager) taskList(period string) []uiTaskRecord {
 		}
 		v, isLive := live[r.ID]
 		r.Live = v.ID
+		r.Graph = nil
 		if isLive && !uiLive(r.State) {
 			r.State = uiWorking
 		}
@@ -177,6 +185,11 @@ func (m *uiManager) taskList(period string) []uiTaskRecord {
 			}
 		}
 		r.Status, r.Why = uiTaskStatus(r, v, isLive)
+		if isLive && !r.Closed {
+			r.Phase, r.PhaseLabel, r.Tags = v.Phase, v.PhaseLabel, v.Tags
+		} else {
+			r.Phase, r.PhaseLabel, r.Tags = uiPhase(uiPhaseIn{State: r.State, StopReason: r.Stop, Closed: r.Closed})
+		}
 		out = append(out, r)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Updated.After(out[j].Updated) })
@@ -343,6 +356,11 @@ func (m *uiManager) taskClose(id string, closed bool) error {
 		rec.ClosedAt = time.Time{}
 	}
 	rec.Synced = "" // what memory holds is out of date: the task changed
+	if closed && rec.Graph != nil {
+		g := uiGraph{g: *rec.Graph}
+		g.visitLocked(uiPhClosed, nil, "closed", uiGraphNote{}, nil)
+		rec.Graph = &g.g
+	}
 	uiDB().put("task", id, rec)
 	return nil
 }

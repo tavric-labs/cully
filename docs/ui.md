@@ -307,6 +307,16 @@ Message shapes recorded from codex-cli 0.172.0 (full notes in the spike file `no
 - Token values stay in the agent's environment; the UI shows only a token number, and agent output is scrubbed of token values.
 - Agent output is rendered as text only, under a strict content security policy.
 
+## Task graph
+
+The Graph tab in the task window's right panel shows what a task did as a graph. Each node is a visit to a phase: working, waiting on a tool, needs you, waiting on a helper, checking, stuck, done, failed, stopped by a limit, stopped or closed. Each edge carries the reason for the step, such as a tool starting, a permission question, your answer or a turn ending. One lane is drawn per session, so continuing in another harness shows as an edge between lanes. The tab opens by default while a task has no file changes; your own tab choice always wins after that.
+
+It is an observed trace, not a graph Cully executes. Cully cannot see inside the harness, so it builds the graph only from the event stream, the permission relay, stuck detection and its own harness loop. Steps between tool calls are inferred, and a Codex or Cursor session with fewer events gives a coarser graph. A step marked as suspected before a failure is a hint, never a finding.
+
+"Waiting on a helper" appears only for reviewers that Cully launched itself. Cully cannot tell when a task is waiting on some other task it did not start.
+
+The trace is stored with the task record and kept to 400 nodes. When it grows past that, the oldest plain working and tool steps fold into one "earlier steps" node; questions to you, stuck spells, helpers and failures stay. Tool input is never stored, only a short redacted summary. A node still open when the server restarts is closed as a restart. The same trace is available at `GET /api/agents/{id}/graph` and `GET /api/tasks/{id}/graph`, with a Mermaid text version as a fallback view.
+
 ## What is not stored
 
 Agent transcripts live in memory and are lost when `cully ui` stops. The journal receives only what it always does: event class, outcome, project-relative path and a command hash. Worktrees and branches stay on disk until you remove them.

@@ -290,6 +290,7 @@ func (a *uiAgent) askPermission(tool string, input json.RawMessage) (string, str
 	a.perm.mu.Unlock()
 	a.add(uiEvent{Kind: "note", Text: "Waiting for you to allow: " + p.Tool + " " + uiClip(p.Summary, 200)})
 	a.pingPermission()
+	a.graphSync("permission-asked", p.Tool+": "+p.Summary, p.Tool)
 	var decision string
 	select {
 	case decision = <-p.decide:
@@ -309,6 +310,12 @@ func (a *uiAgent) askPermission(tool string, input json.RawMessage) (string, str
 		p.Status = "denied"
 	}
 	a.perm.mu.Unlock()
+	a.graph.answer(p.Status)
+	cause := "answered-allow"
+	if p.Status == "denied" || p.Status == "expired" {
+		cause = "answered-deny"
+	}
+	a.graphSync(cause)
 	a.add(uiEvent{Kind: "note", Text: "You answered: " + p.Status + " for " + p.Tool + " " + uiClip(p.Summary, 120)})
 	return decision, ""
 }

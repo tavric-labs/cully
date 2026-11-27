@@ -1290,3 +1290,79 @@ details.pillpop > summary::-webkit-details-marker { display: none; }
 /* end codex harness picker */
 .pillrow .og { flex-direction: row; align-items: center; gap: 8px; }
 .pillrow .og .opt-label { margin: 0; }
+/* Task graph */
+/* Phase colours, made from the existing tokens so every theme keeps working. */
+:root {
+  --ph-tool: var(--forest-hi);
+  --ph-helper: color-mix(in srgb, var(--forest-hi) 55%, var(--red));
+  --ph-check: color-mix(in srgb, var(--forest-hi) 60%, var(--add-ink));
+  --ph-stuck: color-mix(in srgb, var(--amber) 55%, var(--red));
+  --ph-muted: var(--faint);
+}
+.dot.ph-queued, .dot.ph-closed { background: transparent; border: 1.5px solid var(--faint); }
+.dot.ph-tool { background: var(--ph-tool); animation: pulse 1.4s ease-in-out infinite; }
+.dot.ph-needs-you { background: var(--amber); animation: none; }
+.dot.ph-helper { background: var(--ph-helper); animation: pulse 1.4s ease-in-out infinite; }
+.dot.ph-checking { background: var(--ph-check); animation: pulse 1.4s ease-in-out infinite; }
+.dot.ph-stuck { background: var(--ph-stuck); animation: none; }
+.dot.ph-limit { background: transparent; border: 2px solid var(--red); }
+.pill.ph-tool { background: var(--ph-tool); color: var(--on-primary); border-color: transparent; }
+.pill.ph-needs-you { background: var(--peach); color: var(--peach-ink); border-color: transparent; }
+.pill.ph-helper { background: var(--ph-helper); color: var(--on-primary); border-color: transparent; }
+.pill.ph-checking { background: var(--ph-check); color: var(--on-primary); border-color: transparent; }
+.pill.ph-stuck { background: var(--ph-stuck); color: var(--on-primary); border-color: transparent; }
+.pill.ph-limit { background: transparent; color: var(--red); border-color: var(--red); }
+.pill.ph-closed, .pill.ph-queued { background: transparent; color: var(--soft); border-color: var(--line2); }
+.statusline .sl.ph-tool, .statusline .sl.ph-checking, .statusline .sl.ph-helper { color: var(--forest-hi); }
+.statusline .sl.ph-stuck, .statusline .sl.ph-needs-you { color: var(--peach-ink, #b4690e); }
+.statusline .sl.ph-limit { color: var(--red); }
+/* The graph tab: plain SVG, coloured with the phase tokens above. Mono type and thin rules, like the task window. */
+.ghead { display: flex; gap: 12px; align-items: baseline; margin: 0 0 8px; font-family: var(--mono); font-size: 12.5px; }
+.glegend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 0 0 10px; font-size: 11.5px; color: var(--soft); }
+.glegend .gl { display: inline-flex; align-items: center; gap: 6px; }
+.gsw { width: 12px; height: 12px; border-radius: 6px; background: var(--line2); border: 1px solid transparent; }
+.gsw.ph-working { background: var(--green); }
+.gsw.ph-tool { background: var(--ph-tool); }
+.gsw.ph-needs-you { background: var(--peach); outline: 1.5px solid var(--amber); outline-offset: 1px; }
+.gsw.ph-helper { background: var(--ph-helper); }
+.gsw.ph-checking { background: var(--ph-check); }
+.gsw.ph-stuck { background: var(--ph-stuck); }
+.gsw.ph-done { background: var(--add-ink); }
+.gsw.ph-failed { background: var(--red); }
+.gsw.dashed { background: transparent; border: 1px dashed var(--soft); }
+.gwrap { overflow-x: auto; border: 1px solid var(--line); background: var(--surface); padding: 2px 0 6px; }
+.graph { display: block; font-family: var(--mono); font-size: 11px; }
+.graph .glane { stroke: var(--line); stroke-width: 1; }
+.graph .glabel rect { fill: var(--surface2); stroke: var(--line2); stroke-width: 1; }
+.graph .glabel.sub rect { fill: transparent; stroke-dasharray: 3 3; }
+.graph .glabel text { fill: var(--ink); }
+.graph .gfold { fill: var(--forest-hi); cursor: pointer; font-size: 10.5px; text-decoration: underline; }
+.graph .gedge { fill: none; stroke: var(--line2); stroke-width: 1.5; }
+.graph .gedge.cross { stroke: var(--forest-hi); stroke-dasharray: 5 3; }
+.graph .gedge:hover { stroke: var(--ink); }
+.graph .gback path { fill: none; stroke: var(--faint); stroke-width: 1.3; stroke-dasharray: 3 3; }
+.graph .gback text { fill: var(--soft); font-size: 10.5px; }
+.graph .gnode { cursor: pointer; outline: none; }
+.graph .gnode .gbody { fill: var(--surface2); stroke: var(--line2); stroke-width: 1; }
+.graph .gnode text { fill: var(--ink); pointer-events: none; }
+.graph .gnode.ph-working .gbody, .graph .gnode.ph-preparing .gbody { fill: var(--green); }
+.graph .gnode.ph-tool .gbody { fill: var(--ph-tool); } .graph .gnode.ph-tool text { fill: var(--on-primary); }
+.graph .gnode.ph-needs-you .gbody { fill: var(--peach); } .graph .gnode.ph-needs-you text { fill: var(--peach-ink); }
+.graph .gnode.ph-helper .gbody { fill: var(--ph-helper); } .graph .gnode.ph-helper text { fill: var(--on-primary); }
+.graph .gnode.ph-checking .gbody { fill: var(--ph-check); } .graph .gnode.ph-checking text { fill: var(--on-primary); }
+.graph .gnode.ph-stuck .gbody { fill: var(--ph-stuck); } .graph .gnode.ph-stuck text { fill: var(--on-primary); }
+.graph .gnode.ph-done .gbody { fill: var(--add-bg); stroke: var(--add-ink); } .graph .gnode.ph-done text { fill: var(--add-ink); }
+.graph .gnode.ph-failed .gbody, .graph .gnode.ph-limit .gbody { fill: var(--red-bg); stroke: var(--red); } .graph .gnode.ph-failed text, .graph .gnode.ph-limit text { fill: var(--red); }
+.graph .gnode.ph-earlier .gbody, .graph .gnode.ph-closed .gbody, .graph .gnode.ph-stopped .gbody { fill: transparent; stroke-dasharray: 3 3; }
+.graph .gnode .gring { fill: none; stroke: var(--amber); stroke-width: 2; }
+.graph .gnode .gwait { fill: var(--peach-ink); font-size: 10.5px; }
+.graph .gnode.suspected .gbody { stroke: var(--red); stroke-dasharray: 4 2; stroke-width: 1.5; }
+.graph .gnode.open .gbody { animation: pulse 1.4s ease-in-out infinite; }
+.graph .gnode.sel .gbody, .graph .gnode:focus-visible .gbody { stroke: var(--ink); stroke-width: 2; }
+.gdetail { margin: 12px 0 8px; padding: 10px 12px; border: 1px solid var(--line2); border-radius: var(--tui-radius, 4px); background: var(--surface); font-size: 12px; }
+.gdetail .row { margin-bottom: 6px; }
+.gdetail .gkv { display: grid; grid-template-columns: 110px 1fr; gap: 8px; padding: 2px 0; border-top: 1px solid var(--line); overflow-wrap: anywhere; }
+.gtext { margin: 8px 0; }
+.gpre { margin: 6px 0 0; padding: 8px 10px; border: 1px solid var(--line); background: var(--code-bg); font-family: var(--mono); font-size: 11px; overflow: auto; white-space: pre; }
+@media (max-width: 720px) { .gdetail .gkv { grid-template-columns: 1fr; gap: 0; } .glegend { font-size: 11px; } }
+@media (prefers-reduced-motion: reduce) { .graph .gnode.open .gbody { animation: none; } }
