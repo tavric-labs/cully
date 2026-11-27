@@ -75,17 +75,19 @@ func TestNonLoopbackWithoutTLSWarns(t *testing.T) {
 }
 
 func TestStaticAssetsEmbedded(t *testing.T) {
-	js, err := uiStaticFS.ReadFile("ui_static/app.js")
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, banned := range []string{"innerHTML", "outerHTML", "insertAdjacentHTML", "document.write", "eval("} {
-		if strings.Contains(string(js), banned) {
-			t.Fatalf("app.js uses %s", banned)
+	for _, name := range []string{"app.js", "md.js", "palette.js"} {
+		js, err := uiStaticFS.ReadFile("ui_static/" + name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, banned := range []string{"innerHTML", "outerHTML", "insertAdjacentHTML", "document.write", "eval("} {
+			if strings.Contains(string(js), banned) {
+				t.Fatalf("%s uses %s", name, banned)
+			}
 		}
 	}
 	html, _ := uiStaticFS.ReadFile("ui_static/index.html")
-	for _, want := range []string{"Tasks", "Board", "Dashboard", `src="/app.js"`, `href="/style.css"`} {
+	for _, want := range []string{"Tasks", "Board", "Dashboard", `src="/app.js"`, `src="/palette.js"`, `href="/style.css"`, `href="/polish.css"`} {
 		if !strings.Contains(string(html), want) {
 			t.Fatalf("index.html lacks %q", want)
 		}
@@ -122,16 +124,21 @@ func TestThemesAreSelectableWithoutInlineScript(t *testing.T) {
 }
 
 func TestStyleAvoidsGenericTells(t *testing.T) {
-	css, _ := uiStaticFS.ReadFile("ui_static/style.css")
-	s := string(css)
-	if strings.Contains(s, "text-transform: uppercase") {
-		t.Fatal("style.css uses ALL-CAPS labels")
-	}
-	if strings.Contains(s, "Inter,") || strings.Contains(s, "radial-gradient") {
-		t.Fatal("style.css uses a default webfont stack or a gradient wash")
-	}
-	if strings.Contains(s, "translateY(-2px)") {
-		t.Fatal("style.css lifts cards on hover")
+	for _, name := range []string{"style.css", "polish.css"} {
+		css, err := uiStaticFS.ReadFile("ui_static/" + name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		s := string(css)
+		if strings.Contains(s, "text-transform: uppercase") {
+			t.Fatalf("%s uses ALL-CAPS labels", name)
+		}
+		if strings.Contains(s, "Inter,") || strings.Contains(s, "radial-gradient") {
+			t.Fatalf("%s uses a default webfont stack or a gradient wash", name)
+		}
+		if strings.Contains(s, "translateY(-2px)") {
+			t.Fatalf("%s lifts cards on hover", name)
+		}
 	}
 	js, _ := uiStaticFS.ReadFile("ui_static/app.js")
 	if strings.Contains(string(js), " · ") {
