@@ -180,6 +180,7 @@
     if (p[0] === 'board') return { name: 'board' };
     if (p[0] === 'agents') return { name: 'team' };
     if (p[0] === 'harness') return { name: 'harness', tab: p[1] || '' };
+    if (p[0] === 'setup') return { name: 'setup' };
     if (p[0] === 'dashboard') return { name: 'dashboard', panel: p[1] || 'overview', kind: p[2] || '' };
     return { name: 'home' };
   }
@@ -189,13 +190,13 @@
     if (/^#\/agent\//.test(location.hash)) { location.replace(location.hash.replace('#/agent/', '#/task/')); return; }
     S.route = parseHash();
     if (S.route.name === 'dashboard' && REDIRECT[S.route.panel]) { location.replace('#/dashboard/' + REDIRECT[S.route.panel]); return; }
-    const section = S.route.name === 'harness' ? 'harness' : S.route.name === 'team' ? 'team' : S.route.name === 'board' ? 'board' : S.route.name === 'dashboard' ? 'dashboard' : S.route.name === 'sessions' ? 'sessions' : 'agents';
+    const section = S.route.name === 'harness' ? 'harness' : S.route.name === 'team' ? 'team' : S.route.name === 'board' ? 'board' : S.route.name === 'setup' ? 'setup' : S.route.name === 'dashboard' ? 'dashboard' : S.route.name === 'sessions' ? 'sessions' : 'agents';
     for (const a of $('nav').querySelectorAll('a')) a.classList.toggle('active', a.dataset.route === section);
     { // Agents, Harness and Dashboard live under More: it lights up when you are on one of them, and shows their badge
       const more = $('navmore');
-      if (more) { more.classList.toggle('active', ['team', 'harness', 'dashboard'].includes(section)); more.open = false; const db = $('dbadge'); const mb = $('morebadge'); if (db && mb) { mb.hidden = db.hidden; mb.textContent = db.textContent; } }
+      if (more) { more.classList.toggle('active', ['team', 'harness', 'dashboard', 'setup'].includes(section)); more.open = false; const db = $('dbadge'); const mb = $('morebadge'); if (db && mb) { mb.hidden = db.hidden; mb.textContent = db.textContent; } }
     }
-    for (const s of ['agents', 'board', 'dashboard', 'sessions', 'team', 'harness']) $('view-' + s).hidden = s !== section;
+    for (const s of ['agents', 'board', 'dashboard', 'sessions', 'team', 'harness', 'setup']) $('view-' + s).hidden = s !== section;
     if (S.es) { S.es.close(); S.es = null; }
     S.feed = null;
     $('stage').className = 'stage';
@@ -207,6 +208,7 @@
     else if (S.route.name === 'tasks') mountTasks();
     else if (S.route.name === 'team') renderTeam();
     else if (S.route.name === 'harness') renderHarness();
+    else if (S.route.name === 'setup') renderSetupPage();
     else if (S.route.name === 'sessions') { S.sessSig = ''; renderSessions(); }
     else mountDashboard(S.route.panel);
   }
@@ -404,7 +406,7 @@
       h('div', { class: 'row' }, h('b', {}, 'Cully found your sessions'), h('span', { class: 'sp' }), h('button', { class: 'linkbtn', onclick: () => { try { localStorage.setItem('cully-welcome-off', '1'); } catch (_) { /* optional */ } box.replaceChildren(); } }, 'Hide')),
       h('div', { class: 'row' }, ...['claude', 'codex', 'cursor'].filter((a) => by[a]).map((a) => h('span', { class: 'chip harness h-' + a }, AGENT_LABEL[a] + ' ' + by[a]))),
       h('p', { class: 'faint small' }, lib.sessions.length + ' sessions on this machine, ' + dur(t.activeSec) + ' of work' + (total ? '. ' + t.analyzed + ' of ' + total + ' analysed' + (lib.analysis.on ? ', a few more every hour.' : '. Analysis is off.') : '.') + (bad ? ' ' + bad + ' of the analysed ones need a second look.' : '')),
-      h('div', { class: 'row' }, h('a', { class: 'btn small', href: '#/sessions' }, icon('eye'), 'See them'), h('a', { class: 'btn ghost small', href: '#/dashboard/health' }, 'Session health'), h('a', { class: 'btn ghost small', href: '#/dashboard/library' }, 'Library'))));
+      h('div', { class: 'row' }, h('a', { class: 'btn small', href: '#/sessions' }, icon('eye'), 'See them'), S.info && S.info.setupDone === false ? h('a', { class: 'btn small', href: '#/setup' }, icon('spark'), 'Set up Cully') : null, h('a', { class: 'btn ghost small', href: '#/dashboard/health' }, 'Session health'), h('a', { class: 'btn ghost small', href: '#/dashboard/library' }, 'Library'))));
   }
 
   // ---------- tasks that outlast the page ----------
@@ -581,7 +583,7 @@
       h('div', { id: 'mcpbanner' }), form, pills, fleet));
     renderFleet();
     drawMCPBanner();
-    const welcomeBox = h('div', { class: 'welcomebox' }); const tasksBox = h('div', { class: 'taskhist' }); $('stage').firstChild.append(welcomeBox, tasksBox); renderWelcome(welcomeBox); renderTaskHistory(tasksBox);
+    const welcomeBox = h('div', { class: 'welcomebox' }); const tasksBox = h('div', { class: 'taskhist' }); $('stage').firstChild.append(...[setupBanner(), welcomeBox, tasksBox].filter(Boolean)); renderWelcome(welcomeBox); renderTaskHistory(tasksBox);
     ta.focus();
   }
   function agentCard(a) {
@@ -3245,11 +3247,259 @@
       return h('section', { class: 'group' }, h('header', {}, h('span', { class: 'gt' }, AGENT_NAMES[a.agent]), h('span', { class: 'pill ' + pill[0] }, pill[1]),
         gaps ? h('button', { class: 'btn small sp', onclick: () => enableAgentDialog(a.agent) }, icon('plus'), 'Set up ' + AGENT_NAMES[a.agent]) : null), h('ul', { class: 'checks' }, ...rows));
     });
+    kids.unshift(h('section', { class: 'group' }, h('header', {}, h('span', { class: 'gt' }, 'Guided setup'), h('a', { class: 'btn small sp', href: '#/setup' }, icon('spark'), 'Open the Setup page')), h('p', { class: 'faint' }, 'Choose a mode, write your dev-workflow rules and link them to your harnesses, step by step. Or run cully setup in a terminal.')));
     kids.push(h('section', { class: 'group' }, h('header', {}, h('span', { class: 'gt' }, 'Advisor for terminal sessions'), h('span', { class: 'pill ' + (data.advisorRunning ? 'working' : 'waiting') }, data.advisorRunning ? 'Running' : 'Not running'),
       data.advisorRunning ? null : h('button', { class: 'btn small sp', onclick: startAdvisorNow }, icon('spark'), 'Start the advisor')),
       data.advisorRunning ? null : h('p', { class: 'faint' }, data.advisorHint),
       h('details', { class: 'more' }, h('summary', {}, 'Details'), h('p', { class: 'faint' }, 'Connected tools: ' + data.tools.MCP + '. Skills: ' + data.tools.Skills + '. Helper agents: ' + data.tools.Agents + '. Names are hidden here on purpose.'))));
     return h('div', { class: 'groups' }, ...kids);
+  }
+
+  // ----- setup page (#/setup) -----
+  // A guided, never blocking stepper. Every step can be skipped and revisited; Finish always works.
+  const SETUP_DOCS = 'https://docs.cully.net/choose-a-mode';
+  const SETUP_STEPS = [['check', 'Welcome and check'], ['mode', 'Choose a mode'], ['rules', 'Rules interview'], ['review', 'Review and approve'], ['plan', 'What Cully could do for you'], ['done', 'Done']];
+  const SETUP_HARNESS = ['claude', 'codex', 'cursor'];
+  const SU = { step: 'check', state: null, interview: null, ans: {}, qi: 0, proposal: null, approved: null, sugg: null, mcpUrl: '', busy: '', err: '', added: [] };
+  const suPost = (path, body) => api(path, { method: 'POST', body: JSON.stringify(body || {}) });
+
+  function copyBox(text) {
+    return h('div', { class: 'su-copy' }, h('code', {}, text), h('button', { class: 'btn ghost small', onclick: async () => {
+      try { await navigator.clipboard.writeText(text); toast('Copied'); } catch (_) { toast('Select the command and copy it', true); }
+    } }, icon('copy'), 'Copy'));
+  }
+  async function renderSetupPage() {
+    const box = $('setup');
+    if (!SU.state) box.replaceChildren(h('p', { class: 'faint' }, 'Loading…'));
+    try { SU.state = await api('/api/setup/state'); } catch (e) { if (!SU.state) { box.replaceChildren(h('div', { class: 'err' }, e.message)); return; } }
+    if (SU.state.mode && !SU.mcpUrl) SU.mcpUrl = SU.state.mcpUrl || '';
+    drawSetupPage();
+    if (!SU.interview) loadInterview();
+  }
+  async function loadInterview(path, post) {
+    try { SU.interview = post ? await suPost(path, {}) : await api('/api/setup/interview'); } catch (_) { SU.interview = SU.interview || { questions: [], answers: {} }; }
+    if (S.route.name === 'setup') drawSetupPage();
+  }
+  function goStep(id) { SU.step = id; SU.err = ''; drawSetupPage(); window.scrollTo(0, 0); if (id === 'plan' && !SU.sugg) loadSuggestions(); }
+  async function loadSuggestions() {
+    try { SU.sugg = await api('/api/setup/suggestions'); } catch (e) { SU.sugg = { basis: {}, agents: [], jobs: [], note: 'Suggestions are not available yet: ' + e.message }; }
+    if (S.route.name === 'setup') drawSetupPage();
+  }
+  function drawSetupPage() {
+    const box = $('setup');
+    if (!box || S.route.name !== 'setup') return;
+    const st = SU.state || {};
+    const idx = SETUP_STEPS.findIndex((x) => x[0] === SU.step);
+    const doneIds = { check: SETUP_HARNESS.length && (st.harnesses || []).some((x) => x.linked), mode: !!st.mode, rules: !!(st.rules && st.rules.exists) || !!SU.approved, review: !!SU.approved || !!(st.rules && st.rules.exists), plan: SU.added.length > 0, done: !!st.done };
+    const rail = h('ol', { class: 'su-rail', 'aria-label': 'Setup steps' }, ...SETUP_STEPS.map(([id, title], i) => {
+      const done = !!(doneIds[id] || window.CullySetup.stepDone(id, st));
+      return h('li', {}, h('button', { class: 'su-step' + (id === SU.step ? ' on' : '') + (done ? ' done' : ''), 'aria-current': id === SU.step ? 'step' : null, onclick: () => goStep(id) },
+        h('span', { class: 'su-num' }, done ? icon('check') : String(i + 1)), h('span', { class: 'su-st' }, title)));
+    }));
+    const body = { check: suCheck, mode: suMode, rules: suRules, review: suReview, plan: suPlan, done: suDone }[SU.step]();
+    const nav = h('div', { class: 'su-nav' },
+      idx > 0 ? h('button', { class: 'btn ghost', onclick: () => goStep(SETUP_STEPS[idx - 1][0]) }, 'Back') : null, h('span', { class: 'sp' }),
+      SU.step !== 'done' ? h('button', { class: 'btn ghost', onclick: () => goStep(SETUP_STEPS[idx + 1][0]) }, 'Skip this step') : null,
+      SU.step !== 'done' ? h('button', { class: 'btn ghost', onclick: suFinish }, 'Finish') : null);
+    box.replaceChildren(h('div', { class: 'su' },
+      h('header', { class: 'su-head' }, h('h1', {}, 'Set up Cully'), h('p', { class: 'faint' }, 'Take the steps in any order, skip any of them, and come back later. Nothing here blocks you.'), st.done ? h('span', { class: 'pill working' }, 'Setup finished') : h('span', { class: 'pill waiting' }, 'Not finished')),
+      h('div', { class: 'su-grid' }, rail, h('section', { class: 'su-body' }, SU.err ? h('div', { class: 'err' }, SU.err) : null, body, nav))));
+  }
+  async function suFinish() {
+    try { SU.state = await suPost('/api/setup/complete'); S.info = await api('/api/info').catch(() => S.info); goStep('done'); } catch (e) { SU.err = e.message; drawSetupPage(); }
+  }
+
+  // 1. Welcome and check
+  function suCheck() {
+    const st = SU.state || {};
+    const byId = Object.fromEntries((st.harnesses || []).map((x) => [x.id, x]));
+    const cards = SETUP_HARNESS.map((id) => {
+      const x = byId[id] || { id, name: AGENT_LABEL[id] || id, installed: false };
+      return h('div', { class: 'su-card' }, h('div', { class: 'row' }, h('b', {}, x.name || AGENT_LABEL[id]), h('span', { class: 'sp' }), h('span', { class: 'pill ' + (x.installed ? 'working' : '') }, x.installed ? 'Installed' : 'Not installed')),
+        h('p', { class: 'faint small' }, x.installed ? (x.version ? 'Version ' + x.version : 'Version not reported') : 'Not found on this machine.'),
+        x.installed ? h('span', { class: 'pill ' + (x.linked ? 'working' : 'waiting') }, x.linked ? 'Linked to the shared skill' : 'Not linked yet') : null,
+        x.linked && x.skillPath ? h('p', { class: 'faint small su-path' }, x.skillPath) : null);
+    });
+    return h('div', {}, h('h2', {}, 'Welcome'), h('p', { class: 'su-lead' }, 'Cully keeps your rules and skills in one place and links them into each coding agent you use. Rules and skills live in ~/.cully and are linked into each harness.'),
+      h('div', { class: 'su-cards' }, ...cards),
+      h('div', { class: 'su-card su-term' }, h('b', {}, 'Prefer the terminal?'), h('p', { class: 'faint small' }, 'Run this. Both do the same thing.'), copyBox('cully setup')),
+      h('div', { class: 'row' }, h('button', { class: 'btn', onclick: () => goStep('mode') }, 'Continue')));
+  }
+
+  // 2. Mode
+  function suMode() {
+    const st = SU.state || {}; const modes = st.modes || {};
+    const url = h('input', { type: 'text', 'aria-label': 'MCP URL', placeholder: 'https://your-cully-server/mcp', autocomplete: 'off', spellcheck: 'false' });
+    url.value = SU.mcpUrl; url.addEventListener('input', () => { SU.mcpUrl = url.value; });
+    const pick = async (mode) => {
+      SU.busy = mode; SU.err = '';
+      try { SU.state = await suPost('/api/setup/mode', mode === 'mcp' ? { mode, mcpUrl: SU.mcpUrl.trim() } : { mode }); toast(mode === 'mcp' ? 'MCP mode saved' : 'Local mode saved'); } catch (e) { SU.err = e.message; }
+      SU.busy = ''; drawSetupPage();
+    };
+    const card = (mode, title, tag, extra) => h('div', { class: 'su-mode' + (st.mode === mode ? ' on' : '') },
+      h('div', { class: 'row' }, h('b', {}, title), st.mode === mode ? h('span', { class: 'pill working' }, 'Chosen') : null, tag ? h('span', { class: 'pill' }, tag) : null),
+      h('p', {}, modes[mode] || ''), extra,
+      h('div', { class: 'row' }, h('button', { class: mode === 'local' ? 'btn' : 'btn ghost', disabled: SU.busy === mode, onclick: () => pick(mode) }, mode === 'local' ? 'Use local mode' : 'Use MCP mode')));
+    return h('div', {}, h('h2', {}, 'Choose a mode'), h('p', { class: 'su-lead' }, 'You can change this later.'),
+      h('div', { class: 'su-modes' },
+        card('local', 'One machine: Local mode', 'Recommended for one computer', h('p', { class: 'faint small' }, 'Memory and recall are stored on this machine. Nothing to deploy.')),
+        card('mcp', 'Many machines, VMs or shared hosts: MCP mode', 'Preferred if you can deploy it', h('div', {},
+          h('p', { class: 'faint small' }, 'You deploy the MCP service, the Cully service, Postgres and Mem0. One memory is shared by every machine. It is more efficient and the preferred way if you can deploy it.'),
+          h('label', { class: 'field' }, h('span', { class: 'opt-label' }, 'MCP URL'), url),
+          h('a', { class: 'linkbtn', href: SETUP_DOCS, target: '_blank', rel: 'noopener' }, icon('external'), 'How to deploy it')))));
+  }
+
+  // 3. Rules interview
+  function suQs() { return (SU.interview && SU.interview.questions) || []; }
+  function suValue(q) {
+    if (SU.ans[q.id] !== undefined) return SU.ans[q.id] === null ? '' : SU.ans[q.id];
+    const saved = ((SU.interview || {}).answers || {})[q.id];
+    return saved != null ? saved : (q.suggested || '');
+  }
+  function suRules() {
+    const W = window.CullySetup; const qs = suQs();
+    if (!SU.interview) return h('p', { class: 'faint' }, 'Loading the questions…');
+    const analyse = h('button', { class: 'btn ghost', onclick: async () => {
+      analyse.disabled = true; toast('Reading your sessions…');
+      await loadInterview('/api/setup/interview/analyse', true);
+    } }, icon('spark'), 'Improve with my sessions');
+    if (!qs.length) return h('div', {}, h('h2', {}, 'Rules interview'), h('p', { class: 'faint' }, 'There are no questions yet. You can skip this step.'), h('div', { class: 'row' }, analyse));
+    SU.qi = Math.min(Math.max(SU.qi, 0), qs.length - 1);
+    const q = qs[SU.qi];
+    const t = W.tally(qs, SU.ans);
+    let field;
+    if (q.kind === 'choice' && (q.choices || []).length) { field = h('select', { 'aria-label': q.text }, ...q.choices.map((c) => h('option', { value: c }, c))); }
+    else field = h('textarea', { rows: q.kind === 'list' ? '5' : '3', 'aria-label': q.text, placeholder: q.kind === 'list' ? 'One per line' : '' });
+    field.value = suValue(q);
+    const go = (v) => { if (v !== undefined) SU.ans[q.id] = v; if (SU.qi < qs.length - 1) { SU.qi++; drawSetupPage(); } else drawSetupPage(); };
+    const last = SU.qi === qs.length - 1;
+    return h('div', {}, h('h2', {}, 'Rules interview'),
+      h('p', { class: 'su-lead' }, 'Answer, edit or skip each question. Cully writes your dev-workflow rules from the answers.'),
+      h('div', { class: 'row su-prog' }, h('span', { class: 'pill' }, W.progress(SU.qi, qs.length)), h('span', { class: 'faint small' }, t.answered + ' answered, ' + t.skipped + ' skipped'), h('span', { class: 'sp' }), analyse),
+      h('div', { class: 'su-bar', role: 'progressbar', 'aria-valuemin': '0', 'aria-valuemax': String(qs.length), 'aria-valuenow': String(SU.qi + 1) }, (() => { const i = h('i', {}); i.style.width = Math.round(((SU.qi + 1) / qs.length) * 100) + '%'; return i; })()),
+      h('div', { class: 'su-card su-q' },
+        q.group ? h('div', { class: 'su-group' }, q.group) : null, h('h3', {}, q.text), q.hint ? h('p', { class: 'faint small' }, q.hint) : null,
+        h('label', { class: 'field' }, h('span', { class: 'opt-label' }, 'Your answer'), field),
+        q.evidence ? h('p', { class: 'su-ev' }, icon('search'), q.evidence) : h('p', { class: 'su-ev faint' }, 'No evidence found in your sessions for this one.'),
+        h('div', { class: 'row' },
+          h('button', { class: 'btn', onclick: () => go(field.value) }, icon('check'), 'Use this'),
+          h('button', { class: 'btn ghost', onclick: () => field.focus() }, icon('pencil'), 'Edit'),
+          h('button', { class: 'btn ghost', onclick: () => go(null) }, 'Skip'),
+          h('span', { class: 'sp' }),
+          h('button', { class: 'btn ghost', disabled: SU.qi === 0, onclick: () => { SU.qi--; drawSetupPage(); } }, 'Back'))),
+      h('div', { class: 'su-dots' }, ...qs.map((x, i) => { const a = SU.ans[x.id]; const b = h('button', { class: 'su-dot' + (i === SU.qi ? ' on' : '') + (a === null ? ' skip' : typeof a === 'string' ? ' got' : ''), title: x.text, 'aria-label': 'Question ' + (i + 1), onclick: () => { SU.qi = i; drawSetupPage(); } }); return b; })),
+      h('div', { class: 'row' }, h('button', { class: last ? 'btn' : 'btn ghost', disabled: SU.busy === 'propose', onclick: suPropose }, 'Build my rules from these answers')));
+  }
+  async function suPropose() {
+    SU.busy = 'propose'; SU.err = '';
+    const answers = {};
+    for (const q of suQs()) { const a = SU.ans[q.id]; answers[q.id] = a === null ? null : a !== undefined ? a : suValue(q) || null; }
+    try { const r = await suPost('/api/setup/interview', { answers }); SU.proposal = r.proposal || null; SU.approved = null; SU.busy = ''; goStep('review'); } catch (e) { SU.err = e.message; SU.busy = ''; drawSetupPage(); }
+  }
+
+  // 4. Review and approve
+  function suReview() {
+    const W = window.CullySetup;
+    if (SU.approved) {
+      const a = SU.approved;
+      return h('div', {}, h('h2', {}, 'Rules approved'), h('div', { class: 'su-card' }, h('p', {}, 'Your dev-workflow rules were saved' + ((a.linked || []).length ? ' and linked to ' + a.linked.join(', ') + '.' : '.')),
+        a.path ? h('p', { class: 'faint small su-path' }, 'Source file: ' + a.path) : null,
+        (a.linked || []).length ? h('div', { class: 'row' }, ...a.linked.map((x) => h('span', { class: 'pill working' }, icon('check'), x))) : h('p', { class: 'faint small' }, 'No harness was linked. Install one and run cully setup again.')),
+        h('div', { class: 'row' }, h('button', { class: 'btn', onclick: () => goStep('plan') }, 'Continue')));
+    }
+    const p = SU.proposal;
+    if (!p) return h('div', {}, h('h2', {}, 'Review and approve'), h('p', { class: 'su-lead' }, 'There is no proposal yet. Answer or skip the interview questions, then build your rules from them.'),
+      h('div', { class: 'row' }, h('button', { class: 'btn', onclick: () => goStep('rules') }, 'Go to the interview')));
+    const rows = W.collapseDiff(p.diff, 2);
+    const view = h('div', { class: 'su-diff', role: 'table', 'aria-label': 'Proposed changes to your rules' }, ...rows.map((r) => r.t === 'fold'
+      ? h('div', { class: 'su-dl fold', role: 'row' }, h('span', { class: 'su-dm' }, ''), h('span', {}, r.n + ' unchanged ' + (r.n === 1 ? 'line' : 'lines')))
+      : h('div', { class: 'su-dl ' + r.t, role: 'row' }, h('span', { class: 'su-dm' }, r.t === 'add' ? '+' : r.t === 'del' ? '-' : ''), h('span', {}, r.l || ' '))));
+    const approve = h('button', { class: 'btn', onclick: async () => {
+      approve.disabled = true;
+      try { SU.approved = await suPost('/api/setup/rules/approve', { id: p.id }); SU.state = await api('/api/setup/state').catch(() => SU.state); drawSetupPage(); } catch (e) { SU.err = e.message; drawSetupPage(); }
+    } }, icon('check'), 'Approve and link to my harnesses');
+    const discard = h('button', { class: 'btn ghost', onclick: async () => { try { await suPost('/api/setup/rules/discard', { id: p.id }); } catch (_) { /* nothing saved either way */ } SU.proposal = null; toast('Discarded. Nothing was changed.'); drawSetupPage(); } }, 'Discard');
+    return h('div', {}, h('h2', {}, 'Review and approve'),
+      h('p', { class: 'su-lead' }, p.summary || W.diffSentence(p.diff)), h('p', { class: 'faint small' }, W.diffSentence(p.diff) + '. Nothing is saved until you approve.'),
+      view, h('div', { class: 'row' }, approve, discard));
+  }
+
+  // 5. What Cully could do for you
+  function suPlan() {
+    const W = window.CullySetup; const sg = SU.sugg; const st = SU.state || {};
+    const basis = (sg && sg.basis) || st.sessions || {};
+    const by = (st.sessions && st.sessions.byHarness) || {};
+    const head = h('h2', {}, 'What Cully could do for you');
+    if (!sg) return h('div', {}, head, h('p', { class: 'faint' }, 'Reading your sessions…'));
+    const tile = (n, l) => h('div', { class: 'su-tile' }, h('b', {}, n), h('span', {}, l));
+    const tiles = h('div', { class: 'su-tiles' }, tile(String(basis.sessions || 0), 'sessions'), tile(W.hours(basis.hours), 'of work'), tile(W.tokens(basis.tokens), 'tokens'), tile(String(basis.days || 0), 'days'));
+    const bars = (key, label, fmt) => h('div', { class: 'su-bars' }, h('div', { class: 'faint small' }, label), ...W.barScale(by, key, SETUP_HARNESS).map((b) => {
+      const i = h('i', {}); i.style.width = b.pct + '%';
+      return h('div', { class: 'su-brow' }, h('span', { class: 'su-bl' }, AGENT_LABEL[b.id] || b.id), h('span', { class: 'su-bt' }, i), h('span', { class: 'su-bv' }, b.value ? fmt(b.value) : 'none'));
+    }));
+    const ev = (x) => [W.evidenceWord(x.count), W.saves(x.estMinutesPerWeek), W.costs(x.estTokensPerRun)].filter(Boolean);
+    const sCard = (x, kind) => h('div', { class: 'su-card su-sug' }, h('div', { class: 'row' }, h('b', {}, x.name), h('span', { class: 'pill' }, kind === 'agent' ? 'Agent' : 'Background job')),
+      h('p', {}, x.why || x.role || ''), kind === 'job' && x.command ? h('p', {}, h('code', {}, x.command), x.schedule ? h('span', { class: 'faint small' }, '  ' + x.schedule) : null) : null,
+      h('div', { class: 'row' }, ...ev(x).map((t) => h('span', { class: 'chip' }, t))),
+      (x.evidence || []).length ? h('ul', { class: 'su-evl' }, ...x.evidence.slice(0, 3).map((e) => h('li', { class: 'faint small' }, String(e)))) : null,
+      h('div', { class: 'row' }, h('button', { class: 'btn small', onclick: () => (kind === 'agent' ? suAddAgent(x) : suAddJob(x)) }, icon('plus'), 'Review and add')));
+    let cards;
+    if (!W.enough(basis)) cards = h('div', { class: 'su-card' }, h('p', {}, sg.note || 'Cully needs about ' + W.MIN_SESSIONS + ' analysed sessions before it can suggest agents and jobs. Come back after a few more days of work.'));
+    else cards = h('div', {}, (sg.agents || []).length ? h('h3', {}, 'Agents') : null, h('div', { class: 'su-cards' }, ...(sg.agents || []).map((x) => sCard(x, 'agent'))),
+      (sg.jobs || []).length ? h('h3', {}, 'Background jobs') : null, h('div', { class: 'su-cards' }, ...(sg.jobs || []).map((x) => sCard(x, 'job'))),
+      !(sg.agents || []).length && !(sg.jobs || []).length ? h('p', { class: 'faint' }, sg.note || 'Nothing to suggest yet.') : null);
+    return h('div', {}, head, h('p', { class: 'su-lead' }, W.basisSentence(basis) + '.'), tiles,
+      Object.keys(by).length ? h('div', { class: 'su-two' }, bars('hours', 'Hours of work', W.hours), bars('tokens', 'Tokens used', W.tokens)) : null,
+      h('p', { class: 'faint small' }, 'All figures are estimates from your own sessions, so they say about.'), cards);
+  }
+  async function suAddAgent(x) {
+    let tools; try { tools = await api('/api/admin/tools'); } catch (e) { toast(e.message, true); return; }
+    openAgentForm({ id: null, name: x.name, role: x.role || x.why || '', instructions: x.instructions || '', scope: 'project', folder: x.folder || S.opts.repo || (S.info && S.info.repos[0]) || '', groups: Object.fromEntries(tools.presets.map((p) => [p.id, p.on])), mode: 'edit', schedule: '', enabled: false },
+      tools, () => { SU.added.push(x.id || x.name); drawSetupPage(); });
+  }
+  function suAddJob(x) {
+    const ed = scheduleEditor({ schedule: x.schedule || '', after: x.after, maxRuns: x.maxRuns });
+    const name = h('input', { type: 'text', 'aria-label': 'Name', value: x.name, autocomplete: 'off' });
+    const cmd = h('input', { type: 'text', 'aria-label': 'Command', value: x.command || '', autocomplete: 'off', spellcheck: 'false' });
+    const err = h('div', { class: 'err', hidden: true });
+    const save = h('button', { class: 'btn', onclick: async () => {
+      save.disabled = true; err.hidden = true;
+      try { await suPost('/api/jobs', { name: name.value, folder: x.folder || S.opts.repo || '', command: cmd.value, ...ed.value() }); closeMCP(); toast('Added ' + name.value); SU.added.push(x.id || x.name); drawSetupPage(); } catch (e) { err.textContent = e.message; err.hidden = false; save.disabled = false; }
+    } }, icon('check'), 'Approve and add');
+    const modal = h('div', { class: 'modal', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'New background job' },
+      h('header', {}, h('h2', {}, 'New background job'), h('button', { class: 'btn ghost small sp', onclick: closeMCP }, 'Cancel')),
+      h('div', { class: 'mbody' }, h('p', { class: 'faint small' }, x.why || ''), h('label', { class: 'field' }, h('span', { class: 'opt-label' }, 'Name'), name), h('label', { class: 'field' }, h('span', { class: 'opt-label' }, 'Command'), cmd), ed.el, err, h('div', { class: 'row' }, save)));
+    const bg = h('div', { class: 'modal-bg', onclick: (e) => { if (e.target === bg) closeMCP(); } }, modal);
+    $('modal-root').replaceChildren(bg);
+    S.modal = { agent: 'confirm' };
+    document.removeEventListener('keydown', escClose); document.addEventListener('keydown', escClose);
+  }
+
+  // 6. Done
+  function suDone() {
+    const st = SU.state || {}; const rules = st.rules || {};
+    const linked = (st.harnesses || []).filter((x) => x.linked).map((x) => x.name);
+    const line = (ok, text) => h('li', { class: ok ? 'ok' : 'bad' }, icon(ok ? 'check' : 'x'), h('span', { class: 'sl' }, text));
+    return h('div', {}, h('h2', {}, st.done ? 'You are set up' : 'Almost there'),
+      h('p', { class: 'su-lead' }, 'Here is where things stand. You can reopen this page from More, then Setup, at any time.'),
+      h('ul', { class: 'checks' }, line(!!st.mode, st.mode ? (st.mode === 'mcp' ? 'MCP mode' : 'Local mode') + ' chosen' : 'No mode chosen yet'),
+        line(!!rules.exists, rules.exists ? 'Dev-workflow rules saved' + (rules.lines ? ' (' + rules.lines + ' lines)' : '') : 'No dev-workflow rules yet'),
+        line(linked.length > 0, linked.length ? 'Linked to ' + linked.join(', ') : 'Not linked to a harness yet'),
+        line(SU.added.length > 0, SU.added.length ? SU.added.length + ' suggested ' + (SU.added.length === 1 ? 'item' : 'items') + ' added' : 'No agents or jobs added from suggestions')),
+      rules.path ? h('p', { class: 'faint small su-path' }, 'Rules file: ' + rules.path) : null,
+      h('div', { class: 'row' }, h('a', { class: 'btn ghost', href: '#/agents' }, 'Agents'), h('a', { class: 'btn ghost', href: '#/dashboard/jobs' }, 'Background jobs'), h('a', { class: 'btn ghost', href: '#/dashboard/rules' }, 'Rules'), h('span', { class: 'sp' }),
+        h('button', { class: 'btn', onclick: async () => { if (!st.done) await suFinish().catch(() => {}); location.hash = '#/'; } }, 'Start a task')));
+  }
+
+  // A calm banner on the new-task page until setup is finished.
+  function setupBanner() {
+    if (!S.info || S.info.setupDone !== false) return null;
+    let off = false; try { off = sessionStorage.getItem('cully-setup-banner-off') === '1'; } catch (_) { /* optional */ }
+    if (off) return null;
+    const box = h('div', { class: 'su-banner', role: 'note' }, icon('spark'), h('span', {}, 'Setup is not finished. Set it up in the UI or run ', h('code', {}, 'cully setup'), ' in a terminal.'),
+      h('a', { class: 'btn small', href: '#/setup' }, 'Open setup'),
+      h('button', { class: 'btn ghost small', 'aria-label': 'Dismiss', onclick: () => { try { sessionStorage.setItem('cully-setup-banner-off', '1'); } catch (_) { /* optional */ } box.remove(); } }, 'Dismiss'));
+    return box;
   }
 
   // ----- savings -----
