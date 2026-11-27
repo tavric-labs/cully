@@ -31,6 +31,10 @@ cully run codex        # or claude, cursor, another executable
 
 Setup is user-wide: run it once, then use Cully in any project. No project `.cully` folder is required. The local memory stack requires Docker. For an existing server, use `cully setup --mcp-url URL`. See the [quickstart](https://docs.cully.net/quickstart) for prerequisites and other agents.
 
+## One machine or many?
+
+One machine: local mode is enough. Many machines, VMs and a laptop: MCP mode (the MCP service, the Cully service, Postgres and Mem0) is the preferred way if you can deploy it, with one shared memory and semantic recall. See [One machine or many?](https://docs.cully.net/choose-a-mode) and [Set up Cully](https://docs.cully.net/setup): install, run `cully ui`, and finish setup in the UI or with `cully setup`.
+
 Cully supports native terminals on macOS and Linux with **zsh + Oh My Zsh**. Setup installs the required shell and Nerd Font preset automatically, with backups. Use macOS Terminal, Ghostty, iTerm2, Kitty, WezTerm, Alacritty, Warp or a supported GNOME terminal on Linux. See [terminal setup](https://docs.cully.net/terminal#configure-and-verify-your-terminal).
 
 ## What you get

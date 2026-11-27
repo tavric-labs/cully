@@ -5,6 +5,8 @@ description: Start Cully's private memory service with Docker Compose and connec
 
 # Host Cully on your laptop
 
+Deploying for use from many machines and VMs? See [One machine or many?](/choose-a-mode) for when MCP mode is worth it, and [Set up Cully](/setup) for the guided setup.
+
 Cully's memory service runs on your laptop for the default single-user setup. Your connected agents use it to save and find notes across sessions. You do not need OAuth, a domain name or an identity provider for this setup.
 
 ## One-command full stack

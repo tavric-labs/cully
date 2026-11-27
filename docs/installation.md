@@ -5,6 +5,8 @@ description: Choose an agent, set up PATH, pin a release or build Cully from sou
 
 # Installer options
 
+Not sure whether you need Postgres and Mem0? Read [One machine or many?](/choose-a-mode), then follow [Set up Cully](/setup) to finish setup from `cully ui` or `cully setup`.
+
 Use `cully setup --all` for one local owner or `cully setup --mcp-url URL` for an existing deployment. Shared deployments use OAuth for each contributor’s private identity. Solo and IC describe these uses; no mode flag is needed.
 
 Follow the [quickstart](/quickstart) to run the memory stack on your laptop, or [connect to a remote MCP server](#connect-to-a-remote-memory-stack) to keep only the agent integration and advisor on your machine. The installer accepts `--agent claude`, `--agent codex`, `--agent cursor` or `--agent all`; every agent uses the single binary at `~/.local/bin/cully`. Without `--mcp-url`, run `cully setup --all` after installation to start the local memory stack and advisor daemon.

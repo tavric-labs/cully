@@ -5,6 +5,8 @@ description: Private work notes and session links for Solo and individual contri
 
 # Use Cully memory
 
+Working on one machine, or on many? [One machine or many?](/choose-a-mode) compares local mode and MCP mode, and [Set up Cully](/setup) walks through setup.
+
 Solo keeps records for one local owner. IC (individual contributor) lets people within a company or team use the same Cully, PostgreSQL, Mem0 and embedding services, with private records for each signed-in contributor. Shared infrastructure does not share notes. Existing [Team workflows](/team-workflows) use separate authorized project records; they never publish private notes automatically.
 
 Start with `cully setup --all` for a local owner, or `cully setup --mcp-url URL` for an existing deployment. Setup detects an OAuth challenge and directs you to sign in; contributors do not need to select IC. The server infers IC from OAuth and assigns each request's owner from verified sign-in. Solo and IC describe how the deployment is used; there is no mode flag. To enable sign-in on a new shared deployment, use `cully setup --all --oauth`; see [authentication](/oauth) for provider configuration.

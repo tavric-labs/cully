@@ -134,6 +134,13 @@ h1 em { color: #54926b; }
 .path-links a { color: var(--forest); font-size: 12px; font-weight: 800; }
 .path-links a:hover { text-decoration: underline; text-underline-offset: 4px; }
 .path-links span { margin-left: 5px; }
+.setup-strip { display: flex; flex-wrap: wrap; align-items: center; gap: 14px 28px; margin-top: 18px; padding: 20px 26px; border: 1px solid #d0dfcd; border-radius: 14px; background: #fffefa; color: var(--ink); font-size: 14px; }
+.setup-strip ol { display: flex; flex-wrap: wrap; gap: 8px 22px; margin: 0; padding: 0; list-style: none; counter-reset: setup; color: var(--ink-soft); }
+.setup-strip li { counter-increment: setup; }
+.setup-strip li::before { content: counter(setup) "."; margin-right: 6px; color: #3f7351; font-weight: 800; }
+.setup-strip code { color: var(--forest); font-weight: 700; overflow-wrap: anywhere; }
+.setup-strip a { margin-left: auto; color: var(--forest); font-size: 12px; font-weight: 800; }
+.setup-strip a:hover { text-decoration: underline; text-underline-offset: 4px; }
 
 .product-section, .architecture-section { padding-top: 112px; padding-bottom: 122px; }
 .section-intro { display: flex; justify-content: space-between; align-items: end; gap: 60px; margin-bottom: 50px; }
@@ -295,6 +302,9 @@ h1 em { color: #54926b; }
   .feature-card { padding-inline: 19px; }
 }
 @media (max-width: 760px) {
+  .paths-grid { grid-template-columns: 1fr; }
+  .setup-strip { padding: 18px; }
+  .setup-strip a { margin-left: 0; }
   .site-header { height: 72px; position: relative; }
   .brand { font-size: 27px; }
   .menu-toggle { display: flex; width: 42px; height: 42px; flex-direction: column; justify-content: center; align-items: center; gap: 5px; border: 1px solid var(--line); border-radius: 9px; background: #fffdf8; }

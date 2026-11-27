@@ -350,3 +350,7 @@ Every create, update, delete, approve, pause or resume of an agent, a background
 Proposals carry a `preview` ("What will change": fields, old to new) worked out from the same snapshots before you approve.
 
 Lifecycle: agents and proposals are active, stale or archived, and can be pinned. An agent not run for 30 days is stale; a proposal nobody acted on for 14 days is archived on its own, unless pinned. Archived things are hidden, never deleted. `POST /api/identities/{id}/pin` and `/archive`, `POST /api/suggestions/{id}/pin` and `/archive` take `{"on": false}` to undo; `GET /api/identities?archived=1` and `GET /api/suggestions?archived=1` list the archived ones.
+
+## Setup
+
+A guided Setup page, new in the next release, walks you through mode, the dev-workflow rules and suggestions. See [Set up Cully](/setup) and [One machine or many?](/choose-a-mode).
