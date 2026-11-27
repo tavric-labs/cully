@@ -259,6 +259,12 @@ func (a *uiAgent) answerPermission(c net.Conn) {
 // allow_always, deny or expired; when the request cannot be shown in full it is refused and the
 // second value says why. Any harness that asks before a tool call goes through here.
 func (a *uiAgent) askPermission(tool string, input json.RawMessage) (string, string) {
+	return a.askPermissionRated(tool, input, "", "")
+}
+
+// askPermissionRated is askPermission with a risk the caller has already worked out, for a request
+// whose risk the tool name and input alone do not show, such as a Codex file change.
+func (a *uiAgent) askPermissionRated(tool string, input json.RawMessage, rated, ratedWhy string) (string, string) {
 	if len(input) == 0 {
 		input = json.RawMessage("{}")
 	}
@@ -282,6 +288,9 @@ func (a *uiAgent) askPermission(tool string, input json.RawMessage) (string, str
 		return "allow", ""
 	}
 	risk, why := uiToolRisk(tool, input, a.worktree)
+	if rated != "" {
+		risk, why = rated, ratedWhy
+	}
 	p := &uiPermission{Risk: risk, RiskWhy: why, ID: uiNewID(), Tool: tool, Input: input, Summary: uiPermSummary(tool, input), At: time.Now().UTC(), Status: "pending", Hash: hex.EncodeToString(sum[:]), decide: make(chan string, 1)}
 	a.perm.list = append(a.perm.list, p)
 	if len(a.perm.list) > uiPermKeep {

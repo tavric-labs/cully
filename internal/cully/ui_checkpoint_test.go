@@ -314,3 +314,30 @@ func TestCheckpointGitFailsClosedAndNeverRunsExternalDiffOrTextconv(t *testing.T
 		t.Fatal("an external diff or text conversion planted in the config ran")
 	}
 }
+
+func TestCheckpointCommitNeverRunsASigningProgramFromTheConfig(t *testing.T) {
+	repo := t.TempDir()
+	marker := filepath.Join(t.TempDir(), "ran")
+	run := func(args ...string) string {
+		t.Helper()
+		c := exec.Command("git", args...)
+		c.Dir = repo
+		out, err := c.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %v: %v %s", args, err, out)
+		}
+		return strings.TrimSpace(string(out))
+	}
+	run("init", "-q")
+	run("config", "user.email", "t@example.com")
+	run("config", "user.name", "t")
+	run("config", "commit.gpgsign", "true")
+	run("config", "gpg.program", "touch "+marker)
+	tree := run("write-tree")
+	if _, err := uiGitRun(repo, []string{"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@example.com", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@example.com"}, "", "commit-tree", "--no-gpg-sign", tree, "-m", "x"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(marker); err == nil {
+		t.Fatal("a signing program planted in the config ran")
+	}
+}

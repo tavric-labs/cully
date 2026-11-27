@@ -59,7 +59,7 @@ var uiGitDirs sync.Map
 // replaced by a plain pass-through. It reads the config with the same git directory and environment
 // the real command will use, and with -z so a name cannot be mis-split. Reading the config runs nothing.
 func uiGitSafe(dir string, env []string) []string {
-	args := []string{"-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null", "-c", "core.untrackedCache=false", "-c", "core.attributesFile=/dev/null", "-c", "diff.external=", "-c", "core.pager=cat"}
+	args := []string{"-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null", "-c", "core.untrackedCache=false", "-c", "core.attributesFile=/dev/null", "-c", "diff.external=", "-c", "core.pager=cat", "-c", "commit.gpgSign=false", "-c", "tag.gpgSign=false", "-c", "gpg.program=false", "-c", "gpg.ssh.program=false", "-c", "gpg.x509.program=false"}
 	cmd := exec.Command("git", "config", "-z", "--get-regexp", `^filter\..*\.(clean|smudge|process|required)$`)
 	cmd.Dir = dir
 	cmd.Env = env
@@ -201,7 +201,7 @@ func (a *uiAgent) checkpoint(label string, turn int, force bool) (uiCheckpoint, 
 	}
 	idEnv := []string{"GIT_AUTHOR_NAME=Cully", "GIT_AUTHOR_EMAIL=cully@localhost", "GIT_COMMITTER_NAME=Cully", "GIT_COMMITTER_EMAIL=cully@localhost"}
 	msg := fmt.Sprintf("Cully checkpoint %d of task %s", n, a.taskID())
-	commit, err := uiGitRun(a.worktree, idEnv, "", "commit-tree", tree, "-m", msg)
+	commit, err := uiGitRun(a.worktree, idEnv, "", "commit-tree", "--no-gpg-sign", tree, "-m", msg)
 	if err != nil {
 		return uiCheckpoint{}, false, err
 	}

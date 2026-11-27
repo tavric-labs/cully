@@ -26,6 +26,8 @@ type uiCodexRunner struct {
 	a   *uiAgent
 	bin string
 
+	deny []string // Cully's block rules, applied to the commands Codex asks about
+
 	wmu   sync.Mutex // serialises writes to stdin
 	stdin io.WriteCloser
 
@@ -513,10 +515,18 @@ func (r *uiCodexRunner) serverRequest(m uiRPC) {
 	reply := func(result any) { _ = r.write(map[string]any{"id": m.ID, "result": result}) }
 	var tool string
 	var input map[string]any
+	var rated, ratedWhy string
+	var grantRoot string
 	switch m.Method {
 	case "item/commandExecution/requestApproval":
 		tool = "Bash"
-		input = map[string]any{"command": uiCodexCommand(m.Params), "cwd": uiCodexStr(m.Params, "cwd")}
+		cmd := uiCodexCommand(m.Params)
+		if rule := uiRuleBlocksCommand(r.deny, cmd); rule != "" {
+			reply(map[string]any{"decision": "decline"})
+			r.a.add(uiEvent{Kind: "note", Text: "Declined a command Codex asked to run: it matches your block list (" + rule + ")."})
+			return
+		}
+		input = map[string]any{"command": cmd, "cwd": uiCodexStr(m.Params, "cwd")}
 	case "item/fileChange/requestApproval":
 		tool = "Edit"
 		input = map[string]any{}
@@ -531,19 +541,25 @@ func (r *uiCodexRunner) serverRequest(m uiRPC) {
 		}
 		if s := uiCodexStr(m.Params, "grantRoot"); s != "" {
 			input["grantRoot"] = s
+			grantRoot = s
 		}
+		rated, ratedWhy = uiCodexFileRisk(paths, grantRoot, r.a.worktree)
 	default:
 		_ = r.write(map[string]any{"id": m.ID, "error": map[string]any{"code": -32601, "message": "Cully does not handle " + m.Method + " yet"}})
 		r.a.add(uiEvent{Kind: "note", Text: "Codex asked for something Cully cannot answer (" + m.Method + "); it was refused."})
 		return
 	}
 	raw, _ := json.Marshal(input)
-	decision, _ := r.a.askPermission(tool, raw)
+	decision, _ := r.a.askPermissionRated(tool, raw, rated, ratedWhy)
 	switch decision {
 	case "allow":
 		reply(map[string]any{"decision": "accept"})
 	case "allow_always":
-		reply(map[string]any{"decision": "acceptForSession"})
+		if grantRoot != "" {
+			reply(map[string]any{"decision": "accept"}) // a folder grant is never kept for the session
+		} else {
+			reply(map[string]any{"decision": "acceptForSession"})
+		}
 	default:
 		reply(map[string]any{"decision": "decline"})
 	}
@@ -569,6 +585,12 @@ func (a *uiAgent) runCodex(m *uiManager, prompt string) {
 	if a.req.Mode == "plan" {
 		mode = "plan"
 	}
+	deny, readOnly := m.uiCodexPolicy(mode == "plan", a.req.groups)
+	r.deny = deny
+	if readOnly {
+		mode = "plan" // Codex's sandbox is read only when you have not allowed it to edit
+	}
+	a.add(uiEvent{Kind: "note", Text: uiCodexLimits})
 	info := &uiRunInfo{Harness: "Codex", Interface: "Codex app-server, JSON-RPC over stdio", Permission: mode, Model: a.req.Model, Groups: []string{}, Allowed: []string{}, Blocked: []string{},
 		Asks: []string{"Commands that need to leave the sandbox", "File changes outside the workspace"}, McpMode: "all", Isolation: "worktree", Identity: a.req.identityName, Brief: []string{"Only your task"}}
 	if info.Model == "" {
