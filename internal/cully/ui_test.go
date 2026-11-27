@@ -75,7 +75,7 @@ func TestNonLoopbackWithoutTLSWarns(t *testing.T) {
 }
 
 func TestStaticAssetsEmbedded(t *testing.T) {
-	for _, name := range []string{"app.js", "md.js", "palette.js"} {
+	for _, name := range []string{"app.js", "md.js", "palette.js", "setup.js"} {
 		js, err := uiStaticFS.ReadFile("ui_static/" + name)
 		if err != nil {
 			t.Fatal(err)
