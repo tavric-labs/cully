@@ -237,3 +237,44 @@ func TestOldTaskRecordsLoadWithoutCheckpoints(t *testing.T) {
 		t.Fatalf("rec = %+v", rec)
 	}
 }
+
+// A task can plant git config in its worktree (a file-system monitor, a filter driver) that runs a
+// command when Cully snapshots it. Cully's git must run none of it.
+func TestCheckpointGitRunsNoCommandPlantedInTheWorktreeConfig(t *testing.T) {
+	repo := t.TempDir()
+	marker := filepath.Join(t.TempDir(), "ran")
+	run := func(args ...string) {
+		t.Helper()
+		c := exec.Command("git", args...)
+		c.Dir = repo
+		if out, err := c.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v %s", args, err, out)
+		}
+	}
+	run("init", "-q")
+	run("config", "user.email", "t@example.com")
+	run("config", "user.name", "t")
+	if err := os.WriteFile(filepath.Join(repo, ".gitattributes"), []byte("*.txt filter=evil\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, "a.txt"), []byte("hello\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run("config", "filter.evil.clean", "touch "+marker+"; cat")
+	run("config", "filter.evil.process", "touch "+marker)
+	run("config", "core.fsmonitor", "touch "+marker+"; echo")
+	idx := filepath.Join(t.TempDir(), "idx")
+	if _, err := uiGitRun(repo, []string{"GIT_INDEX_FILE=" + idx}, "", "add", "-A"); err != nil {
+		t.Fatalf("add -A: %v", err)
+	}
+	if _, err := uiGitRun(repo, []string{"GIT_INDEX_FILE=" + idx}, "", "write-tree"); err != nil {
+		t.Fatalf("write-tree: %v", err)
+	}
+	if _, err := os.Stat(marker); err == nil {
+		t.Fatal("a command planted in the worktree's git config ran")
+	}
+	// and the pinned git directory is the one found the first time
+	if gd, ok := uiGitDirs.Load(repo); !ok || !strings.HasSuffix(gd.(string), ".git") {
+		t.Errorf("git dir was not pinned: %v", gd)
+	}
+}

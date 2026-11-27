@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -48,10 +49,47 @@ type uiCheckpointList struct {
 	Checkpoints []uiCheckpoint `json:"checkpoints"`
 }
 
+// uiGitDirs remembers the git directory of each worktree the first time Cully snapshots it, which is
+// before the task's first turn. Later calls use that one, so a task that rewrites the worktree's
+// .git file cannot point Cully's git at another repository.
+var uiGitDirs sync.Map
+
+// uiGitSafe returns the settings that keep git from running commands the task could have planted in
+// its worktree's config: no file-system monitor, no hooks, and every configured filter driver
+// replaced by a plain pass-through. Reading the config runs nothing.
+func uiGitSafe(dir string) []string {
+	args := []string{"-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null", "-c", "core.untrackedCache=false", "-c", "core.attributesFile=/dev/null"}
+	out, err := exec.Command("git", "-C", dir, "config", "--get-regexp", `^filter\..*\.(clean|smudge|process|required)$`).Output()
+	if err != nil {
+		return args
+	}
+	seen := map[string]bool{}
+	for _, line := range strings.Split(string(out), "\n") {
+		key, _, _ := strings.Cut(line, " ")
+		if i := strings.LastIndex(key, "."); i > len("filter.") {
+			seen[key[:i]] = true
+		}
+	}
+	for name := range seen {
+		args = append(args, "-c", name+".clean=cat", "-c", name+".smudge=cat", "-c", name+".process=", "-c", name+".required=false")
+	}
+	return args
+}
+
 func uiGitRun(dir string, env []string, stdin string, args ...string) (string, error) {
-	cmd := exec.Command("git", args...)
+	pre := uiGitSafe(dir)
+	e := append(os.Environ(), "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=/dev/null", "GIT_OPTIONAL_LOCKS=0")
+	if gd, ok := uiGitDirs.Load(dir); ok {
+		e = append(e, "GIT_DIR="+gd.(string), "GIT_WORK_TREE="+dir)
+	} else if gd, err := exec.Command("git", "-C", dir, "rev-parse", "--absolute-git-dir").Output(); err == nil {
+		if d := strings.TrimSpace(string(gd)); d != "" {
+			uiGitDirs.Store(dir, d)
+			e = append(e, "GIT_DIR="+d, "GIT_WORK_TREE="+dir)
+		}
+	}
+	cmd := exec.Command("git", append(pre, args...)...)
 	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), env...)
+	cmd.Env = append(e, env...)
 	if stdin != "" {
 		cmd.Stdin = strings.NewReader(stdin)
 	}
