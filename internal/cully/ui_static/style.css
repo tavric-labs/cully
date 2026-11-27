@@ -1679,3 +1679,30 @@ mark { background: rgba(255, 200, 40, .38); color: inherit; border-radius: 3px; 
 .advmenu { position: relative; }
 .advmenu .pop-card { right: 0; left: auto; min-width: 280px; }
 @media (max-width: 800px) { .advrow { flex-direction: column; } .advact { justify-content: flex-start; max-width: none; } }
+
+/* Task cards: one size, so a list reads as a list */
+.home .tgrid, .tgrid { grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); grid-auto-rows: 1fr; gap: 14px; }
+.tcard2 { display: grid; grid-template-rows: auto auto 1fr auto; gap: 8px; height: 100%; min-height: 188px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 14px; background: var(--raised); transition: border-color .15s, box-shadow .15s; }
+.tcard2:hover { border-color: var(--line2); box-shadow: 0 4px 14px rgba(8, 20, 15, .06); }
+.tc-top { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--soft); }
+.tc-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--faint); flex: none; }
+.tone-good .tc-dot { background: var(--add-ink, #2e7d4f); }
+.tone-bad .tc-dot { background: var(--red); }
+.tone-wait .tc-dot { background: var(--amber); }
+.tone-info .tc-dot { background: var(--forest-hi); }
+.tc-status { font-weight: 600; color: var(--ink); }
+.tc-time { color: var(--faint); }
+.tc-title { margin: 0; font: 600 15.5px/1.3 var(--serif); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; min-height: 2.6em; }
+.tc-desc { margin: 0; font-size: 13px; line-height: 1.45; color: var(--soft); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; align-self: start; }
+.tc-desc.faint { color: var(--faint); }
+.tc-foot { display: flex; align-items: center; gap: 10px; padding-top: 8px; border-top: 1px solid var(--line); }
+.tc-meta { display: flex; gap: 6px; align-items: center; min-width: 0; flex: 1; overflow: hidden; flex-wrap: nowrap; }
+.tc-meta .chip { flex: none; max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tc-foot .btn { flex: none; }
+.tgrid > *, .tcard2, .tc-top, .tc-title, .tc-desc, .tc-foot { min-width: 0; }
+.tcard2 { overflow: hidden; }
+.tc-meta .chip { max-width: none; }
+.tc-meta .tc-folder { flex: 0 1 auto; min-width: 44px; max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tc-n { color: var(--soft); white-space: nowrap; }
+.tc-meta .tc-folder { min-width: 60px; }
+.tc-top .sp { flex: 1; }

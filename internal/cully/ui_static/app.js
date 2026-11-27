@@ -106,6 +106,17 @@
   const STATE_WORDS = { preparing: 'Getting ready', working: 'Working', waiting: 'Needs you', done: 'Done', failed: 'Failed', stopped: 'Stopped', queued: 'Queued' };
   const stateLabel = (a) => (a && typeof a === 'object' ? a.phaseLabel || STATE_WORDS[a.state] || a.state || '' : STATE_WORDS[a] || a || '');
   const phaseCls = (a) => (a && typeof a === 'object' ? a.state + ' ph-' + (a.phase || a.state) : a + ' ph-' + a);
+  // What to say a task was about, in one place so every list agrees. The summary comes first, then what you asked;
+  // a last line such as "turn done" says nothing, and a raw error is clipped (the full text stays in the tooltip).
+  const LOW_SIGNAL = /^(turn done|done|ok|okay|finished|complete|completed|stopped|started)\.?$/i;
+  function taskBlurb(t) {
+    const clean = (x) => String(x || '').replace(/\s+/g, ' ').trim();
+    const sum = clean(t.summary); const ask = clean(t.prompt); const last = clean(t.last);
+    if (sum) return { text: sum, full: sum };
+    if (last && !LOW_SIGNAL.test(last) && (t.state === 'failed' || last.length >= 24)) return { text: last, full: last, weak: t.state === 'failed' };
+    if (ask) return { text: 'Asked: ' + ask, full: ask, weak: true };
+    return { text: 'No summary yet. It appears once a session of this task has been analysed.', full: '', weak: true };
+  }
   const taskPair = (t) => {
     const ph = t.phase || t.state;
     const tone = { done: 'good', failed: 'bad', limit: 'bad', 'needs-you': 'wait', stuck: 'wait' }[ph] || 'info';
@@ -461,13 +472,17 @@
     const card = (t) => {
       const st = taskPair(t);
       const ag = [...new Set((t.sessions || []).map((x) => x.agent).filter(Boolean))];
-      return h('article', { class: 'tcard' },
-        h('div', { class: 'row' }, h('b', { class: 'ttitle' }, t.title), h('span', { class: 'chip fs-' + (st[1] === 'good' ? 'good' : st[1] === 'bad' ? 'bad' : st[1] === 'wait' ? 'wait' : 'info') }, st[0]), h('span', { class: 'sp' }), h('span', { class: 'faint small' }, ago(t.updated))),
-        (t.summary || t.last) ? h('p', { class: 'fprev' }, plainPreview(t.summary || t.last)) : null,
-        h('div', { class: 'row' }, t.repo ? h('span', { class: 'chip', title: t.repo }, icon('folder'), t.repo.split('/').filter(Boolean).pop()) : null,
-          (t.sessions || []).length ? h('span', { class: 'chip' }, t.sessions.length + (t.sessions.length === 1 ? ' session' : ' sessions')) : null, ...ag.map((x) => harnessChip(x)),
-          t.files ? h('span', { class: 'chip' }, t.files + (t.files === 1 ? ' file changed' : ' files changed')) : null, h('span', { class: 'sp' }),
-          t.live ? h('a', { class: 'btn small', href: '#/task/' + t.live }, 'Open') : h('button', { class: 'btn small', onclick: () => continueTaskDialog(t) }, icon('send'), 'Continue')));
+      const blurb = taskBlurb(t);
+      const folder = t.repo ? t.repo.split('/').filter(Boolean).pop() : '';
+      const go = t.live ? h('a', { class: 'btn small', href: '#/task/' + t.live }, 'Open') : h('button', { class: 'btn small', onclick: () => continueTaskDialog(t) }, icon('send'), 'Continue');
+      return h('article', { class: 'tcard2 tone-' + st[1] },
+        h('div', { class: 'tc-top' }, h('span', { class: 'tc-dot', 'aria-hidden': 'true' }), h('span', { class: 'tc-status' }, st[0]), h('span', { class: 'sp' }), (t.sessions || []).length > 1 ? h('span', { class: 'tc-n', title: 'Sessions in this task, across harnesses' }, t.sessions.length + ' sessions') : null, h('span', { class: 'tc-time' }, ago(t.updated))),
+        h('h4', { class: 'tc-title', title: t.title }, t.title),
+        h('p', { class: 'tc-desc' + (blurb.weak ? ' faint' : ''), title: blurb.full }, blurb.text),
+        h('div', { class: 'tc-foot' },
+          h('div', { class: 'tc-meta' }, folder ? h('span', { class: 'chip tc-folder', title: t.repo }, icon('folder'), folder) : null, ...ag.map((x) => harnessChip(x)),
+            t.files ? h('span', { class: 'chip' }, t.files + (t.files === 1 ? ' file' : ' files')) : null),
+          go));
     };
     box.replaceChildren(h('div', { class: 'row' }, h('h3', { class: 'section-h' }, 'Your tasks'), h('a', { class: 'linkbtn', href: '#/tasks' }, 'All tasks and sessions'), h('span', { class: 'sp' }), ...[['today', 'Today'], ['week', 'This week'], ['all', 'Earlier']].map(tab)),
       list.length ? h('div', { class: 'tgrid' }, ...list.slice(0, 24).map(card)) : h('p', { class: 'faint small' }, period === 'today' ? 'No tasks today yet.' : 'No tasks in this period.'));
@@ -2387,7 +2402,7 @@
         return h('article', { class: 'tcard' + (t.closed ? ' closed' : '') },
           h('div', { class: 'row' }, h('b', { class: 'ttitle' }, t.title), t.closed ? h('span', { class: 'chip' }, 'Closed') : h('span', { class: 'chip fs-' + (st[1] === 'good' ? 'good' : st[1] === 'bad' ? 'bad' : st[1] === 'wait' ? 'wait' : 'info') }, st[0]), h('span', { class: 'sp' }), h('span', { class: 'faint small' }, ago(t.updated))),
           t.why ? h('p', { class: 'twhy' }, t.why) : null,
-          (t.summary || t.last) ? h('p', { class: 'fprev' }, plainPreview(t.summary || t.last)) : null,
+          h('p', { class: 'fprev' }, plainPreview(taskBlurb(t).text)),
           h('div', { class: 'row' }, t.repo ? h('span', { class: 'chip', title: t.repo }, icon('folder'), t.repo.split('/').filter(Boolean).pop()) : null, ...[...new Set(ss.map((x) => x.agent).filter(Boolean))].map((x) => harnessChip(x)),
             t.files ? h('span', { class: 'chip' }, t.files + (t.files === 1 ? ' file' : ' files')) : null, t.runs ? h('span', { class: 'chip' }, t.runs + (t.runs === 1 ? ' run' : ' runs')) : null, memChip),
           ss.length ? det : null,
