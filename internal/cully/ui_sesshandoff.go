@@ -106,6 +106,12 @@ func uiSessionHandoff(e uiIndexed) string {
 			b.WriteString("- " + criterion + "\n")
 		}
 	}
+	if len(e.Steps) > 0 {
+		b.WriteString("Steps it went through (" + uiItoa(len(e.Steps)) + "):\n")
+		for _, t := range e.Steps {
+			b.WriteString("- [" + t.Status + "] " + t.Title + ": " + t.Story + "\n")
+		}
+	}
 	if e.File != "" {
 		b.WriteString("\nThe full record of that session is at " + e.File + ". Read it only if you need exact details.\n")
 	}

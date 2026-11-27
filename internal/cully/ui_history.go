@@ -51,17 +51,18 @@ type uiPastSession struct {
 }
 
 type uiLibSummary struct {
-	Task      string         `json:"task,omitempty"`
-	Completed string         `json:"completed,omitempty"`
-	OnTask    string         `json:"onTask,omitempty"`
-	Drift     string         `json:"drift,omitempty"`
-	Turns     int            `json:"turns"`
-	Tools     int            `json:"tools"`
-	Files     int            `json:"files"`
-	Checks    int            `json:"checks"`
-	Errors    int            `json:"errors"`
-	ToolNames map[string]int `json:"toolNames,omitempty"`
-	Named     bool           `json:"named"`
+	Task      string          `json:"task,omitempty"`
+	Completed string          `json:"completed,omitempty"`
+	OnTask    string          `json:"onTask,omitempty"`
+	Drift     string          `json:"drift,omitempty"`
+	Turns     int             `json:"turns"`
+	Tools     int             `json:"tools"`
+	Files     int             `json:"files"`
+	Checks    int             `json:"checks"`
+	Errors    int             `json:"errors"`
+	ToolNames map[string]int  `json:"toolNames,omitempty"`
+	Named     bool            `json:"named"`
+	Steps     []uiSessionStep `json:"steps,omitempty"`
 }
 
 type uiHistory struct {
@@ -333,7 +334,7 @@ func (m *uiManager) history(agent string, days int) uiHistory {
 			if s.Origin == "" {
 				s.Origin = e.Origin
 			}
-			s.Library = &uiLibSummary{Task: e.Task, Completed: e.Completed, OnTask: e.OnTask, Drift: e.Drift, Turns: e.Turns, Tools: e.Tools, Files: e.Files, Checks: e.Checks, Errors: e.Errors, ToolNames: e.ToolNames, Named: e.Source == "ai"}
+			s.Library = &uiLibSummary{Task: e.Task, Completed: e.Completed, OnTask: e.OnTask, Drift: e.Drift, Turns: e.Turns, Tools: e.Tools, Files: e.Files, Checks: e.Checks, Errors: e.Errors, ToolNames: e.ToolNames, Named: e.Source == "ai", Steps: e.Steps}
 		}
 		m.idxMu.Unlock()
 		h.Sessions = append(h.Sessions, s)

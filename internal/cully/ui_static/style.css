@@ -1585,3 +1585,21 @@ button.chip.harness { cursor: pointer; }
 .session-files { padding-left: 2ch; }
 .session-meta { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 6px 16px; }
 .session-meta dd { margin: 0; }
+.taskstories { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 8px; }
+.taskstories li { padding: 10px 12px; border-radius: 10px; background: var(--card, rgba(127,127,127,.08)); }
+.taskstories .hdesc { margin: 4px 0 0; }
+
+/* Resizable task list and side panel */
+.resizer { position: absolute; top: 0; bottom: 0; width: 7px; cursor: col-resize; z-index: 5; touch-action: none; }
+.resizer::after { content: ""; position: absolute; top: 0; bottom: 0; left: 3px; width: 1px; background: transparent; transition: background .15s; }
+.resizer:hover::after, .resizer.on::after, .resizer:focus-visible::after { background: var(--forest-hi); width: 2px; }
+.rail-rz { position: relative; flex: none; width: 6px; margin: 0 -3px; align-self: stretch; }
+.side-rz { left: -3px; }
+@media (min-width: 1180px) {
+  .agrid { grid-template-columns: minmax(320px, 1fr) minmax(300px, var(--side-w, 48%)); }
+}
+@media (max-width: 1179px) { .resizer { display: none; } }
+@media (max-width: 900px) { .rail-rz { display: none; } }
+.view.agents-view.rail-hidden .rail-rz { display: none; }
+.gw-hbar { width: 100%; margin: 4px 0 0; accent-color: var(--forest-hi); }
+.gw-hbar:disabled { opacity: .35; }

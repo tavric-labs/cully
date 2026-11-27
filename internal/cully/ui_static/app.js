@@ -644,6 +644,7 @@
     const grid = h('div', { class: 'agrid', id: 'agrid', 'data-show': S.tab }, h('div', { class: 'col chatcol' }, body, activity, permBox, quick, composer, statusline), side);
     $('stage').className = 'stage agent-stage';
     $('stage').replaceChildren(ahead, sub, ctxnote, stepper, tabs, grid);
+    installRailResizer(); installSideResizer(grid, side); applyPanelWidths();
     body.after(jump);
     body.addEventListener('scroll', () => { const atEnd = body.scrollTop + body.clientHeight >= body.scrollHeight - 60; if (atEnd && S.feed) S.feed.unseen = 0; paintJump(); });
     body.addEventListener('keydown', (e) => { if (e.key === 'End') { e.preventDefault(); body.scrollTo({ top: body.scrollHeight, behavior: 'smooth' }); } else if (e.key === 'Home') { e.preventDefault(); body.scrollTo({ top: 0, behavior: 'smooth' }); } });
@@ -1340,6 +1341,38 @@
       h('p', { class: 'faint small' }, view.note || ''));
     body.scrollTop = atEnd && live ? body.scrollHeight : keep;
   }
+  // Drag handles that resize the task list on the left and the Graph/Calls/Changes/Summary panel on the right.
+  // The widths are remembered in this browser.
+  const PANEL_KEY = 'cully.panelw';
+  function panelWidths() { try { return JSON.parse(localStorage.getItem(PANEL_KEY)) || {}; } catch (_) { return {}; } }
+  function savePanelWidth(k, v) { const w = panelWidths(); w[k] = Math.round(v); try { localStorage.setItem(PANEL_KEY, JSON.stringify(w)); } catch (_) {} }
+  function applyPanelWidths() {
+    const w = panelWidths(); const rail = document.querySelector('.rail');
+    if (rail && w.rail) rail.style.width = w.rail + 'px';
+    const grid = $('agrid'); if (grid && w.side) grid.style.setProperty('--side-w', w.side + 'px');
+  }
+  function dragHandle(cls, label, getStart, onMove, onEnd) {
+    const hd = h('div', { class: 'resizer ' + cls, role: 'separator', 'aria-orientation': 'vertical', 'aria-label': label, tabindex: '0', title: 'Drag to resize; double-click to reset' });
+    hd.addEventListener('pointerdown', (e) => { e.preventDefault(); const x0 = e.clientX; const start = getStart(); hd.setPointerCapture(e.pointerId); hd.classList.add('on');
+      const mv = (ev) => onMove(start, ev.clientX - x0); const up = () => { hd.classList.remove('on'); hd.removeEventListener('pointermove', mv); hd.removeEventListener('pointerup', up); hd.removeEventListener('pointercancel', up); onEnd(); };
+      hd.addEventListener('pointermove', mv); hd.addEventListener('pointerup', up); hd.addEventListener('pointercancel', up); });
+    return hd;
+  }
+  function installRailResizer() {
+    const rail = document.querySelector('.rail'); if (!rail || rail.nextElementSibling && rail.nextElementSibling.classList.contains('rail-rz')) return;
+    const hd = dragHandle('rail-rz', 'Resize the task list', () => rail.getBoundingClientRect().width,
+      (w0, dx) => { rail.style.width = Math.min(640, Math.max(220, w0 + dx)) + 'px'; },
+      () => savePanelWidth('rail', rail.getBoundingClientRect().width));
+    hd.addEventListener('dblclick', () => { rail.style.width = ''; const w = panelWidths(); delete w.rail; try { localStorage.setItem(PANEL_KEY, JSON.stringify(w)); } catch (_) {} });
+    rail.after(hd);
+  }
+  function installSideResizer(grid, side) {
+    side.style.position = 'relative';
+    side.append(dragHandle('side-rz', 'Resize the side panel', () => side.getBoundingClientRect().width,
+      (w0, dx) => { const max = Math.max(360, grid.getBoundingClientRect().width - 320); grid.style.setProperty('--side-w', Math.min(max, Math.max(300, w0 - dx)) + 'px'); },
+      () => savePanelWidth('side', side.getBoundingClientRect().width)));
+    side.querySelector('.resizer').addEventListener('dblclick', () => { grid.style.removeProperty('--side-w'); const w = panelWidths(); delete w.side; try { localStorage.setItem(PANEL_KEY, JSON.stringify(w)); } catch (_) {} });
+  }
   // ---- the graph window: a large canvas with every state as a node, and a panel for the one you pick ----
   function openGraphWindow(a, focusId) {
     const G = window.CullyGraph;
@@ -1352,7 +1385,13 @@
     const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
     const size = () => { const r = canvas.getBoundingClientRect(); return { w: Math.max(200, r.width), h: Math.max(200, r.height) }; };
     let vp = null;
-    const apply = () => { if (vp) vp.setAttribute('transform', 'translate(' + st.tx.toFixed(1) + ' ' + st.ty.toFixed(1) + ') scale(' + st.scale.toFixed(3) + ')'); canvas.classList.toggle('far', st.scale < 0.6); };
+    const hbar = h('input', { type: 'range', class: 'gw-hbar', min: '0', max: '1000', value: '0', 'aria-label': 'Scroll the graph left and right', title: 'Scroll left and right' });
+    // The scroll range is the graph's width at the current zoom, with a margin so the ends stay reachable.
+    const hrange = () => { const r = size(); const cw = st.L ? st.L.width * st.scale : 0; const margin = 40; return { max: margin, min: Math.min(margin, r.w - cw - margin) }; };
+    const syncBar = () => { const g = hrange(); hbar.disabled = !(g.max - g.min > 1); hbar.value = String(g.max - g.min > 1 ? Math.round(((g.max - clamp(st.tx, g.min, g.max)) / (g.max - g.min)) * 1000) : 0); };
+    hbar.addEventListener('input', () => { const g = hrange(); st.tx = g.max - (Number(hbar.value) / 1000) * (g.max - g.min); applyT(); });
+    const applyT = () => { if (vp) vp.setAttribute('transform', 'translate(' + st.tx.toFixed(1) + ' ' + st.ty.toFixed(1) + ') scale(' + st.scale.toFixed(3) + ')'); canvas.classList.toggle('far', st.scale < 0.6); };
+    const apply = () => { applyT(); syncBar(); };
     const fit = () => { if (!st.L) return; const r = size(); st.scale = clamp(Math.min((r.w - 40) / st.L.width, (r.h - 40) / st.L.height), 0.25, 1.3); st.tx = (r.w - st.L.width * st.scale) / 2; st.ty = (r.h - st.L.height * st.scale) / 2; apply(); };
     const centerOn = (id) => { const p = st.L && st.L.nodes.find((x) => x.id === id); if (!p) return; const r = size(); st.tx = r.w / 2 - (p.x + p.w / 2) * st.scale; st.ty = r.h / 2 - (p.y + p.h / 2) * st.scale; apply(); };
     const zoomAt = (f, mx, my) => { const r = size(); mx = mx == null ? r.w / 2 : mx; my = my == null ? r.h / 2 : my; const ns = clamp(st.scale * f, 0.2, 2.5); st.tx = mx - (mx - st.tx) * (ns / st.scale); st.ty = my - (my - st.ty) * (ns / st.scale); st.scale = ns; apply(); };
@@ -1456,7 +1495,7 @@
     canvas.addEventListener('pointermove', (e) => { if (!drag) return; const dx = e.clientX - drag.x; const dy = e.clientY - drag.y; if (Math.abs(dx) + Math.abs(dy) > 4) st.moved = true; st.tx = drag.tx + dx; st.ty = drag.ty + dy; apply(); });
     const endDrag = () => { drag = null; canvas.classList.remove('grab'); setTimeout(() => { st.moved = false; }, 0); };
     canvas.addEventListener('pointerup', endDrag); canvas.addEventListener('pointercancel', endDrag);
-    canvas.addEventListener('wheel', (e) => { e.preventDefault(); const r = canvas.getBoundingClientRect(); zoomAt(e.deltaY < 0 ? 1.12 : 1 / 1.12, e.clientX - r.left, e.clientY - r.top); }, { passive: false });
+    canvas.addEventListener('wheel', (e) => { e.preventDefault(); if (e.shiftKey || Math.abs(e.deltaX) > Math.abs(e.deltaY)) { st.tx -= (e.deltaX || e.deltaY); apply(); return; } const r = canvas.getBoundingClientRect(); zoomAt(e.deltaY < 0 ? 1.12 : 1 / 1.12, e.clientX - r.left, e.clientY - r.top); }, { passive: false });
     canvas.addEventListener('keydown', (e) => {
       if (e.key === 'ArrowRight' || e.key === 'ArrowDown') { e.preventDefault(); step(1); }
       else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') { e.preventDefault(); step(-1); }
@@ -1469,7 +1508,7 @@
         zbtn('-', 'Zoom out', () => zoomAt(1 / 1.2)), zbtn('+', 'Zoom in', () => zoomAt(1.2)), zbtn('Fit', 'Fit the whole graph', fit),
         zbtn('Latest', 'Go to the latest state', () => { const l = nodes(); if (l.length) { st.scale = 1; select(l[l.length - 1].id, true); } }),
         h('button', { class: 'btn ghost small', onclick: closeGraphWindow }, 'Close')),
-      h('div', { class: 'gw-body-wrap' }, h('div', { class: 'gw-main' }, canvas, stripBox, h('p', { class: 'faint small gw-note' }, 'Observed by Cully, not a plan it follows. It cannot see inside the harness, so steps between tool calls are inferred.')), panel));
+      h('div', { class: 'gw-body-wrap' }, h('div', { class: 'gw-main' }, canvas, hbar, stripBox, h('p', { class: 'faint small gw-note' }, 'Observed by Cully, not a plan it follows. It cannot see inside the harness, so steps between tool calls are inferred.')), panel));
     const bg = h('div', { class: 'modal-bg', onclick: (e) => { if (e.target === bg) closeGraphWindow(); } }, modal);
     $('modal-root').replaceChildren(bg);
     S.modal = { agent: 'graphwin' };
@@ -1524,7 +1563,8 @@
     try {
       if (kind === 'handoff') {
         const sum = await api('/api/agents/' + a.id + '/summary');
-        body.replaceChildren(h('div', { class: 'toolbar slim' }, h('div', { class: 'actions' }, copyBtn('Copy for another agent', () => api('/api/agents/' + a.id + '/handoff')))), renderSummary(sum, { agent: a }));
+        const tsec = await taskSessionsSection(a);
+        body.replaceChildren(h('div', { class: 'toolbar slim' }, h('div', { class: 'actions' }, copyBtn('Copy for another agent', () => api('/api/agents/' + a.id + '/handoff')))), tsec, renderSummary(sum, { agent: a }));
         return;
       }
       const cpNode = await checkpointSection(a);
@@ -4019,12 +4059,37 @@
     document.addEventListener('keydown', escClose);
     inp.focus(); inp.select();
   }
+  const TASK_STATUS = { done: ['Done', 'ok'], partly: ['Partly done', ''], open: ['Not finished', 'warn'] };
+  // One card per job the session covered: its title, how it ended and what happened.
+  function taskStories(tasks, empty) {
+    if (!tasks || !tasks.length) return h('p', { class: 'faint small' }, empty);
+    return h('ol', { class: 'taskstories' }, ...tasks.map((t) => { const st = TASK_STATUS[t.status] || TASK_STATUS.open;
+      return h('li', {}, h('div', { class: 'row' }, h('b', {}, t.title), h('span', { class: 'chip ' + st[1] }, st[0])), h('p', { class: 'hdesc' }, t.story)); }));
+  }
+  // A task can span several sessions, across harnesses. This lists each one with its own story.
+  async function taskSessionsSection(a) {
+    let rec = null;
+    try { rec = (await api('/api/tasks?range=all')).find((t) => t.id === a.id); } catch (_) {}
+    const sess = (rec && rec.sessions) || [];
+    if (!sess.length) return null;
+    const lib = await sessionIndex();
+    const harnesses = new Set(sess.map((x) => x.agent).filter(Boolean));
+    const cards = sess.map((x, i) => { const k = lib.get(x.id); const named = k && k.source === 'ai';
+      return h('li', {}, h('div', { class: 'row' }, h('span', { class: 'faint small' }, (i + 1) + '.'), harnessChip(x.agent), h('b', {}, (k && (k.title || k.name)) || 'Session ' + x.id.slice(0, 8)),
+          k && k.completed ? h('span', { class: 'chip ' + (k.completed === 'yes' ? 'ok' : k.completed === 'no' ? 'warn' : '') }, DONE_LABEL[k.completed] || k.completed) : null,
+          x.reason ? h('span', { class: 'chip' }, 'Switched: ' + x.reason) : null),
+        h('p', { class: 'hdesc' }, named && k.description ? k.description : 'Not summarised yet. Open the session and use Summarize.'),
+        k && k.steps && k.steps.length ? h('details', {}, h('summary', {}, k.steps.length + (k.steps.length === 1 ? ' step' : ' steps')), taskStories(k.steps)) : null,
+        h('a', { class: 'btn ghost small', href: '#/sessions/' + x.id }, 'Open session')); });
+    return h('div', { class: 'tsessions' }, h('h3', { class: 'section-h' }, 'Sessions in this task (' + sess.length + (harnesses.size > 1 ? ', ' + harnesses.size + ' harnesses' : '') + ')'), h('ol', { class: 'taskstories' }, ...cards));
+  }
   // What this session did, shown before it is resumed.
   function sessionSummary(x) {
     const lib = x.library; const kids = [];
     if (lib && lib.task) kids.push(h('p', {}, h('b', {}, 'Goal: '), lib.task));
     if (x.description) kids.push(h('p', {}, h('b', {}, 'What it did: '), x.description));
     if (lib && lib.completed) kids.push(h('p', {}, h('b', {}, 'Where it ended: '), h('span', { class: 'chip ' + (lib.completed === 'yes' ? 'ok' : lib.completed === 'no' ? 'warn' : '') }, DONE_LABEL[lib.completed] || lib.completed), lib.onTask === 'drifted' ? h('span', { class: 'chip warn' }, 'Drifted') : null));
+    if (lib && lib.steps && lib.steps.length) kids.push(h('div', {}, h('b', {}, 'Steps (' + lib.steps.length + ')'), taskStories(lib.steps)));
     if (lib && lib.drift) kids.push(h('p', { class: 'hdiff' }, h('b', {}, 'Drift: '), lib.drift));
     if (x.different && x.different !== 'Nothing notable.') kids.push(h('p', { class: 'hdiff' }, h('b', {}, 'Could go better: '), x.different));
     if (lib) kids.push(h('div', { class: 'row' }, x.activeSec ? h('span', { class: 'chip' }, dur(x.activeSec) + ' worked') : null, h('span', { class: 'chip' }, lib.turns + (lib.turns === 1 ? ' request' : ' requests')), h('span', { class: 'chip' }, lib.tools + ' tool calls'),
@@ -4271,14 +4336,16 @@
       box.replaceChildren(back, toolbar(x.title || x.name, x.cwd,
         refreshBtn(() => renderSessionDetail(id)),
         h('button', { class: 'btn', disabled: !exists, onclick: () => continueAsTask(x) }, icon('plus'), 'Continue as a task')),
-        h('div', { class: 'row' }, harnessChip(x.agent), x.origin ? h('span', { class: 'chip' }, x.origin) : null,
-          x.branch ? h('span', { class: 'chip mono' }, icon('branch'), x.branch) : null,
+        h('div', { class: 'row' }, harnessChip(x.agent),
+          x.branch && x.branch !== 'HEAD' ? h('span', { class: 'chip mono' }, icon('branch'), x.branch) : null,
           exists ? null : h('span', { class: 'chip warn' }, 'Folder is gone')),
         sessionSection('What happened',
           x.task ? h('p', {}, h('b', {}, 'Goal '), x.task) : null,
           h('p', {}, x.description || 'No activity summary is available yet.'),
           x.criteria && x.criteria.length ? h('details', {}, h('summary', {}, 'How to verify the goal'), h('ul', {}, ...x.criteria.map((v) => h('li', {}, v)))) : null,
           h('div', { class: 'row' }, summary)),
+        sessionSection('Steps in this session' + (x.steps && x.steps.length ? ' (' + x.steps.length + ')' : ''),
+          taskStories(x.steps, 'No step breakdown yet. Use Summarize or let background analysis name this session again.')),
         sessionSection('Session health',
           h('div', { class: 'row' }, x.turns || x.tools ? ring(x.health, 48) : null,
             h('b', {}, DONE_LABEL[x.completed] || 'Outcome unassessed'),

@@ -81,3 +81,21 @@ func TestSessionSummaryIncludesFollowUpsAndStaysOnTheSessionPage(t *testing.T) {
 		t.Fatalf("detail = %+v, err = %v", detail, err)
 	}
 }
+
+func TestParseVerdictSteps(t *testing.T) {
+	v := uiParseVerdict("COMPLETED: partly\nITEM: Build session UI | done | Built the page.\nITEM: Fix scan | weird | Left open.\nITEM: |done|no title\nITEM: bad line")
+	if len(v.Steps) != 2 || v.Steps[0].Status != "done" || v.Steps[1].Status != "open" || v.Steps[1].Story != "Left open." {
+		t.Fatalf("tasks = %+v", v.Steps)
+	}
+}
+
+func TestDigestKeepsEveryRequest(t *testing.T) {
+	var d uiDigest
+	d.request("first job")
+	d.reply("did first")
+	d.request("second job")
+	d.reply("did second")
+	if len(d.Turns) != 2 || d.Turns[0].Reply != "did first" || d.Turns[1].Request != "second job" {
+		t.Fatalf("turns = %+v", d.Turns)
+	}
+}
