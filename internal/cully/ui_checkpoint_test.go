@@ -278,3 +278,39 @@ func TestCheckpointGitRunsNoCommandPlantedInTheWorktreeConfig(t *testing.T) {
 		t.Errorf("git dir was not pinned: %v", gd)
 	}
 }
+
+func TestCheckpointGitFailsClosedAndNeverRunsExternalDiffOrTextconv(t *testing.T) {
+	if _, err := uiGitRun(t.TempDir(), nil, "", "status"); err == nil {
+		t.Error("git must not run in a folder whose git directory cannot be determined")
+	}
+	repo := t.TempDir()
+	marker := filepath.Join(t.TempDir(), "ran")
+	run := func(args ...string) {
+		t.Helper()
+		c := exec.Command("git", args...)
+		c.Dir = repo
+		if out, err := c.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v %s", args, err, out)
+		}
+	}
+	run("init", "-q")
+	run("config", "user.email", "t@example.com")
+	run("config", "user.name", "t")
+	_ = os.WriteFile(filepath.Join(repo, ".gitattributes"), []byte("*.txt diff=evil\n"), 0o644)
+	_ = os.WriteFile(filepath.Join(repo, "a.txt"), []byte("one\n"), 0o644)
+	run("add", "-A")
+	run("commit", "-q", "-m", "one")
+	t1, _ := uiGitRun(repo, nil, "", "rev-parse", "HEAD^{tree}")
+	_ = os.WriteFile(filepath.Join(repo, "a.txt"), []byte("two\n"), 0o644)
+	run("add", "-A")
+	run("commit", "-q", "-m", "two")
+	t2, _ := uiGitRun(repo, nil, "", "rev-parse", "HEAD^{tree}")
+	run("config", "diff.evil.textconv", "touch "+marker+"; cat")
+	run("config", "diff.external", "touch "+marker)
+	if _, err := uiGitRun(repo, nil, "", "diff", "--no-ext-diff", "--no-textconv", strings.TrimSpace(t1), strings.TrimSpace(t2)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(marker); err == nil {
+		t.Fatal("an external diff or text conversion planted in the config ran")
+	}
+}

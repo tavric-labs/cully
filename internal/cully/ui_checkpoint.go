@@ -56,16 +56,20 @@ var uiGitDirs sync.Map
 
 // uiGitSafe returns the settings that keep git from running commands the task could have planted in
 // its worktree's config: no file-system monitor, no hooks, and every configured filter driver
-// replaced by a plain pass-through. Reading the config runs nothing.
-func uiGitSafe(dir string) []string {
-	args := []string{"-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null", "-c", "core.untrackedCache=false", "-c", "core.attributesFile=/dev/null"}
-	out, err := exec.Command("git", "-C", dir, "config", "--get-regexp", `^filter\..*\.(clean|smudge|process|required)$`).Output()
+// replaced by a plain pass-through. It reads the config with the same git directory and environment
+// the real command will use, and with -z so a name cannot be mis-split. Reading the config runs nothing.
+func uiGitSafe(dir string, env []string) []string {
+	args := []string{"-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null", "-c", "core.untrackedCache=false", "-c", "core.attributesFile=/dev/null", "-c", "diff.external=", "-c", "core.pager=cat"}
+	cmd := exec.Command("git", "config", "-z", "--get-regexp", `^filter\..*\.(clean|smudge|process|required)$`)
+	cmd.Dir = dir
+	cmd.Env = env
+	out, err := cmd.Output()
 	if err != nil {
 		return args
 	}
 	seen := map[string]bool{}
-	for _, line := range strings.Split(string(out), "\n") {
-		key, _, _ := strings.Cut(line, " ")
+	for _, entry := range strings.Split(string(out), "\x00") {
+		key, _, _ := strings.Cut(entry, "\n")
 		if i := strings.LastIndex(key, "."); i > len("filter.") {
 			seen[key[:i]] = true
 		}
@@ -76,20 +80,37 @@ func uiGitSafe(dir string) []string {
 	return args
 }
 
-func uiGitRun(dir string, env []string, stdin string, args ...string) (string, error) {
-	pre := uiGitSafe(dir)
-	e := append(os.Environ(), "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=/dev/null", "GIT_OPTIONAL_LOCKS=0")
+// uiGitDirFor finds the git directory of a worktree once and keeps it. It fails closed: with no
+// directory it can trust, nothing runs.
+func uiGitDirFor(dir string) (string, error) {
 	if gd, ok := uiGitDirs.Load(dir); ok {
-		e = append(e, "GIT_DIR="+gd.(string), "GIT_WORK_TREE="+dir)
-	} else if gd, err := exec.Command("git", "-C", dir, "rev-parse", "--absolute-git-dir").Output(); err == nil {
-		if d := strings.TrimSpace(string(gd)); d != "" {
-			uiGitDirs.Store(dir, d)
-			e = append(e, "GIT_DIR="+d, "GIT_WORK_TREE="+dir)
-		}
+		return gd.(string), nil
 	}
+	cmd := exec.Command("git", "rev-parse", "--absolute-git-dir")
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(), "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=/dev/null")
+	out, err := cmd.Output()
+	gd := strings.TrimSpace(string(out))
+	if err != nil || gd == "" || !filepath.IsAbs(gd) {
+		return "", fmt.Errorf("git: the git directory of %s cannot be determined", dir)
+	}
+	if st, err := os.Stat(gd); err != nil || !st.IsDir() {
+		return "", fmt.Errorf("git: the git directory of %s does not exist", dir)
+	}
+	uiGitDirs.Store(dir, gd)
+	return gd, nil
+}
+
+func uiGitRun(dir string, env []string, stdin string, args ...string) (string, error) {
+	gd, err := uiGitDirFor(dir)
+	if err != nil {
+		return "", err
+	}
+	base := append(os.Environ(), "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=/dev/null", "GIT_OPTIONAL_LOCKS=0", "GIT_DIR="+gd, "GIT_WORK_TREE="+dir)
+	pre := uiGitSafe(dir, base)
 	cmd := exec.Command("git", append(pre, args...)...)
 	cmd.Dir = dir
-	cmd.Env = append(e, env...)
+	cmd.Env = append(base, env...)
 	if stdin != "" {
 		cmd.Stdin = strings.NewReader(stdin)
 	}
@@ -278,10 +299,10 @@ func (a *uiAgent) findCheckpoint(n int) (uiCheckpoint, bool) {
 // checkpointDiff shows what one turn changed.
 func (a *uiAgent) checkpointDiff(cp uiCheckpoint) string {
 	var b strings.Builder
-	if stat, _ := uiGitRun(a.worktree, nil, "", "diff", "--stat", cp.Prev, cp.Tree); strings.TrimSpace(stat) != "" {
+	if stat, _ := uiGitRun(a.worktree, nil, "", "diff", "--no-ext-diff", "--no-textconv", "--stat", cp.Prev, cp.Tree); strings.TrimSpace(stat) != "" {
 		b.WriteString(stat + "\n")
 	}
-	full, _ := uiGitRun(a.worktree, nil, "", "diff", cp.Prev, cp.Tree)
+	full, _ := uiGitRun(a.worktree, nil, "", "diff", "--no-ext-diff", "--no-textconv", cp.Prev, cp.Tree)
 	if len(full) > uiDiffMax {
 		full = full[:uiDiffMax] + "\n... diff cut here\n"
 	}
