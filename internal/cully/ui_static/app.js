@@ -4441,6 +4441,105 @@
     }
   }
 
+  // ---- The journey: every tool call of a session as a graph you can play. One lane per kind of tool, one node per
+  // call in order, failures and repeated calls marked, with play, step, speed and a scrubber, and the call's
+  // parameters beside it. It is drawn from the harness's own record, so Cursor (no timestamps, no results) shows
+  // order only. ----
+  const JOURNEY_LANES = [['edit', 'File edits'], ['read', 'Reading and searching'], ['shell', 'Shell commands'], ['web', 'Web'], ['agent', 'Subagents'], ['mcp', 'MCP tools'], ['other', 'Other tools']];
+  function journeyKind(name) {
+    const n = name || '';
+    if (n.startsWith('mcp__')) return 'mcp';
+    if (/^(Edit|Write|MultiEdit|NotebookEdit|apply_patch|StrReplace|ApplyPatch)$/.test(n)) return 'edit';
+    if (/^(Read|Glob|Grep|LS|NotebookRead|Search|ReadFile)$/.test(n)) return 'read';
+    if (/^(Bash|BashOutput|KillShell|exec_command|shell|Shell)$/.test(n)) return 'shell';
+    if (/^(WebSearch|WebFetch)$/.test(n)) return 'web';
+    if (/^(Task|Agent)$/.test(n)) return 'agent';
+    return 'other';
+  }
+  function journeyView(calls) {
+    const NS = 'http://www.w3.org/2000/svg';
+    const el = (tag, attrs, ...kids) => { const n = document.createElementNS(NS, tag); for (const [k, v] of Object.entries(attrs || {})) n.setAttribute(k, v); for (const c of kids) if (c) n.append(c); return n; };
+    const n = calls.length;
+    const step = 20, padX = 14, laneH = 34, padY = 14;
+    const lanes = JOURNEY_LANES.filter(([k]) => calls.some((c) => journeyKind(c.name) === k));
+    const laneAt = Object.fromEntries(lanes.map(([k], i) => [k, i]));
+    const W = padX * 2 + n * step, H = padY * 2 + lanes.length * laneH;
+    const X = (i) => padX + i * step + step / 2;
+    const Y = (c) => padY + laneAt[journeyKind(c.name)] * laneH + laneH / 2;
+    // A call repeated three or more times in a row, with the same arguments, is the loop the research warns about.
+    const sig = calls.map((c) => (c.name || '') + '|' + (c.params || ''));
+    const rep = new Array(n).fill(false);
+    for (let i = 0; i < n;) { let j = i; while (j + 1 < n && sig[j + 1] === sig[i]) j++; if (j - i >= 2) for (let k = i; k <= j; k++) rep[k] = true; i = j + 1; }
+    const svg = el('svg', { class: 'jsvg', width: W, height: H, viewBox: '0 0 ' + W + ' ' + H, role: 'img', 'aria-label': 'The session as a graph: one node per tool call, in order' });
+    lanes.forEach((_, i) => svg.append(el('rect', { class: 'jlane' + (i % 2 ? ' alt' : ''), x: 0, y: padY + i * laneH, width: W, height: laneH })));
+    const edges = [], nodes = [];
+    for (let i = 0; i + 1 < n; i++) {
+      const x1 = X(i), y1 = Y(calls[i]), x2 = X(i + 1), y2 = Y(calls[i + 1]); const xm = (x1 + x2) / 2;
+      const e = el('path', { class: 'jedge', d: 'M' + x1 + ' ' + y1 + ' C' + xm + ' ' + y1 + ' ' + xm + ' ' + y2 + ' ' + x2 + ' ' + y2 }); edges.push(e); svg.append(e);
+    }
+    const marker = el('line', { class: 'jmark', x1: 0, x2: 0, y1: 0, y2: H });
+    svg.append(marker);
+    let cur = n - 1; let timer = 0;
+    calls.forEach((c, i) => {
+      const k = journeyKind(c.name);
+      const g = el('g', { class: 'jnode jk-' + k + (c.result === 'failed' ? ' failed' : '') + (rep[i] ? ' rep' : '') },
+        el('title', {}, '#' + c.number + ' ' + (c.name || 'tool') + (c.result === 'failed' ? ', failed' : '') + (rep[i] ? ', repeated' : '')),
+        rep[i] ? el('circle', { class: 'jrep', cx: X(i), cy: Y(c), r: 9 }) : null,
+        el('circle', { class: 'jdot', cx: X(i), cy: Y(c), r: 5.5 }));
+      g.addEventListener('click', () => { pause(); go(i); });
+      nodes.push(g); svg.append(g);
+    });
+    const labels = h('div', { class: 'jlabels', 'aria-hidden': 'true' }, ...lanes.map(([k, l]) => h('div', { class: 'jlab jk-' + k }, h('i', {}), l)));
+    labels.style.paddingTop = padY + 'px';
+    for (const lab of labels.children) lab.style.height = laneH + 'px'; // set as a property: the h() helper does not take a style string
+    const scroller = h('div', { class: 'jscroll', tabindex: '0', 'aria-label': 'Scroll the journey left and right' }, svg);
+    const detail = h('div', { class: 'jdetail', 'aria-live': 'polite' });
+    const counter = h('span', { class: 'jcount faint small' });
+    const bar = h('input', { type: 'range', class: 'jbar', min: '0', max: String(Math.max(0, n - 1)), value: String(cur), 'aria-label': 'Position in the session' });
+    const playBtn = h('button', { type: 'button', class: 'btn small', title: 'Play the journey from the start (Space)' }, icon('send'), 'Play');
+    const prev = h('button', { type: 'button', class: 'btn ghost small', 'aria-label': 'Previous call', title: 'Previous call (Left arrow)' }, '‹');
+    const next = h('button', { type: 'button', class: 'btn ghost small', 'aria-label': 'Next call', title: 'Next call (Right arrow)' }, '›');
+    const speed = h('select', { 'aria-label': 'Playback speed', class: 'jsel' }, ...[['1', 'Slow'], ['3', 'Normal'], ['8', 'Fast'], ['25', 'Very fast']].map(([v, l]) => h('option', { value: v }, l)));
+    speed.value = '3';
+    const paint = (i) => { nodes[i].classList.toggle('future', i > cur); nodes[i].classList.toggle('now', i === cur); if (i < edges.length) edges[i].classList.toggle('future', i >= cur); };
+    const showDetail = () => {
+      const c = calls[cur]; if (!c) { detail.replaceChildren(); return; }
+      const k = journeyKind(c.name); const lane = (JOURNEY_LANES.find((l) => l[0] === k) || [])[1] || '';
+      detail.replaceChildren(h('div', { class: 'row' }, h('span', { class: 'chip jchip jk-' + k }, lane), h('b', { class: 'mono' }, c.name || 'Unnamed tool'), h('span', { class: 'faint small' }, '#' + c.number + ' of ' + n),
+        c.at ? h('time', { datetime: c.at, class: 'faint small' }, sessionDate(c.at)) : null,
+        h('span', { class: 'chip ' + (c.result === 'failed' ? 'warn' : '') }, c.result === 'failed' ? 'Failed' : c.result === 'returned' ? 'Returned' : 'Result not recorded'),
+        rep[cur] ? h('span', { class: 'chip warn', title: 'The same call with the same arguments, three or more times in a row' }, 'Repeated') : null),
+        h('pre', { class: 'pre jparams' }, c.params || 'No parameters were recorded for this call.'));
+    };
+    function go(i, scroll = true) {
+      const old = cur; cur = Math.max(0, Math.min(n - 1, i));
+      for (let k = Math.max(0, Math.min(old, cur) - 1); k <= Math.min(n - 1, Math.max(old, cur) + 1); k++) paint(k);
+      marker.setAttribute('x1', X(cur)); marker.setAttribute('x2', X(cur));
+      bar.value = String(cur); counter.textContent = (cur + 1) + ' of ' + n; showDetail();
+      if (scroll) { const x = X(cur), vw = scroller.clientWidth; if (x < scroller.scrollLeft + 30 || x > scroller.scrollLeft + vw - 30) scroller.scrollLeft = Math.max(0, x - vw * 0.55); }
+    }
+    function pause() { clearInterval(timer); timer = 0; playBtn.replaceChildren(icon('send'), 'Play'); playBtn.title = 'Play the journey from the start (Space)'; }
+    function play() {
+      if (cur >= n - 1) go(0);
+      playBtn.replaceChildren(icon('stop'), 'Pause'); playBtn.title = 'Pause (Space)';
+      clearInterval(timer);
+      timer = setInterval(() => { if (!document.body.contains(scroller)) { clearInterval(timer); return; } if (cur >= n - 1) { pause(); return; } go(cur + 1); }, Math.max(20, 1000 / Number(speed.value)));
+    }
+    const toggle = () => (timer ? pause() : play());
+    playBtn.addEventListener('click', toggle);
+    prev.addEventListener('click', () => { pause(); go(cur - 1); }); next.addEventListener('click', () => { pause(); go(cur + 1); });
+    speed.addEventListener('change', () => { if (timer) play(); });
+    bar.addEventListener('input', () => { pause(); go(Number(bar.value)); });
+    const wrap = h('div', { class: 'journeybox' });
+    wrap.addEventListener('keydown', (e) => { if (e.target.tagName === 'SELECT' || e.target.tagName === 'INPUT') return; if (e.key === ' ') { e.preventDefault(); toggle(); } else if (e.key === 'ArrowRight') { e.preventDefault(); pause(); go(cur + 1); } else if (e.key === 'ArrowLeft') { e.preventDefault(); pause(); go(cur - 1); } });
+    scroller.addEventListener('wheel', (e) => { if (Math.abs(e.deltaY) > Math.abs(e.deltaX) && !e.shiftKey) return; e.preventDefault(); scroller.scrollLeft += (e.deltaX || e.deltaY); }, { passive: false });
+    const legend = h('div', { class: 'jlegend faint small' }, h('span', { class: 'jl ok' }, h('i', {}), 'returned'), h('span', { class: 'jl bad' }, h('i', {}), 'failed'), h('span', { class: 'jl rep' }, h('i', {}), 'repeated 3 or more times'), h('span', {}, 'Click a node, or press Space to play. Scroll sideways for more.'));
+    wrap.append(h('div', { class: 'jcontrols' }, playBtn, prev, next, speed, bar, counter), h('div', { class: 'jstage' }, labels, scroller), legend, detail);
+    for (let k = 0; k < n; k++) paint(k);
+    go(n - 1, false);
+    requestAnimationFrame(() => { scroller.scrollLeft = scroller.scrollWidth; });
+    return wrap;
+  }
   async function renderSessionDetail(id) {
     const current = S.route;
     const box = $('sessions');
@@ -4501,6 +4600,25 @@
       const previous = h('button', { class: 'btn ghost small', onclick: () => loadCalls(Math.max(0, offset - activity.calls.length)) }, 'Previous calls');
       const next = h('button', { class: 'btn ghost small', onclick: () => loadCalls(offset + activity.calls.length) }, 'Next calls');
       drawCalls(activity.calls);
+      // The journey is the default view; the list keeps the same calls, each expandable, with paging.
+      const journeyBox = h('div', { class: 'journey' }, h('p', { class: 'faint small' }, 'Loading the journal…'));
+      const listBox = h('div', { hidden: true }, callRows, h('div', { class: 'row' }, x.tools > activity.calls.length ? previous : null, x.tools > activity.calls.length ? pageLabel : null, x.tools > activity.calls.length ? next : null));
+      const viewBtn = (label, which) => h('button', { type: 'button', class: which === 'graph' ? 'on' : '', onclick: (e) => { journeyBox.hidden = which !== 'graph'; listBox.hidden = which !== 'list'; for (const b of e.currentTarget.parentNode.children) b.classList.toggle('on', b === e.currentTarget); } }, label);
+      const viewSeg = h('div', { class: 'seg', role: 'group', 'aria-label': 'View' }, viewBtn('Graph', 'graph'), viewBtn('List', 'list'));
+      (async () => {
+        const all = [...activity.calls]; let off = activity.calls.length;
+        try {
+          while (all.length < x.tools && off > 0) {
+            journeyBox.replaceChildren(h('p', { class: 'faint small' }, 'Loading the journal: ' + all.length + ' of ' + x.tools + ' calls…'));
+            const pg = await api(path + '?offset=' + off);
+            if (S.route !== current) return;
+            if (!pg.activity.calls.length) break;
+            all.push(...pg.activity.calls); off += pg.activity.calls.length;
+          }
+          if (S.route !== current) return;
+          journeyBox.replaceChildren(all.length ? journeyView(all) : h('p', { class: 'faint' }, 'No tool calls were recorded.'));
+        } catch (e) { journeyBox.replaceChildren(h('p', { class: 'err' }, 'Could not load the whole journal: ' + e.message)); }
+      })();
       box.replaceChildren(back, toolbar(x.title || x.name, x.cwd,
         refreshBtn(() => renderSessionDetail(id)),
         h('button', { class: 'btn', disabled: !exists, onclick: () => continueAsTask(x) }, icon('plus'), 'Continue as a task')),
@@ -4522,10 +4640,11 @@
           x.signals && x.signals.length ? h('ul', { class: 'signals' }, ...x.signals.map((v) => h('li', {}, icon('alert'), v))) : h('p', { class: 'faint' }, 'No health flags in the recorded activity.'),
           x.different && x.different !== 'Nothing notable.' ? h('p', {}, h('b', {}, 'What could go better '), x.different) : null),
         h('div', { class: 'kpis' }, ...[['Requests', x.turns], ['Tool calls', x.tools], ['Tool errors', x.agent === 'cursor' ? 'Unavailable' : x.errors], ['Verification calls', x.checks], ['Files with edits', x.files]].map(([label, n]) => h('div', { class: 'kpi' }, h('b', {}, n), h('span', {}, label)))),
-        sessionSection('Tool activity',
-          tools.length ? h('div', { class: 'row' }, ...tools.map(([name, n]) => h('span', { class: 'chip mono' }, name + ' × ' + n))) : null,
-          x.tools ? callRows : h('p', { class: 'faint' }, 'No tool calls were recorded.'),
-          x.tools ? h('div', { class: 'row' }, exportBtn, x.tools > activity.calls.length ? previous : null, x.tools > activity.calls.length ? pageLabel : null, x.tools > activity.calls.length ? next : null) : null),
+        sessionSection('Journey',
+          tools.length ? h('details', { class: 'toolcounts' }, h('summary', {}, 'Tools used (' + tools.length + ' kinds, ' + x.tools + ' calls)'), h('div', { class: 'row' }, ...tools.map(([name, n]) => h('span', { class: 'chip mono' }, name + ' × ' + n)))) : null,
+          x.tools ? h('div', { class: 'row' }, viewSeg, exportBtn) : null,
+          x.tools ? journeyBox : h('p', { class: 'faint' }, 'No tool calls were recorded.'),
+          x.tools ? listBox : null),
         sessionSection('Files with recorded edits',
           activity.files.length ? h('ul', { class: 'session-files' }, ...activity.files.map((v) => h('li', {}, h('code', {}, v)))) : h('p', { class: 'faint' }, 'No file paths were recorded for edits.')),
         sessionSection('Session information',
