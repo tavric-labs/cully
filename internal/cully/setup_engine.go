@@ -6,6 +6,7 @@ import (
 	"math"
 	"net/url"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -331,6 +332,9 @@ type setupAgentSuggestion struct {
 	EstMinutesPerWeek int      `json:"estMinutesPerWeek"`
 	EstTokensPerRun   int64    `json:"estTokensPerRun"`
 	Folder            string   `json:"folder"`
+	// Set when an agent you already have covers this work: the suggestion is an update to it, not a new agent.
+	Replaces     string `json:"replaces,omitempty"`
+	ReplacesName string `json:"replacesName,omitempty"`
 }
 
 type setupJobSuggestion struct {
@@ -404,6 +408,8 @@ func (e *setupEngine) Suggestions() setupSuggestions {
 		}
 	}
 	tok, _ := setupTokensFor(evSessions)
+	repeats = setupMergeGoalRepeats(repeats)
+	existing := e.m.identityList()
 	for i, r := range repeats {
 		var mins, toks []int64
 		for _, ev := range r.Evidence {
@@ -423,8 +429,16 @@ func (e *setupEngine) Suggestions() setupSuggestions {
 		switch r.Kind {
 		case "goal":
 			why := fmt.Sprintf("In %s you started the same kind of task %d times over %d days (about %d minutes each).", r.Folder, r.Count, r.Days, int(math.Round(typical)))
-			out.Agents = append(out.Agents, setupAgentSuggestion{ID: id, Name: r.Folder + " helper", Role: "Takes over the repeated task in " + r.Folder + ": " + firstOr(r.Examples, "the work you keep repeating") + ".",
-				Why: why, Evidence: evidenceTitles(r), Count: r.Count, EstMinutesPerWeek: perWeek, EstTokensPerRun: medianInt64(toks), Folder: r.Path})
+			sg := setupAgentSuggestion{ID: id, Name: r.Folder + " helper", Role: "Takes over the repeated task in " + r.Folder + ": " + firstOr(r.Examples, "the work you keep repeating") + ".",
+				Why: why, Evidence: evidenceTitles(r), Count: r.Count, EstMinutesPerWeek: perWeek, EstTokensPerRun: medianInt64(toks), Folder: r.Path}
+			if cur := setupCoveringAgent(existing, sg); cur != nil {
+				if uiSimilar(uiGoalWords(cur.Role), uiGoalWords(sg.Role)) {
+					continue // the agent you have already does this
+				}
+				sg.Replaces, sg.ReplacesName, sg.Name = cur.ID, cur.Name, cur.Name
+				sg.Why += " Your agent " + cur.Name + " already works in this folder, so this updates it instead of adding another."
+			}
+			out.Agents = append(out.Agents, sg)
 		case "untested":
 			cmd := setupJobCommandFor(r.Path)
 			if cmd == nil {
@@ -448,4 +462,51 @@ func firstOr(l []string, def string) string {
 		return l[0]
 	}
 	return def
+}
+
+// setupMergeGoalRepeats folds the goal patterns of one folder into a single one, so a folder gets one
+// suggestion however many separate clusters its sessions fall into. Other kinds pass through unchanged.
+func setupMergeGoalRepeats(in []uiRepeat) []uiRepeat {
+	var out []uiRepeat
+	at := map[string]int{}
+	for _, r := range in {
+		if r.Kind != "goal" {
+			out = append(out, r)
+			continue
+		}
+		i, ok := at[r.Path]
+		if !ok {
+			at[r.Path] = len(out)
+			out = append(out, r)
+			continue
+		}
+		m := &out[i]
+		m.Count += r.Count
+		if r.Days > m.Days {
+			m.Days = r.Days
+		}
+		for _, x := range r.Examples {
+			if len(m.Examples) < 3 {
+				m.Examples = append(m.Examples, x)
+			}
+		}
+		for _, ev := range r.Evidence {
+			if len(m.Evidence) < 12 {
+				m.Evidence = append(m.Evidence, ev)
+			}
+		}
+	}
+	return out
+}
+
+// setupCoveringAgent returns an existing agent that already does this job: the same name or job, or any
+// project agent tied to the same folder.
+func setupCoveringAgent(existing []uiIdentity, sg setupAgentSuggestion) *uiIdentity {
+	for i := range existing {
+		e := &existing[i]
+		if uiAgentSame(sg.Name, sg.Role, sg.Folder, e.Name, e.Role, e.Folder) || (e.Scope == "project" && e.Folder != "" && filepath.Clean(e.Folder) == filepath.Clean(sg.Folder)) {
+			return e
+		}
+	}
+	return nil
 }

@@ -1606,3 +1606,21 @@ button.chip.harness { cursor: pointer; }
 
 details.callparams > summary { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; cursor: pointer; }
 details.callparams .pre { margin: 8px 0 4px; max-height: 320px; overflow: auto; }
+
+/* Session search */
+.ssbar { margin: 12px 0 4px; display: grid; gap: 8px; }
+.ssrow { display: flex; align-items: center; gap: 8px; position: relative; max-width: 640px; }
+.ssrow .session-search { flex: 1; width: auto; margin: 0; padding: 9px 34px 9px 34px; border-radius: 10px; font-size: 14px; }
+.ssicon { position: absolute; left: 11px; top: 50%; transform: translateY(-50%); color: var(--faint); display: inline-flex; pointer-events: none; }
+.ssclear { position: absolute; right: 78px; top: 50%; transform: translateY(-50%); border: 0; background: var(--surface2); color: var(--soft); width: 22px; height: 22px; border-radius: 11px; line-height: 20px; cursor: pointer; font-size: 15px; }
+.ssclear:hover { color: var(--ink); }
+.sscount { white-space: nowrap; min-width: 70px; }
+.ssfilters { display: flex; flex-wrap: wrap; gap: 6px 14px; }
+.ssgroup { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+.ssf { border: 1px solid var(--line2); background: transparent; color: var(--soft); padding: 3px 10px; border-radius: 99px; font-size: 12.5px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
+.ssf:hover { color: var(--ink); border-color: var(--soft); }
+.ssf.on { background: var(--forest-hi); border-color: var(--forest-hi); color: var(--on-primary, #fff); }
+.ssn { font-size: 11px; opacity: .75; }
+mark { background: rgba(255, 200, 40, .38); color: inherit; border-radius: 3px; padding: 0 1px; }
+.hsnip { margin: 2px 0 4px; }
+.ssempty { max-width: 640px; }

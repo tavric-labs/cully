@@ -83,11 +83,22 @@ type uiRepeat struct {
 	Examples []string
 }
 
+// uiAutomatedCall reports whether a session was a one-shot call made by a tool, such as an advisor asked for
+// session controls: one request, no tool use, or a title that says so. Those are not work a person repeats, so
+// they must never justify an agent.
+func uiAutomatedCall(s uiIndexed) bool {
+	if s.Turns == 1 && s.Tools == 0 {
+		return true
+	}
+	t := strings.ToLower(s.Title + " " + s.Task)
+	return strings.Contains(t, "advisor")
+}
+
 // uiRepeatedWork returns the patterns that justify proposing an agent.
 func uiRepeatedWork(sessions []uiIndexed) []uiRepeat {
 	byFolder := map[string][]uiIndexed{}
 	for _, s := range sessions {
-		if s.Source == "ai" && s.Task != "" && time.Since(s.Updated) < uiRepeatWindow && filepath.Clean(s.Cwd) != filepath.Clean(ConfigDir()) { // the harness's own folder is not your project
+		if s.Source == "ai" && s.Task != "" && !uiAutomatedCall(s) && time.Since(s.Updated) < uiRepeatWindow && filepath.Clean(s.Cwd) != filepath.Clean(ConfigDir()) { // the harness's own folder is not your project
 			byFolder[s.Cwd] = append(byFolder[s.Cwd], s)
 		}
 	}

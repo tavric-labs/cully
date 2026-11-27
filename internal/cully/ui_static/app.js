@@ -3478,11 +3478,11 @@
       return h('div', { class: 'su-brow' }, h('span', { class: 'su-bl' }, AGENT_LABEL[b.id] || b.id), h('span', { class: 'su-bt' }, i), h('span', { class: 'su-bv' }, b.value ? fmt(b.value) : 'none'));
     }));
     const ev = (x) => [W.evidenceWord(x.count), W.saves(x.estMinutesPerWeek), W.costs(x.estTokensPerRun)].filter(Boolean);
-    const sCard = (x, kind) => h('div', { class: 'su-card su-sug' }, h('div', { class: 'row' }, h('b', {}, x.name), h('span', { class: 'pill' }, kind === 'agent' ? 'Agent' : 'Background job')),
+    const sCard = (x, kind) => h('div', { class: 'su-card su-sug' }, h('div', { class: 'row' }, h('b', {}, x.name), h('span', { class: 'pill' }, kind === 'agent' ? (x.replaces ? 'Update to your agent' : 'Agent') : 'Background job')),
       h('p', {}, x.why || x.role || ''), kind === 'job' && x.command ? h('p', {}, h('code', {}, x.command), x.schedule ? h('span', { class: 'faint small' }, '  ' + x.schedule) : null) : null,
       h('div', { class: 'row' }, ...ev(x).map((t) => h('span', { class: 'chip' }, t))),
       (x.evidence || []).length ? h('ul', { class: 'su-evl' }, ...x.evidence.slice(0, 3).map((e) => h('li', { class: 'faint small' }, String(e)))) : null,
-      h('div', { class: 'row' }, h('button', { class: 'btn small', onclick: () => (kind === 'agent' ? suAddAgent(x) : suAddJob(x)) }, icon('plus'), 'Review and add')));
+      h('div', { class: 'row' }, h('button', { class: 'btn small', onclick: () => (kind === 'agent' ? suAddAgent(x) : suAddJob(x)) }, icon('plus'), kind === 'agent' && x.replaces ? 'Review update' : 'Review and add')));
     let cards;
     if (!W.enough(basis)) cards = h('div', { class: 'su-card' }, h('p', {}, sg.note || 'Cully needs about ' + W.MIN_SESSIONS + ' analysed sessions before it can suggest agents and jobs. Come back after a few more days of work.'));
     else cards = h('div', {}, (sg.agents || []).length ? h('h3', {}, 'Agents') : null, h('div', { class: 'su-cards' }, ...(sg.agents || []).map((x) => sCard(x, 'agent'))),
@@ -3494,6 +3494,11 @@
   }
   async function suAddAgent(x) {
     let tools; try { tools = await api('/api/admin/tools'); } catch (e) { toast(e.message, true); return; }
+    if (x.replaces) {
+      // An agent you already have covers this: open it with the suggested role, so saving updates it.
+      let cur = null; try { cur = (await api('/api/identities')).find((a) => a.id === x.replaces); } catch (_) {}
+      if (cur) { openAgentForm({ ...cur, role: x.role || cur.role }, tools, () => { SU.added.push(x.id || x.name); drawSetupPage(); }); return; }
+    }
     openAgentForm({ id: null, name: x.name, role: x.role || x.why || '', instructions: x.instructions || '', scope: 'project', folder: x.folder || S.opts.repo || (S.info && S.info.repos[0]) || '', groups: Object.fromEntries(tools.presets.map((p) => [p.id, p.on])), mode: 'edit', schedule: '', enabled: false },
       tools, () => { SU.added.push(x.id || x.name); drawSetupPage(); });
   }
@@ -4020,6 +4025,70 @@
   async function startHere(sess) {
     try { await addFolder(sess.repo || sess.cwd); location.hash = '#/'; toast('Ready to start a task in ' + sess.name); } catch (e) { toast(e.message, true); }
   }
+  // ---- session search: several words at once, filters, highlights, a count, and keys (/ to focus, Esc to clear) ----
+  const OUTCOMES = [['', 'Any outcome'], ['yes', 'Finished'], ['partly', 'Partly'], ['no', 'Not finished'], ['none', 'Not summarised']];
+  const norm = (t) => String(t || '').toLowerCase();
+  function searchTerms(q) { return (q.match(/"[^"]+"|\S+/g) || []).map((w) => norm(w.replace(/^"|"$/g, ''))).filter(Boolean); }
+  // The text a session can be found by, split into fields so a match in the title ranks above one in a step.
+  function sessionFields(x) {
+    const lib = x.library || {}; const steps = lib.steps || [];
+    return { title: norm([x.title, x.name].join(' ')), what: norm([x.description, lib.task].join(' ')), steps: norm(steps.map((t) => t.title + ' ' + t.story).join(' ') + ' ' + (lib.drift || '')),
+      where: norm([x.cwd, x.branch, x.agent, AGENT_LABEL[x.agent], x.origin].join(' ')), id: norm(x.id) };
+  }
+  // 0 = no match. Every word has to match somewhere; the best field a word is found in sets the score.
+  function sessionScore(x, terms) {
+    if (!terms.length) return 1;
+    const f = sessionFields(x); let total = 0;
+    for (const t of terms) {
+      const w = f.title.includes(t) ? 8 : f.what.includes(t) ? 5 : f.steps.includes(t) ? 3 : f.where.includes(t) ? 2 : f.id.startsWith(t) || (t.length >= 6 && f.id.includes(t)) ? 4 : 0;
+      if (!w) return 0;
+      total += w;
+    }
+    return total;
+  }
+  function sessionOutcomeOf(x) { const c = (x.library && x.library.completed) || x.completed; return c === 'yes' || c === 'partly' || c === 'no' ? c : 'none'; }
+  // Wraps each matched word in <mark>, building nodes so session text is never parsed as HTML.
+  function highlight(text, terms) {
+    text = String(text || '');
+    if (!terms.length) return text;
+    const re = new RegExp('(' + terms.map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|') + ')', 'ig');
+    return text.split(re).map((part, i) => (i % 2 ? h('mark', {}, part) : part));
+  }
+  // When the words matched only inside a step or the goal, show that line so the result explains itself.
+  function matchSnippet(x, terms) {
+    if (!terms.length) return null;
+    const lib = x.library || {};
+    const cand = [['Goal', lib.task]].concat((lib.steps || []).map((t) => ['Step: ' + t.title, t.story]), [['Drift', lib.drift]]);
+    const visible = norm([x.title, x.name, x.description].join(' '));
+    if (terms.every((t) => visible.includes(t))) return null;
+    for (const [label, body] of cand) { if (body && terms.some((t) => norm(label + ' ' + body).includes(t))) return h('p', { class: 'hsnip faint small' }, h('b', {}, label + ': '), highlight(uiClipText ? uiClipText(body, 180) : body, terms)); }
+    return null;
+  }
+  function sessionSearchBar() {
+    const input = h('input', { type: 'search', class: 'session-search', id: 'session-search', placeholder: 'Search title, summary, goal, steps, folder, branch or ID', 'aria-label': 'Search sessions', autocomplete: 'off', spellcheck: 'false' });
+    input.value = S.sessionQuery || '';
+    const clear = h('button', { type: 'button', class: 'ssclear', 'aria-label': 'Clear the search', title: 'Clear (Esc)', hidden: !input.value, onclick: () => { input.value = ''; S.sessionQuery = ''; clear.hidden = true; drawHistory(); input.focus(); } }, '×');
+    let timer = 0;
+    input.addEventListener('input', () => { clear.hidden = !input.value; clearTimeout(timer); timer = setTimeout(() => { S.sessionQuery = input.value; S.histShown = {}; drawHistory(); }, 120); });
+    input.addEventListener('keydown', (e) => { if (e.key === 'Escape' && input.value) { e.preventDefault(); clear.click(); } });
+    S.searchFocusKey = S.searchFocusKey || document.addEventListener('keydown', (e) => {
+      const el = document.getElementById('session-search'); if (!el || e.key !== '/' || e.ctrlKey || e.metaKey || e.altKey) return;
+      const t = document.activeElement; if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+      e.preventDefault(); el.focus(); el.select();
+    }) || true;
+    S.searchCount = h('span', { class: 'sscount faint small', 'aria-live': 'polite' });
+    S.searchFilters = h('div', { class: 'ssfilters' });
+    return h('div', { class: 'ssbar' }, h('div', { class: 'ssrow' }, h('span', { class: 'ssicon', 'aria-hidden': 'true' }, icon('search') || ''), input, clear, S.searchCount), S.searchFilters);
+  }
+  function drawSearchFilters(sessions) {
+    if (!S.searchFilters) return;
+    const harnessCount = (a) => sessions.filter((x) => !a || x.agent === a).length;
+    const hs = [['', 'All']].concat(['claude', 'codex', 'cursor'].filter((a) => harnessCount(a)).map((a) => [a, AGENT_LABEL[a]]));
+    const chip = (cur, key, set) => ([v, label], n) => h('button', { type: 'button', class: 'ssf' + (cur === v ? ' on' : ''), 'aria-pressed': String(cur === v), onclick: () => { S[key] = v; S.histShown = {}; drawHistory(); } }, label, n != null ? h('span', { class: 'ssn' }, String(n)) : null);
+    const hc = chip(S.sessionHarness || '', 'sessionHarness'); const oc = chip(S.sessionOutcome || '', 'sessionOutcome');
+    S.searchFilters.replaceChildren(h('div', { class: 'ssgroup', role: 'group', 'aria-label': 'Harness' }, ...hs.map((e) => hc(e, harnessCount(e[0])))),
+      h('div', { class: 'ssgroup', role: 'group', 'aria-label': 'Outcome' }, ...OUTCOMES.map((e) => oc(e, e[0] ? sessions.filter((x) => sessionOutcomeOf(x) === e[0]).length : null))));
+  }
   function renderSessions() {
     const box = $('sessions');
     const all = S.sessions || [];
@@ -4036,9 +4105,7 @@
     if (toggles.length) kids.push(h('div', { class: 'row' }, ...toggles));
     const mine = S.agents.length;
     if (mine) kids.push(h('p', { class: 'faint small' }, mine + (mine === 1 ? ' agent was' : ' agents were') + ' started from this page. ', h('a', { class: 'ext', href: '#/' }, 'See them on the Tasks tab')));
-    const search = h('input', { type: 'search', class: 'session-search', placeholder: 'Search sessions by title, project, or ID', 'aria-label': 'Search sessions', oninput: (e) => { S.sessionQuery = e.target.value; drawHistory(); } });
-    search.value = S.sessionQuery || '';
-    kids.push(search, h('div', { id: 'history' }));
+    kids.push(sessionSearchBar(), h('div', { id: 'history' }));
     box.replaceChildren(...kids);
     drawActive();
     drawHistory();
@@ -4214,15 +4281,23 @@
       ['d30', 'Last 30 days', (x) => ageDays(x.updated) > 15 && ageDays(x.updated) <= 30], ['older', 'Older', (x) => ageDays(x.updated) > 30]];
     const recent = hist.sessions.filter((x) => !x.open);
     const inBucket = (k) => recent.filter(BUCKETS.find((b) => b[0] === k)[2]);
-    const query = (S.sessionQuery || '').trim().toLowerCase();
+    const terms = searchTerms(S.sessionQuery || '');
+    const filtering = !!(S.sessionHarness || S.sessionOutcome);
+    const query = terms.length || filtering;
+    drawSearchFilters(hist.sessions);
     if (!S.histPicked || !S.histBucket) S.histBucket = (BUCKETS.find((b) => inBucket(b[0]).length) || BUCKETS[0])[0];
     const bucket = query ? 'search' : S.histBucket;
-    const items = query ? hist.sessions.filter((x) => [x.title, x.description, x.name, x.cwd, x.agent, x.branch, x.id].join(' ').toLowerCase().includes(query)) : inBucket(bucket);
+    const scored = query ? hist.sessions.filter((x) => (!S.sessionHarness || x.agent === S.sessionHarness) && (!S.sessionOutcome || sessionOutcomeOf(x) === S.sessionOutcome))
+      .map((x) => [x, sessionScore(x, terms)]).filter((p) => p[1] > 0).sort((a, b) => b[1] - a[1] || new Date(b[0].updated) - new Date(a[0].updated)) : null;
+    const items = query ? scored.map((p) => p[0]) : inBucket(bucket);
+    if (S.searchCount) S.searchCount.textContent = query ? items.length + (items.length === 1 ? ' session' : ' sessions') + ' of ' + hist.sessions.length : '';
     const shown = (S.histShown && S.histShown[bucket]) || 20;
     const parts = [h('h3', { class: 'section-h' }, query ? 'Search results' : 'Recent')];
     if (hist.note) parts.push(h('p', { class: 'faint' }, hist.note));
     if (!query) parts.push(h('div', { class: 'seg tabs-seg', role: 'tablist', 'aria-label': 'How long ago' }, ...BUCKETS.map(([k, label]) => h('button', { type: 'button', role: 'tab', class: k === bucket ? 'on' : '', 'aria-selected': String(k === bucket), onclick: () => { S.histBucket = k; S.histPicked = true; drawHistory(); } }, label + ' ' + inBucket(k).length))));
-    if (query && !items.length) parts.push(h('p', { class: 'faint' }, 'No matching sessions.'));
+    if (query && !items.length) parts.push(h('div', { class: 'card ssempty' }, h('b', {}, terms.length ? 'No session matches "' + (S.sessionQuery || '').trim() + '"' : 'No session matches these filters'),
+      h('p', { class: 'faint small' }, 'Every word has to match. Try fewer words, or search by a folder, a branch, or part of the session ID. Use quotes for an exact phrase.'),
+      h('div', { class: 'row' }, h('button', { class: 'btn ghost small', onclick: () => { S.sessionQuery = ''; S.sessionHarness = ''; S.sessionOutcome = ''; const el = $('session-search'); if (el) el.value = ''; drawHistory(); } }, 'Clear search and filters'))));
     else if (!items.length) parts.push(emptyCard('Nothing in this period', recent.length ? 'Pick another period above.' : 'Sessions you run appear here so you can continue them.', 'Start a task', '#/'));
     const copyCmd = (cmd, what) => async () => {
       try { await writeClip(cmd); toast('Copied. Paste it in a terminal to ' + what + '.'); } catch (_) { showCommand(cmd); }
@@ -4230,9 +4305,10 @@
     if (items.length) {
       parts.push(h('ul', { class: 'hrows' }, ...items.slice(0, shown).map((x) => { const runnable = x.agent === 'claude'; return h('li', { class: 'hrow' },
         h('div', { class: 'hmain' },
-          h('div', { class: 'ht' }, harnessChip(x.agent), sessionLink(x)),
-          x.description ? h('p', { class: 'hdesc' }, x.description) : null,
-          h('div', { class: 'faint small path' }, x.cwd),
+          h('div', { class: 'ht' }, harnessChip(x.agent), sessionLink(x, terms)),
+          x.description ? h('p', { class: 'hdesc' }, highlight(x.description, terms)) : null,
+          matchSnippet(x, terms),
+          h('div', { class: 'faint small path' }, highlight(x.cwd, terms)),
           h('div', { class: 'row' }, x.origin ? h('span', { class: 'chip', title: 'Where this session was started' }, x.origin) : null, x.activeSec ? h('span', { class: 'chip', title: 'Time spent working in this session' }, dur(x.activeSec) + ' worked') : null, x.branch ? h('span', { class: 'chip mono' }, icon('branch'), x.branch) : null, h('span', { class: 'chip' }, ago(x.updated)), x.exists ? null : h('span', { class: 'chip warn' }, 'Folder is gone'))),
         h('div', { class: 'row hact' },
           runnable
@@ -4249,7 +4325,7 @@
   }
 
   const sessionHref = (id) => '#/sessions/' + encodeURIComponent(id);
-  const sessionLink = (x) => h('a', { class: 'session-link', href: sessionHref(x.id) }, x.title || x.name);
+  const sessionLink = (x, terms) => h('a', { class: 'session-link', href: sessionHref(x.id) }, terms && terms.length ? highlight(x.title || x.name, terms) : (x.title || x.name));
   const sessionDate = (d) => d && !d.startsWith('0001') ? new Date(d).toLocaleString() : 'Unavailable';
 
   function sessionSection(title, ...children) {

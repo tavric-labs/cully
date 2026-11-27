@@ -117,3 +117,21 @@ func TestCallParamsAreClippedAndPretty(t *testing.T) {
 		t.Fatalf("codex params = %q", got)
 	}
 }
+
+func TestCallParamsRedactSecrets(t *testing.T) {
+	got := uiPrettyParams(map[string]any{
+		"api_key": "plainvalue", "Authorization": "Bearer abcdefghijklmnop",
+		"nested":  map[string]any{"client_secret": "zzz", "keep": "ok"},
+		"command": `curl -H "Authorization: Bearer abcdefghijklmnop" -d '{"password":"hunter2hunter2"}' ghp_abcdefghijklmnopqrstuvwxyz0123`,
+		"env":     "GOCSPX-abcdefghij1234567890",
+	})
+	got = uiRedactParamsText(got)
+	for _, leak := range []string{"plainvalue", "abcdefghijklmnop", "zzz", "hunter2", "ghp_abcdefghijklmnopqrstuvwxyz", "GOCSPX-abcdefghij"} {
+		if strings.Contains(got, leak) {
+			t.Fatalf("params still contain %q:\n%s", leak, got)
+		}
+	}
+	if !strings.Contains(got, `"keep": "ok"`) {
+		t.Fatalf("ordinary values were removed:\n%s", got)
+	}
+}

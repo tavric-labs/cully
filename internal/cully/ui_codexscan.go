@@ -207,5 +207,5 @@ func uiCodexParams(input, arguments string) string {
 	if json.Unmarshal([]byte(raw), &v) == nil {
 		return uiPrettyParams(v)
 	}
-	return raw
+	return uiRedactParamsText(raw)
 }

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -119,7 +120,7 @@ func (m *uiManager) sessionDetail(id string, offset int) (uiSessionDetail, error
 	for i := range activity.Calls {
 		activity.Calls[i].Name = m.cfg.Tokens.redact(redactSecrets(activity.Calls[i].Name))
 		if pr := activity.Calls[i].Params; pr != "" {
-			activity.Calls[i].Params = uiClipRaw(m.cfg.Tokens.redact(uiTaskSecretLike.ReplaceAllString(redactSecrets(pr), "[redacted]")), uiCallParamsMax)
+			activity.Calls[i].Params = uiClipRaw(m.cfg.Tokens.redact(uiRedactParamsText(uiTaskSecretLike.ReplaceAllString(redactSecrets(pr), "[redacted]"))), uiCallParamsMax)
 		}
 	}
 	return uiSessionDetail{Session: uiSessionView(e), Activity: activity, Snapshot: snap, Exists: exists}, nil
@@ -150,9 +151,55 @@ func uiClipRaw(s string, n int) string {
 	return s
 }
 
-// uiPrettyParams renders a call's arguments as indented JSON.
+// uiSecretKey matches argument names that hold a credential. Their values are replaced whole, whatever they look like.
+var uiSecretKey = regexp.MustCompile(`(?i)(pass(word|wd)?|secret|token|api[_-]?key|apikey|authori[sz]ation|auth|credential|private[_-]?key|cookie|bearer|session[_-]?id|signature|access[_-]?key|client[_-]?secret)`)
+
+// uiSecretPair finds a credential key with its value in free text (the key may be quoted); only the value is replaced.
+var uiSecretPair = regexp.MustCompile(`(?i)((?:pass(?:word|wd)?|secret|token|api[_-]?key|authori[sz]ation|credential|cookie|access[_-]?key)(?:\\?["'])?\s*[:=]\s*(?:\\?["'])?)([^\s"',;&\\]+)`)
+
+// uiSecretShape finds credentials by their form alone: a Bearer token, a private key block, and common provider key prefixes.
+var uiSecretShape = regexp.MustCompile(`(?i)\bbearer\s+[A-Za-z0-9._~+/=-]{8,}|-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z ]*PRIVATE KEY-----|$)|\b(?:gh[pousr]_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9_-]{20,}|xox[abprs]-[A-Za-z0-9-]{10,}|AKIA[0-9A-Z]{16}|GOCSPX-[A-Za-z0-9_-]{10,}|AIza[0-9A-Za-z_-]{30,}|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{5,})`)
+
+// uiRedactValue walks a decoded argument value and blanks the value of every credential-named key, so the
+// secret is removed from the structure before it is turned into text.
+func uiRedactValue(v any) any {
+	switch t := v.(type) {
+	case map[string]any:
+		out := make(map[string]any, len(t))
+		for k, val := range t {
+			if uiSecretKey.MatchString(k) {
+				out[k] = "[redacted]"
+			} else {
+				out[k] = uiRedactValue(val)
+			}
+		}
+		return out
+	case []any:
+		out := make([]any, len(t))
+		for i, val := range t {
+			out[i] = uiRedactValue(val)
+		}
+		return out
+	}
+	return v
+}
+
+// uiRedactParamsText is the second pass over the finished text: the structured pass cannot see a secret
+// inside a shell command or a file's content.
+func uiRedactParamsText(s string) string {
+	s = uiSecretShape.ReplaceAllString(s, "[redacted]")
+	return uiSecretPair.ReplaceAllStringFunc(s, func(m string) string {
+		g := uiSecretPair.FindStringSubmatch(m)
+		if strings.HasPrefix(g[2], "[redacted]") {
+			return m
+		}
+		return g[1] + "[redacted]"
+	})
+}
+
+// uiPrettyParams renders a call's arguments as indented JSON, with credential-named values already removed.
 func uiPrettyParams(v any) string {
-	b, err := json.MarshalIndent(v, "", "  ")
+	b, err := json.MarshalIndent(uiRedactValue(v), "", "  ")
 	if err != nil || string(b) == "null" || string(b) == "{}" {
 		return ""
 	}
