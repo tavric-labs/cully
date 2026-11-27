@@ -166,6 +166,7 @@ func newUIServer(m *uiManager, token string, loopback bool) http.Handler {
 	mux.Handle("GET /api/feed", s.api(s.feedGet))
 	mux.Handle("GET /api/agents/{id}/report", s.api(s.reportGet))
 	mux.Handle("GET /api/harness/capabilities", s.api(s.capabilitiesGet))
+	mux.Handle("GET /api/harness/available", s.api(s.harnessAvailable))
 	mux.Handle("GET /api/tasks", s.api(s.tasksGet))
 	mux.Handle("POST /api/tasks/{id}/continue", s.api(s.taskContinueH))
 	mux.Handle("POST /api/tasks/{id}/close", s.api(s.taskCloseH))

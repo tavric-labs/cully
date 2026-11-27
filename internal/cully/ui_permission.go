@@ -239,38 +239,50 @@ func (a *uiAgent) answerPermission(c net.Conn) {
 	if len(ask.Input) == 0 {
 		ask.Input = json.RawMessage("{}")
 	}
-	reply := func(decision string) {
-		if decision == "allow" || decision == "allow_always" {
-			_ = json.NewEncoder(c).Encode(map[string]any{"behavior": "allow", "updatedInput": ask.Input})
-			return
-		}
-		msg := "The user declined this."
-		if decision == "expired" {
-			msg = "The user did not answer in time, so it was not allowed."
-		}
-		_ = json.NewEncoder(c).Encode(map[string]string{"behavior": "deny", "message": msg})
-	}
-	shown := prettyJSON(ask.Input)
-	if len(shown) > uiPermShowMax {
-		a.add(uiEvent{Kind: "note", Text: "Refused " + ask.ToolName + ": the request is too long to show you in full."})
-		_ = json.NewEncoder(c).Encode(map[string]string{"behavior": "deny", "message": "The request was too large for the user to review, so it was refused."})
+	decision, refused := a.askPermission(ask.ToolName, ask.Input)
+	if refused != "" {
+		_ = json.NewEncoder(c).Encode(map[string]string{"behavior": "deny", "message": refused})
 		return
+	}
+	if decision == "allow" || decision == "allow_always" {
+		_ = json.NewEncoder(c).Encode(map[string]any{"behavior": "allow", "updatedInput": ask.Input})
+		return
+	}
+	msg := "The user declined this."
+	if decision == "expired" {
+		msg = "The user did not answer in time, so it was not allowed."
+	}
+	_ = json.NewEncoder(c).Encode(map[string]string{"behavior": "deny", "message": msg})
+}
+
+// askPermission shows the card for one tool call and waits for the answer. It returns allow,
+// allow_always, deny or expired; when the request cannot be shown in full it is refused and the
+// second value says why. Any harness that asks before a tool call goes through here.
+func (a *uiAgent) askPermission(tool string, input json.RawMessage) (string, string) {
+	if len(input) == 0 {
+		input = json.RawMessage("{}")
+	}
+	shown := prettyJSON(input)
+	if len(shown) > uiPermShowMax {
+		a.add(uiEvent{Kind: "note", Text: "Refused " + tool + ": the request is too long to show you in full."})
+		return "deny", "The request was too large for the user to review, so it was refused."
 	}
 	if a.tokens.redact(shown) != shown {
-		a.add(uiEvent{Kind: "note", Text: "Refused " + ask.ToolName + ": the request contains a secret that cannot be shown."})
-		_ = json.NewEncoder(c).Encode(map[string]string{"behavior": "deny", "message": "The request contained a secret, so it was refused."})
-		return
+		a.add(uiEvent{Kind: "note", Text: "Refused " + tool + ": the request contains a secret that cannot be shown."})
+		return "deny", "The request contained a secret, so it was refused."
 	}
-	key := uiPermKey(ask.ToolName, ask.Input)
+	key := uiPermKey(tool, input)
 	sum := sha256.Sum256([]byte(key))
 	a.perm.mu.Lock()
+	if a.perm.always == nil {
+		a.perm.always = map[string]bool{}
+	}
 	if a.perm.always[key] {
 		a.perm.mu.Unlock()
-		reply("allow")
-		return
+		return "allow", ""
 	}
-	risk, why := uiToolRisk(ask.ToolName, ask.Input, a.worktree)
-	p := &uiPermission{Risk: risk, RiskWhy: why, ID: uiNewID(), Tool: ask.ToolName, Input: ask.Input, Summary: uiPermSummary(ask.ToolName, ask.Input), At: time.Now().UTC(), Status: "pending", Hash: hex.EncodeToString(sum[:]), decide: make(chan string, 1)}
+	risk, why := uiToolRisk(tool, input, a.worktree)
+	p := &uiPermission{Risk: risk, RiskWhy: why, ID: uiNewID(), Tool: tool, Input: input, Summary: uiPermSummary(tool, input), At: time.Now().UTC(), Status: "pending", Hash: hex.EncodeToString(sum[:]), decide: make(chan string, 1)}
 	a.perm.list = append(a.perm.list, p)
 	if len(a.perm.list) > uiPermKeep {
 		a.perm.list = a.perm.list[len(a.perm.list)-uiPermKeep:]
@@ -298,7 +310,7 @@ func (a *uiAgent) answerPermission(c net.Conn) {
 	}
 	a.perm.mu.Unlock()
 	a.add(uiEvent{Kind: "note", Text: "You answered: " + p.Status + " for " + p.Tool + " " + uiClip(p.Summary, 120)})
-	reply(decision)
+	return decision, ""
 }
 
 // pingPermission wakes the page so the question shows at once.

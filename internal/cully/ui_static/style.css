@@ -1193,3 +1193,7 @@ details.sgroup > summary { cursor: pointer; } details.sgroup > summary::-webkit-
 .jedit { display: flex; flex-direction: column; gap: 10px; padding-top: 4px; border-top: 1px solid var(--line); }
 .jtext { width: 100%; min-height: 56px; margin: 8px 0; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: var(--ink); padding: 8px 10px; font: inherit; resize: vertical; }
 .jtail { white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--mono, monospace); font-size: 12px; }
+
+/* codex harness picker */
+.harnesspick button:disabled { opacity: 0.55; cursor: not-allowed; }
+/* end codex harness picker */
