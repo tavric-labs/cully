@@ -370,6 +370,9 @@ func (m *uiManager) jobSuggestRun() (int, error) {
 }
 
 func (m *uiManager) jobSuggestIfDue() {
+	if m.paused() {
+		return
+	}
 	lib := m.sessionLibrary()
 	if !lib.Analysis.On || lib.Totals.Analyzed < uiCoachMin {
 		return

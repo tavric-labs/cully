@@ -140,6 +140,9 @@ func (m *uiManager) startQueued(id string) (*uiAgent, error) {
 
 // drainQueue starts waiting tasks, oldest first, while there is room.
 func (m *uiManager) drainQueue() {
+	if m.paused() {
+		return
+	}
 	for m.hasRoom() {
 		m.qmu.Lock()
 		var item *uiQueued

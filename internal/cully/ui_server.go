@@ -173,6 +173,10 @@ func newUIServer(m *uiManager, token string, loopback bool) http.Handler {
 	mux.Handle("GET /api/feed", s.api(s.feedGet))
 	mux.Handle("GET /api/agents/{id}/report", s.api(s.reportGet))
 	mux.Handle("GET /api/harness/capabilities", s.api(s.capabilitiesGet))
+	mux.Handle("GET /api/harness/probe", s.api(s.probeGet))
+	mux.Handle("POST /api/harness/probe/refresh", s.api(s.probeRefresh))
+	mux.Handle("GET /api/pause", s.api(s.pauseGet))
+	mux.Handle("POST /api/pause", s.api(s.pauseSet))
 	mux.Handle("GET /api/tasks", s.api(s.tasksGet))
 	mux.Handle("POST /api/tasks/{id}/continue", s.api(s.taskContinueH))
 	mux.Handle("POST /api/tasks/{id}/close", s.api(s.taskCloseH))
@@ -323,6 +327,9 @@ func (s *uiServer) listAgents(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *uiServer) createAgent(w http.ResponseWriter, r *http.Request) {
+	if s.askIfPaused(w, r) {
+		return
+	}
 	var req uiStartRequest
 	if !uiDecode(w, r, &req) {
 		return
@@ -774,6 +781,9 @@ func (s *uiServer) jobList(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *uiServer) runJob(w http.ResponseWriter, r *http.Request) {
+	if s.askIfPaused(w, r) {
+		return
+	}
 	name := r.PathValue("name")
 	known := false
 	for _, j := range uiJobs() {
@@ -791,6 +801,9 @@ func (s *uiServer) runJob(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *uiServer) scoutRun(w http.ResponseWriter, r *http.Request) {
+	if s.askIfPaused(w, r) {
+		return
+	}
 	var body struct {
 		Query string `json:"query"`
 	}
@@ -868,6 +881,9 @@ func (s *uiServer) queueRemove(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *uiServer) queueStart(w http.ResponseWriter, r *http.Request) {
+	if s.askIfPaused(w, r) {
+		return
+	}
 	a, err := s.m.startQueued(r.PathValue("id"))
 	if err != nil {
 		uiError(w, http.StatusConflict, err.Error())
@@ -877,6 +893,9 @@ func (s *uiServer) queueStart(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *uiServer) fanout(w http.ResponseWriter, r *http.Request) {
+	if s.askIfPaused(w, r) {
+		return
+	}
 	var body struct {
 		uiStartRequest
 		Count int `json:"count"`

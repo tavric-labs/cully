@@ -142,6 +142,9 @@ func (m *uiManager) setAutoScout(on bool) {
 // scoutIfDue runs the hourly scout when it is on, enough sessions are named,
 // and an hour has passed since the last one. It returns how many scouts started.
 func (m *uiManager) scoutIfDue() int {
+	if m.paused() {
+		return 0
+	}
 	m.idxMu.Lock()
 	m.loadIndexLocked()
 	on, last := m.index.AutoScout, m.index.LastScout

@@ -829,6 +829,9 @@ func reconcileJobs(jobs []scheduledJob, now time.Time) {
 // checkScheduledJobs starts every due job once. A job the daemon has not seen
 // before is only recorded, so adding one never runs it immediately.
 func checkScheduledJobs(now time.Time) {
+	if uiPaused() {
+		return
+	}
 	jobs, err := loadJobs(jobsConfigFile())
 	if err != nil {
 		daemonLog("jobs: %v", err)

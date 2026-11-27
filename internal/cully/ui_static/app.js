@@ -136,7 +136,9 @@
     if (!S.stale) $('banner').hidden = true;
     if (!res.ok) {
       let msg = res.statusText;
-      try { msg = (await res.json()).error || msg; } catch (_) { /* not JSON */ }
+      let paused = false;
+      try { const j = await res.json(); msg = j.error || msg; paused = !!j.paused; } catch (_) { /* not JSON */ }
+      if (paused && window.confirm(msg)) return api(path + (path.includes('?') ? '&' : '?') + 'anyway=1', opts);
       throw new Error(msg);
     }
     if (res.status === 204) return null;
@@ -2079,11 +2081,18 @@
       // What Cully can do with each harness, and a warning when the installed Claude Code has dropped a flag Cully relies on.
       try {
         const cv = await api('/api/harness/capabilities');
-        const mark = (v) => h('span', { class: 'cap cap-' + v, title: v === 'yes' ? 'Supported' : v === 'partial' ? 'Partly' : 'Not available' }, v === 'yes' ? 'Yes' : v === 'partial' ? 'Partly' : 'No');
+        const pr = await api('/api/harness/probe').catch(() => null);
+        const drift = (a) => ((pr && pr.harnesses.find((x) => x.agent === a)) || { drift: [] }).drift;
+        const mark = (v, why, a, label) => h('div', {}, h('span', { class: 'cap cap-' + v, title: v === 'yes' ? 'Supported' : v === 'partial' ? 'Partly' : 'Not available' }, v === 'yes' ? 'Yes' : v === 'partial' ? 'Partly' : 'No'),
+          ...drift(a).filter((d) => d.cap === label).map((d) => h('span', { class: 'cap cap-drift', title: 'The installed program no longer lists ' + d.flag + ', which Cully uses to ' + d.for }, 'Drift: ' + d.flag)),
+          why ? h('div', { class: 'faint small' }, why) : null);
+        const probeBar = h('div', { class: 'row probebar' }, h('span', { class: 'faint small' }, pr ? 'Checked ' + ago(new Date(pr.at * 1000).toISOString()) + '. ' + (pr.harnesses.some((x) => x.drift.length) ? 'Some installed programs have dropped a flag Cully relies on.' : 'Every flag Cully relies on is still there.') : 'Not checked yet.'),
+          h('button', { class: 'btn ghost small', onclick: (e) => { e.target.disabled = true; e.target.textContent = 'Checking'; api('/api/harness/probe/refresh', { method: 'POST' }).then(() => route(), () => { e.target.disabled = false; e.target.textContent = 'Check now'; toast('The check failed', true); }); } }, 'Check now'));
         body.append(card('What Cully can do with each harness', 'Each feature works through what the harness offers, so it is checked against the installed program, not assumed.',
           cv.missing.length ? h('div', { class: 'ctxnote' }, icon('alert'), h('div', {}, h('b', {}, 'Your Claude Code is missing ' + (cv.missing.length === 1 ? 'a flag' : cv.missing.length + ' flags') + ' Cully relies on'), h('div', { class: 'faint small' }, cv.missing.join('; ') + '. The features that need them are switched off until it is updated.'))) : (cv.flagsChecked ? h('p', { class: 'faint small' }, 'Every flag Cully uses is present in this Claude Code' + (cv.version ? ' (' + cv.version + ')' : '') + '.') : null),
+          probeBar,
           h('table', { class: 'ptable cmp' }, h('thead', {}, h('tr', {}, h('th', {}, 'Feature'), ...['claude', 'codex', 'cursor'].map((a) => h('th', {}, AGENT_LABEL[a])), h('th', {}, ''))),
-            h('tbody', {}, ...cv.capabilities.map((c) => h('tr', {}, h('td', {}, h('b', {}, c.label), h('div', { class: 'faint small' }, c.why)), h('td', {}, mark(c.claude)), h('td', {}, mark(c.codex)), h('td', {}, mark(c.cursor)), h('td', { class: 'faint small' }, c.note || '')))))));
+            h('tbody', {}, ...cv.capabilities.map((c) => h('tr', {}, h('td', {}, h('b', {}, c.label), h('div', { class: 'faint small' }, c.why)), h('td', {}, mark(c.claude, c.claudeWhy, 'claude', c.label)), h('td', {}, mark(c.codex, c.codexWhy, 'codex', c.label)), h('td', {}, mark(c.cursor, c.cursorWhy, 'cursor', c.label)), h('td', { class: 'faint small' }, c.note || '')))))));
       } catch (_) { /* optional */ }
       body.append(card(info.name + (info.installed ? ' ' + info.version : ''), info.tasksUseIt ? 'Every task Cully starts runs in this harness: it carries out the work, uses the servers and skills below, and obeys the permissions.' : 'Cully reads this harness\'s setup so you can compare it with the others. Tasks started here run in ' + AGENT_LABEL[tasksAgent] + '.',
         h('div', { class: 'btiles' }, tile(info.model || 'Default', 'Model'), tile(info.mode || 'Not set', 'Its permission mode'), tile(info.allow + ' / ' + info.deny, 'Allow and deny rules'), tile(String(info.mcp.length), 'Connected servers'), tile(String(info.skills.length), 'Skills'), tile(String(info.hooks.length), 'Hook events'), tile(String(info.plugins.length), 'Plugins'), tile(String(info.commands.length), 'Commands')),
@@ -3698,6 +3707,21 @@
     try { localStorage.setItem('cully-notify-nudged', '1'); } catch (_) { return; }
     toastAction('Get a heads-up when a task needs you?', 'Notification settings', () => $('notifybtn').click());
   }
+  // The pause switch: stops Cully starting anything new on its own. Work that is running carries on.
+  async function mountPause() {
+    const btn = $('pausebtn');
+    const draw = (on) => {
+      btn.classList.toggle('on', on);
+      btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+      btn.replaceChildren(icon(on ? 'alert' : 'check'), h('span', {}, on ? 'Paused' : 'Pause new work'));
+      btn.title = on ? 'New work is paused: queued tasks, scheduled agents and jobs, and automatic scouts will not start. Running tasks carry on. Click to resume.' : 'Stop Cully from starting anything new on its own. Tasks already running are not touched.';
+    };
+    btn.addEventListener('click', async () => {
+      try { const r = await api('/api/pause', { method: 'POST', body: JSON.stringify({ paused: !btn.classList.contains('on') }) }); draw(r.paused); } catch (e) { toast(e.message, true); }
+    });
+    try { draw((await api('/api/pause')).paused); } catch (_) { draw(false); }
+    btn.hidden = false;
+  }
   function mountNotifyMenu() {
     const btn = $('notifybtn');
     btn.replaceChildren(icon('bell'));
@@ -3898,6 +3922,7 @@
   async function boot() {
     mountThemeMenu();
     mountNotifyMenu();
+    mountPause();
     mountFolderMenu();
     setTimeout(() => { S.attnReady = true; }, 4000);
     try { S.info = await api('/api/info'); } catch (_) { return; }

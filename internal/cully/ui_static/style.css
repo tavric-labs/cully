@@ -1257,3 +1257,10 @@ details.pillpop > summary::-webkit-details-marker { display: none; }
 .cpdiff { max-height: 260px; overflow: auto; margin: 6px 0; padding: 8px; font-size: 11.5px; white-space: pre; border: 1px solid var(--line); border-radius: 8px; }
 .cprow .btn[disabled] { opacity: .5; cursor: not-allowed; }
 /* checkpoints: end */
+/* ---- probes and pause ---- */
+.cap-drift { margin-left: 6px; background: var(--amber); color: #2a1a05; }
+.probebar { justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.pausebtn { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--hd-line); background: transparent; color: var(--hd-ink); border-radius: 16px; padding: 3px 12px; font: inherit; font-size: var(--t-s); cursor: pointer; margin-right: 8px; }
+.pausebtn svg { width: 14px; height: 14px; }
+.pausebtn.on { background: var(--amber); border-color: var(--amber); color: #2a1a05; font-weight: 600; }
+@media (max-width: 720px) { .pausebtn span { display: none; } .pausebtn.on span { display: inline; } }
