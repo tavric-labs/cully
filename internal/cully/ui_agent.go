@@ -519,7 +519,9 @@ type uiAgent struct {
 	usage         uiTokens
 	turns         int // turns that reported usage
 	usageRecorded bool
-	mcpFiltered   bool // the task loaded only chosen MCP servers
+	turnKinds     map[string]int // tool calls by kind since the last usage report
+	byKind        map[string]int // estimated tokens by kind of work, see uiAttribute
+	mcpFiltered   bool           // the task loaded only chosen MCP servers
 	uses          map[string]uiToolUse
 	openTools     map[string]string // tool calls started and not yet returned, by id, to the tool's name
 	openLast      string            // the id of the latest of them
@@ -868,6 +870,10 @@ func (a *uiAgent) applyParsed(p uiParsed) {
 	a.mu.Lock()
 	for id, u := range p.Uses {
 		a.uses[id] = u
+		if a.turnKinds == nil {
+			a.turnKinds = map[string]int{}
+		}
+		a.turnKinds[uiToolKind(u.Name)]++
 		if a.openTools == nil {
 			a.openTools = map[string]string{}
 		}
@@ -968,6 +974,11 @@ func (a *uiAgent) applyParsed(p uiParsed) {
 	if p.Usage != nil {
 		a.mu.Lock()
 		a.usage = a.usage.add(*p.Usage)
+		if a.byKind == nil {
+			a.byKind = map[string]int{}
+		}
+		uiAttribute(a.byKind, *p.Usage, a.turnKinds)
+		a.turnKinds = nil
 		a.graph.meter(0, a.usage.Input+a.usage.Output)
 		a.turns++
 		a.mu.Unlock()

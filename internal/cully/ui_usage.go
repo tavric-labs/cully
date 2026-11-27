@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 )
 
@@ -25,6 +26,73 @@ type uiUsageRec struct {
 	Output      int       `json:"output"`
 	McpFiltered bool      `json:"mcpFiltered"`
 	Named       bool      `json:"named"` // started as a named agent's run
+	// ByKind estimates where the task's tokens went, by the kind of work: fresh input and output are split
+	// across the tools each turn used, and what was re-read from the cache is its own line.
+	ByKind map[string]int `json:"byKind,omitempty"`
+}
+
+// Kinds of work a turn's tokens are attributed to.
+const (
+	uiKindEdit     = "File edits"
+	uiKindRead     = "Reading and searching files"
+	uiKindShell    = "Shell commands"
+	uiKindWeb      = "Web"
+	uiKindAgents   = "Subagents"
+	uiKindReply    = "Replies and thinking"
+	uiKindOther    = "Other tools"
+	uiKindCache    = "Context re-read from cache"
+	uiMCPKindStart = "MCP: "
+)
+
+// uiToolKind groups a tool by what it does, so tokens can be summed by kind of work, not by folder.
+func uiToolKind(name string) string {
+	switch {
+	case strings.HasPrefix(name, "mcp__"):
+		parts := strings.SplitN(strings.TrimPrefix(name, "mcp__"), "__", 2)
+		return uiMCPKindStart + parts[0]
+	}
+	switch name {
+	case "Edit", "Write", "MultiEdit", "NotebookEdit", "apply_patch", "StrReplace", "ApplyPatch":
+		return uiKindEdit
+	case "Read", "Glob", "Grep", "LS", "NotebookRead", "Search", "ReadFile":
+		return uiKindRead
+	case "Bash", "BashOutput", "KillShell", "exec_command", "shell", "Shell":
+		return uiKindShell
+	case "WebSearch", "WebFetch":
+		return uiKindWeb
+	case "Task", "Agent":
+		return uiKindAgents
+	}
+	return uiKindOther
+}
+
+// uiAttribute splits one turn's tokens across the kinds of tools it used, by how many calls of each. A turn
+// with no tool calls is a reply. Cached input is the context carried into the turn, shown on its own.
+func uiAttribute(into map[string]int, u uiTokens, kinds map[string]int) {
+	if u.CacheRead > 0 {
+		into[uiKindCache] += u.CacheRead
+	}
+	fresh := u.Input + u.CacheWrite + u.Output
+	if fresh <= 0 {
+		return
+	}
+	calls := 0
+	for _, n := range kinds {
+		calls += n
+	}
+	if calls == 0 {
+		into[uiKindReply] += fresh
+		return
+	}
+	given := 0
+	var last string
+	for k, n := range kinds {
+		share := fresh * n / calls
+		into[k] += share
+		given += share
+		last = k
+	}
+	into[last] += fresh - given // rounding goes to one kind so the parts add up
 }
 
 func (m *uiManager) recordUsage(a *uiAgent) {
@@ -36,7 +104,11 @@ func (m *uiManager) recordUsage(a *uiAgent) {
 	}
 	a.usageRecorded = true
 	u, turns := a.usage, a.turns
-	rec := uiUsageRec{Time: time.Now().UTC(), TaskID: a.id, Title: a.title, Repo: a.repo, Turns: turns,
+	byKind := map[string]int{}
+	for k, v := range a.byKind {
+		byKind[k] = v
+	}
+	rec := uiUsageRec{ByKind: byKind, Time: time.Now().UTC(), TaskID: a.id, Title: a.title, Repo: a.repo, Turns: turns,
 		Fresh: u.Input + u.CacheWrite, Cached: u.CacheRead, Output: u.Output, McpFiltered: a.mcpFiltered, Named: a.req.appendSystem != ""}
 	a.mu.Unlock()
 	uiDB().logAdd("usage", rec, uiUsageKeep)
@@ -66,6 +138,11 @@ type uiUsageFolder struct {
 	Tasks  int    `json:"tasks"`
 }
 
+type uiUsageKind struct {
+	Name   string `json:"name"`
+	Tokens int    `json:"tokens"`
+}
+
 type uiUsageTask struct {
 	Title       string    `json:"title"`
 	Tokens      int       `json:"tokens"`
@@ -85,6 +162,7 @@ type uiUsageSummary struct {
 	Saved       int             `json:"saved"`       // cost saved by the cache, in tokens at full price
 	Daily       []uiUsageDay    `json:"daily"`
 	Folders     []uiUsageFolder `json:"folders"`
+	Kinds       []uiUsageKind   `json:"kinds"` // estimated tokens by kind of work; empty until tasks have recorded it
 	Top         []uiUsageTask   `json:"top"`
 	// Input per turn for tasks that loaded every connected server and for those limited to chosen ones.
 	AllPerTurn      int `json:"allPerTurn"`
@@ -108,6 +186,7 @@ func (m *uiManager) usageSummary(days int) uiUsageSummary {
 		s.Daily = append(s.Daily, uiUsageDay{Date: d})
 	}
 	byFolder := map[string]*uiUsageFolder{}
+	byKind := map[string]int{}
 	var allIn, allTurns, filtIn, filtTurns int
 	recs := uiReadUsage()
 	var tasks []uiUsageTask
@@ -125,6 +204,9 @@ func (m *uiManager) usageSummary(days int) uiUsageSummary {
 			d.Tokens += total
 			d.Saved += r.Cached * 9 / 10
 			d.Tasks++
+		}
+		for k, v := range r.ByKind {
+			byKind[k] += v
 		}
 		name := filepath.Base(r.Repo)
 		f := byFolder[name]
@@ -162,6 +244,14 @@ func (m *uiManager) usageSummary(days int) uiUsageSummary {
 	}
 	for _, f := range byFolder {
 		s.Folders = append(s.Folders, *f)
+	}
+	s.Kinds = []uiUsageKind{}
+	for k, v := range byKind {
+		s.Kinds = append(s.Kinds, uiUsageKind{Name: k, Tokens: v})
+	}
+	sort.Slice(s.Kinds, func(i, j int) bool { return s.Kinds[i].Tokens > s.Kinds[j].Tokens })
+	if len(s.Kinds) > 10 {
+		s.Kinds = s.Kinds[:10]
 	}
 	sort.Slice(s.Folders, func(i, j int) bool { return s.Folders[i].Tokens > s.Folders[j].Tokens })
 	if len(s.Folders) > 8 {

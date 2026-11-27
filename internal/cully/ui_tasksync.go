@@ -49,7 +49,7 @@ func uiSessionRef(taskID, sessionID string) string {
 }
 
 func uiTaskFingerprint(r uiTaskRecord) string {
-	b, _ := json.Marshal([]any{r.State, len(r.Sessions), r.Files, r.Last, r.Closed, r.Runs})
+	b, _ := json.Marshal([]any{r.State, len(r.Sessions), r.Files, r.Last, r.Closed, r.Runs, r.Title, r.Summary})
 	sum := sha256.Sum256(b)
 	return hex.EncodeToString(sum[:8])
 }

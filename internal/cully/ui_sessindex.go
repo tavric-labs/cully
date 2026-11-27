@@ -785,6 +785,7 @@ func (m *uiManager) runIndexer(ctx context.Context) {
 		m.jobSuggestIfDue()
 		m.rulesIfDue()
 		m.syncAgentsIfDue()
+		m.retitleTasks()
 		m.syncTasksIfDue()
 	}
 	go m.probeIfDue()

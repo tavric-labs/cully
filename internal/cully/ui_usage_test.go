@@ -93,3 +93,30 @@ func TestSavingsPageShowsRealTaskTokens(t *testing.T) {
 		}
 	}
 }
+
+func TestTokensAreAttributedToTheKindsOfToolsUsed(t *testing.T) {
+	into := map[string]int{}
+	uiAttribute(into, uiTokens{Input: 100, CacheRead: 5000, CacheWrite: 50, Output: 50}, map[string]int{uiKindEdit: 1, uiKindShell: 3})
+	if into[uiKindCache] != 5000 {
+		t.Fatalf("cache = %d", into[uiKindCache])
+	}
+	if got := into[uiKindEdit] + into[uiKindShell]; got != 200 {
+		t.Fatalf("attributed %d of 200 fresh tokens: %v", got, into)
+	}
+	if into[uiKindShell] <= into[uiKindEdit] {
+		t.Fatalf("three shell calls should outweigh one edit: %v", into)
+	}
+	reply := map[string]int{}
+	uiAttribute(reply, uiTokens{Input: 10, Output: 20}, nil)
+	if reply[uiKindReply] != 30 {
+		t.Fatalf("a turn with no tools is a reply: %v", reply)
+	}
+}
+
+func TestToolKinds(t *testing.T) {
+	for name, want := range map[string]string{"Edit": uiKindEdit, "Grep": uiKindRead, "Bash": uiKindShell, "WebFetch": uiKindWeb, "Task": uiKindAgents, "mcp__github__create_issue": "MCP: github", "Weird": uiKindOther} {
+		if got := uiToolKind(name); got != want {
+			t.Errorf("%s -> %q, want %q", name, got, want)
+		}
+	}
+}

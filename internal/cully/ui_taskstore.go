@@ -45,16 +45,19 @@ const (
 )
 
 type uiTaskRecord struct {
-	ID         string          `json:"id"`
-	Title      string          `json:"title"`
-	Repo       string          `json:"repo"`
-	Branch     string          `json:"branch,omitempty"`
-	Worktree   string          `json:"worktree,omitempty"`
-	State      string          `json:"state"`
-	Created    time.Time       `json:"created"`
-	Updated    time.Time       `json:"updated"`
-	Prompt     string          `json:"prompt,omitempty"`
-	Last       string          `json:"last,omitempty"`
+	ID       string    `json:"id"`
+	Title    string    `json:"title"`
+	Repo     string    `json:"repo"`
+	Branch   string    `json:"branch,omitempty"`
+	Worktree string    `json:"worktree,omitempty"`
+	State    string    `json:"state"`
+	Created  time.Time `json:"created"`
+	Updated  time.Time `json:"updated"`
+	Prompt   string    `json:"prompt,omitempty"`
+	Last     string    `json:"last,omitempty"`
+	// Summary is what the task did, in a few sentences, written from its analysed sessions by the background
+	// retitler. Empty until a session of the task has been analysed.
+	Summary    string          `json:"summary,omitempty"`
 	Files      int             `json:"files"`
 	Runs       int             `json:"runs"` // how many times Cully has run it
 	Sessions   []uiTaskSession `json:"sessions"`

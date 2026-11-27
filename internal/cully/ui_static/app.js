@@ -442,7 +442,7 @@
     const harnesses = [...new Set((t.sessions || []).map((x) => x.agent).filter(Boolean))];
     const modal = h('div', { class: 'modal', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Continue the task' },
       h('header', {}, h('h2', {}, 'Continue this task'), h('button', { class: 'btn ghost small sp', onclick: closeMCP }, 'Cancel')),
-      h('div', { class: 'mbody' }, h('p', {}, h('b', {}, t.title)), t.last ? h('p', { class: 'faint small' }, t.last) : null,
+      h('div', { class: 'mbody' }, h('p', {}, h('b', {}, t.title)), (t.summary || t.last) ? h('p', { class: 'faint small' }, t.summary || t.last) : null,
         (t.sessions || []).length ? h('div', { class: 'row' }, h('span', { class: 'faint small' }, (t.sessions.length === 1 ? 'One session' : t.sessions.length + ' sessions') + ':'), ...t.sessions.map((x) => harnessChip(x.agent))) : null,
         h('p', { class: 'faint' }, 'If its last Claude session can be resumed, that conversation carries on. Otherwise a new run starts from what the task has done so far' + (harnesses.some((x) => x !== 'claude') ? ', including the ' + harnesses.filter((x) => x !== 'claude').map((x) => AGENT_NAMES[x] || x).join(' and ') + ' work' : '') + '.'),
         ta, err, h('div', { class: 'row' }, go)));
@@ -463,7 +463,7 @@
       const ag = [...new Set((t.sessions || []).map((x) => x.agent).filter(Boolean))];
       return h('article', { class: 'tcard' },
         h('div', { class: 'row' }, h('b', { class: 'ttitle' }, t.title), h('span', { class: 'chip fs-' + (st[1] === 'good' ? 'good' : st[1] === 'bad' ? 'bad' : st[1] === 'wait' ? 'wait' : 'info') }, st[0]), h('span', { class: 'sp' }), h('span', { class: 'faint small' }, ago(t.updated))),
-        t.last ? h('p', { class: 'fprev' }, plainPreview(t.last)) : null,
+        (t.summary || t.last) ? h('p', { class: 'fprev' }, plainPreview(t.summary || t.last)) : null,
         h('div', { class: 'row' }, t.repo ? h('span', { class: 'chip', title: t.repo }, icon('folder'), t.repo.split('/').filter(Boolean).pop()) : null,
           (t.sessions || []).length ? h('span', { class: 'chip' }, t.sessions.length + (t.sessions.length === 1 ? ' session' : ' sessions')) : null, ...ag.map((x) => harnessChip(x)),
           t.files ? h('span', { class: 'chip' }, t.files + (t.files === 1 ? ' file changed' : ' files changed')) : null, h('span', { class: 'sp' }),
@@ -2347,7 +2347,7 @@
       let all = [];
       try { all = await api('/api/tasks?range=' + view.period); } catch (e) { wrap.replaceChildren(h('div', { class: 'err' }, e.message)); return; }
       const q = view.q.trim().toLowerCase();
-      const shown = all.filter((t) => !q || (t.title + ' ' + (t.last || '')).toLowerCase().includes(q));
+      const shown = all.filter((t) => !q || (t.title + ' ' + (t.summary || '') + ' ' + (t.last || '')).toLowerCase().includes(q));
       const by = (k) => shown.filter((t) => t.status === k);
       const sessions = shown.reduce((n, t) => n + (t.sessions || []).length, 0);
       const mem = memoryMode() === 'mcp';
@@ -2363,7 +2363,7 @@
         return h('article', { class: 'tcard' + (t.closed ? ' closed' : '') },
           h('div', { class: 'row' }, h('b', { class: 'ttitle' }, t.title), t.closed ? h('span', { class: 'chip' }, 'Closed') : h('span', { class: 'chip fs-' + (st[1] === 'good' ? 'good' : st[1] === 'bad' ? 'bad' : st[1] === 'wait' ? 'wait' : 'info') }, st[0]), h('span', { class: 'sp' }), h('span', { class: 'faint small' }, ago(t.updated))),
           t.why ? h('p', { class: 'twhy' }, t.why) : null,
-          t.last ? h('p', { class: 'fprev' }, plainPreview(t.last)) : null,
+          (t.summary || t.last) ? h('p', { class: 'fprev' }, plainPreview(t.summary || t.last)) : null,
           h('div', { class: 'row' }, t.repo ? h('span', { class: 'chip', title: t.repo }, icon('folder'), t.repo.split('/').filter(Boolean).pop()) : null, ...[...new Set(ss.map((x) => x.agent).filter(Boolean))].map((x) => harnessChip(x)),
             t.files ? h('span', { class: 'chip' }, t.files + (t.files === 1 ? ' file' : ' files')) : null, t.runs ? h('span', { class: 'chip' }, t.runs + (t.runs === 1 ? ' run' : ' runs')) : null, memChip),
           ss.length ? det : null,
@@ -3598,6 +3598,15 @@
         v.basis ? h('p', { class: 'faint' }, v.basis) : null));
   }
 
+  // Where the tokens went, by kind of work (edits, reads, shell, each MCP server, replies) instead of by folder.
+  // Fresh input and output are split across the tools each turn used, so these are estimates; the cache line is exact.
+  function kindBars(u) {
+    if (!u.kinds || !u.kinds.length) return null;
+    const total = u.kinds.reduce((n, k) => n + k.tokens, 0) || 1; const max = Math.max(1, ...u.kinds.map((k) => k.tokens));
+    return h('div', {}, h('span', { class: 'opt-label' }, 'Where the tokens went'),
+      h('ul', { class: 'fbars' }, ...u.kinds.map((k) => h('li', {}, h('span', { class: 'fname', title: k.name }, k.name), h('span', { class: 'fbar' }, fill(Math.round(k.tokens / max * 100))), h('span', { class: 'faint small' }, fmtTokens(k.tokens) + ' (' + Math.round(k.tokens * 100 / total) + '%)')))),
+      h('p', { class: 'faint small' }, 'Estimated: each turn\'s fresh input and output are shared across the tools it called. Only tasks finished since this was added are counted.'));
+  }
   // What the tasks started from Cully really used, and what the cache and the connected-tools choice saved.
   function tasksTokenCard(u) {
     if (!u) return null;
@@ -3611,7 +3620,8 @@
     return h('section', { class: 'lib-card' }, h('b', {}, 'Tokens used by your tasks'),
       h('div', { class: 'kpis' }, ...[[fmtTokens(u.tokens), 'Tokens handled'], [u.cachedShare + '%', 'Input from the cache'], [fmtTokens(u.saved), 'Saved by the cache'], [String(u.tasks), u.tasks === 1 ? 'Task' : 'Tasks']].map(([n, l]) => h('div', { class: 'kpi' }, h('b', {}, n), h('span', {}, l)))),
       chart, mcp,
-      u.folders.length ? h('div', {}, h('span', { class: 'opt-label' }, 'Where the tokens went'), h('ul', { class: 'fbars' }, ...u.folders.map((f) => h('li', {}, h('span', { class: 'fname' }, f.name), h('span', { class: 'fbar' }, fill(Math.round(f.tokens / maxF * 100))), h('span', { class: 'faint small' }, fmtTokens(f.tokens) + ', ' + f.tasks + (f.tasks === 1 ? ' task' : ' tasks')))))) : null,
+      kindBars(u),
+      u.folders.length && !(u.kinds && u.kinds.length) ? h('div', {}, h('span', { class: 'opt-label' }, 'Where the tokens went'), h('ul', { class: 'fbars' }, ...u.folders.map((f) => h('li', {}, h('span', { class: 'fname' }, f.name), h('span', { class: 'fbar' }, fill(Math.round(f.tokens / maxF * 100))), h('span', { class: 'faint small' }, fmtTokens(f.tokens)))))) : null,
       u.top.length ? h('div', {}, h('span', { class: 'opt-label' }, 'Biggest tasks'), h('ul', { class: 'hrows' }, ...u.top.map((t) => h('li', { class: 'hrow' }, h('div', { class: 'hmain' }, h('div', { class: 'ht' }, t.title), h('div', { class: 'row' }, h('span', { class: 'chip' }, fmtTokens(t.tokens) + ' tokens'), h('span', { class: 'chip' }, t.cachedShare + '% from cache'), h('span', { class: 'chip' }, ago(t.time)))), h('div', { class: 'row hact' }, h('a', { class: 'btn ghost small', href: '#/task/' + t.taskId }, 'Open')))))) : null);
   }
 

@@ -18,3 +18,11 @@ func TestTaskTitlesAreShortReadableAndSkipTheFiller(t *testing.T) {
 		}
 	}
 }
+
+func TestWeakTaskTitles(t *testing.T) {
+	for title, weak := range map[string]bool{"Fix": true, "": true, "ee541522": true, "Continue: Implemented team intent flow": true, "fix the login": false, "Build session UI and token display": false, "do it": true} {
+		if got := uiWeakTaskTitle(title); got != weak {
+			t.Errorf("%q weak = %v, want %v", title, got, weak)
+		}
+	}
+}
