@@ -290,6 +290,16 @@ Opening a server shows its state and address, then its tools. A long list is gro
 
 On the Harness page each connected MCP server is a card with a switch for whether tasks load it. Open a card to see its tools, prompts and resources in a scrollable list with search. Claude Code reports every tool and prompt name when a task starts, so those are known after the first task. Cully's own server lists every tool with what it does and what it takes, read from its source. For any other server, **Load descriptions and parameters** asks your Claude once to read that server's tool definitions (a few thousand tokens) and remembers the answer. Claude Code does not report resources, so the Resources tab says so.
 
+## Tasks on Codex
+
+When Codex is installed, the new-task page shows a **Harness** picker (Claude Code, Codex; Cursor appears greyed out with "not supported yet" because it has no verified headless protocol). Pick Codex and the task runs `codex app-server` over stdio JSON-RPC in its own worktree, like a Claude task: edit mode uses the `workspace-write` sandbox, plan mode `read-only`, with the `on-request` approval policy. When Codex asks to run a command outside the sandbox or change files, the same permission card appears (risk label, exact command, allow once, allow for this task, deny). Allow maps to `accept`, allow for this task to `acceptForSession`, deny to `decline`. High-risk calls are still allowed one at a time. `GET /api/harness/available` lists the installed harnesses; the API accepts `{"harness":"codex"}` and `{"resumeThread":"<thread id>"}` on `POST /api/agents`. Follow-up messages sent during a turn are queued and sent when it ends (no steering). What a harness can do comes from the capability matrix (`/api/harness/capabilities`), not from its name. Codex loads the MCP servers from its own config; Cully's server choice and tool groups apply to Claude only.
+
+Message shapes recorded from codex-cli 0.172.0 (full notes in the spike file `notes.md`, kept under `/twbuild/proshan/tmp/codex-spike`):
+
+- `initialize {clientInfo, capabilities}`, then the notification `initialized`; `thread/start {cwd, approvalPolicy, sandbox}` returns `{thread:{id}, model}`; `thread/resume {threadId, ...}` returns the same; `turn/start {threadId, input:[{type:"text", text}]}`; `turn/interrupt {threadId, turnId}`.
+- Notifications: `turn/started`, `item/started` and `item/completed` (types `agentMessage` with phase `commentary` or `final_answer`, `commandExecution` with `command`, `aggregatedOutput`, `exitCode`, `status`, `fileChange` with `changes`), `item/agentMessage/delta`, `thread/tokenUsage/updated` (`total` and `last` breakdowns, `modelContextWindow`; `inputTokens` includes cached and cache-write tokens), `turn/completed {turn:{status}}`.
+- Approval: Codex sends the request `item/commandExecution/requestApproval` (or `item/fileChange/requestApproval`) with an integer `id`; the answer is `{"id": <same>, "result": {"decision": "accept" | "acceptForSession" | "decline" | "cancel"}}`.
+
 ## Security model
 
 - Every API call needs the token (cookie or bearer); changes also need the `X-Cully-UI` header; loopback binds reject other `Host` names.

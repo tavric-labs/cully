@@ -1285,3 +1285,8 @@ details.pillpop > summary::-webkit-details-marker { display: none; }
 .ac-state.lc-pinned { background: var(--green); color: var(--green-ink); }
 .ac-state.lc-stale { background: var(--peach); color: var(--peach-ink); }
 .ac-state.lc-archived { background: var(--surface2); color: var(--faint); }
+/* codex harness picker */
+.harnesspick button:disabled { opacity: 0.55; cursor: not-allowed; }
+/* end codex harness picker */
+.pillrow .og { flex-direction: row; align-items: center; gap: 8px; }
+.pillrow .og .opt-label { margin: 0; }

@@ -115,7 +115,7 @@ func (m *uiManager) saveTask(a *uiAgent) {
 		}
 	}
 	if idx < 0 && sid != "" { // a new session: a run, a resume, or a handoff in another harness
-		rec.Sessions = append(rec.Sessions, uiTaskSession{ID: sid, Agent: "claude", At: now, Role: "run"})
+		rec.Sessions = append(rec.Sessions, uiTaskSession{ID: sid, Agent: uiHarnessID(a.req.Harness), At: now, Role: "run"})
 		idx = len(rec.Sessions) - 1
 	}
 	if idx >= 0 {

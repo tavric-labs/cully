@@ -470,6 +470,20 @@
     };
     const seg = h('div', { class: 'seg', role: 'group', 'aria-label': 'Mode' });
     seg.append(segBtn('edit', 'Edit'), segBtn('plan', 'Plan only'));
+    // Which harness runs the task: only installed ones are offered, and what each can do comes from the capability matrix.
+    const hbox = h('div', { class: 'seg harnesspick', role: 'group', 'aria-label': 'Harness' });
+    const hgroup = h('div', { class: 'og', hidden: true }, h('span', { class: 'opt-label' }, 'Harness'), h('div', { class: 'row' }, hbox));
+    api('/api/harness/available').then((list) => {
+      const shown = (list || []).filter((x) => x.installed);
+      if (shown.length < 2) return;
+      if (!shown.some((x) => x.id === (S.opts.harness || 'claude') && x.available)) S.opts.harness = 'claude';
+      hbox.replaceChildren(...shown.map((x) => {
+        const b = h('button', { type: 'button', class: (S.opts.harness || 'claude') === x.id ? 'on' : '', disabled: !x.available, title: x.available ? (x.version || x.name) : x.name + ': ' + x.reason }, x.name + (x.available ? '' : ' (' + x.reason + ')'));
+        b.addEventListener('click', () => { S.opts.harness = x.id; for (const c of hbox.children) c.classList.toggle('on', c === b); });
+        return b;
+      }));
+      hgroup.hidden = false;
+    }).catch(() => {});
     const repo = S.info && S.info.repos.length > 1 ? h('select', { 'aria-label': 'Repository' }, ...S.info.repos.map((r) => h('option', { value: r, ...(r === S.opts.repo ? { selected: true } : {}) }, r.split('/').pop()))) : null;
     if (repo) repo.addEventListener('change', () => { S.opts.repo = repo.value; });
     const doneIn = h('textarea', { rows: '2', 'aria-label': 'Done when', placeholder: 'For example: the login test passes\nNo new lint errors' });
@@ -499,7 +513,7 @@
     const form = h('form', { class: 'composer-card hero-composer' }, ta, loopBox,
       h('div', { class: 'cbar' }, voiceEl, h('span', { class: 'sp' }), later, start), err);
     voiceRef.form = form;
-    const pills = h('div', { class: 'pillrow' }, folderPill, seg,
+    const pills = h('div', { class: 'pillrow' }, hgroup, folderPill, seg,
       pop('Include', 'plus', h('div', { class: 'popcol' }, toggle('context', 'Context', "Start from this project's latest journal and git state"),
         toggle('recall', 'Recall', 'Ask Cully memory what is relevant (needs the Cully MCP signed in)'),
         toggle('scout', 'Scout', 'Search the web for current practice and pitfalls'))),
@@ -517,7 +531,7 @@
       e.preventDefault();
       err.hidden = true; start.disabled = true;
       try {
-        const body = { prompt: ta.value, repo: S.opts.repo || (repo ? repo.value : ''), mode: S.opts.mode, context: S.opts.context, recall: S.opts.recall, scout: S.opts.scout, maxCost: Number(S.opts.maxCost) || 0, maxTurns: Math.floor(Number(S.opts.maxTurns)) || 0, loop: !!S.opts.loop, doneWhen: S.opts.loop ? (S.opts.doneWhen || '') : '', helpers: S.opts.loop ? (S.opts.helpers || []) : [] };
+        const body = { prompt: ta.value, repo: S.opts.repo || (repo ? repo.value : ''), mode: S.opts.mode, harness: S.opts.harness && S.opts.harness !== 'claude' ? S.opts.harness : '', context: S.opts.context, recall: S.opts.recall, scout: S.opts.scout, maxCost: Number(S.opts.maxCost) || 0, maxTurns: Math.floor(Number(S.opts.maxTurns)) || 0, loop: !!S.opts.loop, doneWhen: S.opts.loop ? (S.opts.doneWhen || '') : '', helpers: S.opts.loop ? (S.opts.helpers || []) : [] };
         const view = await api('/api/agents', { method: 'POST', body: JSON.stringify(body) });
         S.draft = '';
         await refresh();
@@ -806,6 +820,7 @@
     drawTaskPanel(a);
     $('sub2').replaceChildren(
       h('button', { class: 'chip mono', title: 'Copy branch name', onclick: () => copy(a.branch, 'branch') }, icon('branch'), a.branch),
+      a.agent ? harnessChip(a.agent) : null,
       a.token ? h('span', { class: 'chip' }, 'token ' + a.token) : h('span', { class: 'chip' }, 'ambient login'),
       h('span', { class: 'chip' }, 'started ' + ago(a.created)), h('span', { class: 'chip' }, 'active ' + ago(a.updated || a.created)),
       a.run ? h('button', { class: 'chip', title: 'How the harness underneath this task is set up', onclick: () => openRunInfo(a) }, icon('term'), a.run.harness + ', ' + (a.run.permission === 'plan' ? 'read only' : 'can edit') + ', ' + (a.run.mcpMode === 'chosen' ? a.run.mcpChosen.length + ' servers' : 'all servers')) : null,

@@ -68,6 +68,7 @@ type uiConfig struct {
 	Repos       []string // allow-list of git repositories agents may work in
 	Tokens      *uiTokenPool
 	ClaudeBin   string // default: claudeExecutable()
+	CodexBin    string // default: the codex found on the PATH
 	MaxAgents   int    // live agents at once; default 4
 	// NoConflictAlerts stops Cully telling two agents that they edited the same file.
 	NoConflictAlerts bool
@@ -86,6 +87,10 @@ type uiStartRequest struct {
 	Recall  bool   `json:"recall"`
 	Scout   bool   `json:"scout"`
 	Mode    string `json:"mode"` // "" or "edit" (accept edits) or "plan" (read-only planning)
+	// Harness is the program that runs the task: "" or "claude", or "codex".
+	Harness string `json:"harness"`
+	// ResumeThread continues an earlier Codex thread by its id (Codex only).
+	ResumeThread string `json:"resumeThread"`
 
 	// Set by Cully for review agents; never read from the request body.
 	addDirs      []string
@@ -135,6 +140,7 @@ type uiAgentView struct {
 	Last        string         `json:"last"`    // one line describing the latest activity
 	Updated     time.Time      `json:"updated"` // when the latest activity happened
 	Harness     *uiHarnessView `json:"harness,omitempty"`
+	Agent       string         `json:"agent"` // the program running the task: claude or codex
 	Usage       *uiUsageView   `json:"usage,omitempty"`
 	Context     *uiContextView `json:"context,omitempty"`     // how full the model's context is
 	Cost        float64        `json:"cost,omitempty"`        // list price of the session so far, in dollars
@@ -359,6 +365,9 @@ func (m *uiManager) start(req uiStartRequest) (*uiAgent, error) {
 	if req.Model != "" && !uiModelName.MatchString(req.Model) {
 		return nil, errors.New("invalid model name")
 	}
+	if err := m.prepareHarness(&req); err != nil {
+		return nil, err
+	}
 	var repo string
 	if req.inPlaceDir != "" { // an agent's own folder: no git, no worktree
 		repo = req.inPlaceDir
@@ -413,7 +422,7 @@ func (m *uiManager) start(req uiStartRequest) (*uiAgent, error) {
 	}
 	m.agents[id] = a
 	m.order = append(m.order, id)
-	_ = m.mcp.markInUse("claude") // UI-spawned agents run Claude
+	_ = m.mcp.markInUse(uiHarnessID(req.Harness)) // UI-spawned agents run Claude or Codex
 	defer m.saveTask(a)
 	go a.run(m)
 	return a, nil
@@ -478,6 +487,7 @@ type uiAgent struct {
 	doneTurns                         int          // turns the harness has finished, for the turn limit
 	perm                              uiPermState  // questions about tools the task is not already allowed to use
 	mq                                uiMsgQueue   // messages sent while it works: steers and follow-ups
+	runner                            uiRunner     // set when the task runs on a harness other than Claude Code
 
 	mu      sync.Mutex
 	state   string
@@ -526,7 +536,7 @@ func (a *uiAgent) snapshot() uiAgentView {
 	return uiAgentView{
 		ID: a.id, Title: a.title, Repo: a.repo, Branch: a.branch, Worktree: a.worktree,
 		Token: a.token, State: a.state, Created: a.created,
-		Stages: a.stagesCopyLocked(), Events: len(a.events), Files: a.sortedFilesLocked(), Last: a.last, Updated: a.updated, Group: a.req.group, Option: a.req.option, Harness: a.harnessView(), Usage: usageOf(a.usage), Run: a.runInfo, Context: contextOf(a.model, a.ctx, a.window, a.compactions), Cost: a.cost, Limits: a.limitsView(), MCP: append([]uiMCPServer(nil), a.mcp...), Permissions: a.pendingPermissions(), Stuck: a.watch.current(), Queue: a.mq.list(), StopReason: a.stopReason, MaxCost: a.req.MaxCost, MaxTurns: a.req.MaxTurns,
+		Stages: a.stagesCopyLocked(), Events: len(a.events), Files: a.sortedFilesLocked(), Last: a.last, Updated: a.updated, Group: a.req.group, Option: a.req.option, Harness: a.harnessView(), Agent: uiHarnessID(a.req.Harness), Usage: usageOf(a.usage), Run: a.runInfo, Context: contextOf(a.model, a.ctx, a.window, a.compactions), Cost: a.cost, Limits: a.limitsView(), MCP: append([]uiMCPServer(nil), a.mcp...), Permissions: a.pendingPermissions(), Stuck: a.watch.current(), Queue: a.mq.list(), StopReason: a.stopReason, MaxCost: a.req.MaxCost, MaxTurns: a.req.MaxTurns,
 	}
 }
 
@@ -670,10 +680,16 @@ func (a *uiAgent) isStopped() bool {
 func (a *uiAgent) run(m *uiManager) {
 	defer close(a.done)
 	var prompt string
-	if a.req.resumeID != "" || a.req.inPlaceDir != "" {
+	if a.req.resumeID != "" || a.req.inPlaceDir != "" || a.req.Harness == "codex" {
 		prompt = a.req.Prompt
 		for _, st := range []string{"context", "recall", "scout"} {
 			a.setStage(st, "skipped", "")
+		}
+		if a.req.Harness == "codex" && a.req.inPlaceDir == "" && a.req.resumeDir == "" { // Codex works in its own worktree too
+			if err := a.addWorktree(); err != nil {
+				a.fail("could not create worktree: " + err.Error())
+				return
+			}
 		}
 		a.recordBase()
 	} else {
@@ -688,6 +704,10 @@ func (a *uiAgent) run(m *uiManager) {
 		return
 	}
 	a.checkpointBefore()
+	if a.req.Harness == "codex" {
+		a.runCodex(m, prompt)
+		return
+	}
 	bin := m.cfg.ClaudeBin
 	if bin == "" {
 		bin = claudeExecutable()
@@ -799,7 +819,12 @@ func (a *uiAgent) run(m *uiManager) {
 }
 
 func (a *uiAgent) handleLine(line []byte) {
-	p := parseStreamLine(line)
+	a.applyParsed(parseStreamLine(line))
+}
+
+// applyParsed feeds one parsed harness message into the task: events, tool journal, usage, context
+// and turn accounting. Every harness's runner ends up here.
+func (a *uiAgent) applyParsed(p uiParsed) {
 	a.mu.Lock()
 	for id, u := range p.Uses {
 		a.uses[id] = u
@@ -921,7 +946,7 @@ func (a *uiAgent) handleLine(line []byte) {
 
 func (a *uiAgent) journalToolResult(use uiToolUse, failed bool) {
 	class := journalClassFor(use.Name, use.Command)
-	ev := journalEvent{Agent: "claude", Class: class, Failed: failed, Tool: use.Name}
+	ev := journalEvent{Agent: uiHarnessID(a.req.Harness), Class: class, Failed: failed, Tool: use.Name}
 	if class == journalCheck || use.Name == "Bash" {
 		ev.Sig = use.Sig
 	}
@@ -962,6 +987,26 @@ func (a *uiAgent) write(text string) error {
 	}
 	a.mu.Lock()
 	stdin := a.stdin
+	if a.runner != nil { // a harness with its own protocol: same turn accounting, its own wire format
+		a.pending++
+		if a.state == uiPreparing || a.state == uiWaiting {
+			a.state = uiWorking
+		}
+		r := a.runner
+		a.mu.Unlock()
+		if a.mgr != nil {
+			a.mgr.saveTask(a)
+		}
+		if err := r.Send(text); err != nil {
+			a.mu.Lock()
+			if a.pending > 0 {
+				a.pending--
+			}
+			a.mu.Unlock()
+			return err
+		}
+		return nil
+	}
 	if stdin != nil {
 		a.pending++
 		if a.state == uiPreparing || a.state == uiWaiting {
