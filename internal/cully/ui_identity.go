@@ -495,6 +495,9 @@ done:
 // identitiesDue starts every enabled agent whose schedule has come round, one
 // at a time and only when there is room.
 func (m *uiManager) identitiesDue() {
+	if m.paused() {
+		return
+	}
 	for _, id := range m.identityList() {
 		d, _ := uiScheduleInterval(id.Schedule)
 		if !id.Approved || !id.Enabled || d == 0 || uiScheduleSkips(id.Schedule, time.Now()) || id.busy() || (!id.LastRun.IsZero() && time.Since(id.LastRun) < d) || !m.hasRoom() {

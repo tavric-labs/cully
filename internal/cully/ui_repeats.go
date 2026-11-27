@@ -160,6 +160,9 @@ func (r uiRepeat) line() string {
 // agentSuggestIfDue checks for repeated work at most once a day, and only when
 // at least a few new sessions have been named since the last check.
 func (m *uiManager) agentSuggestIfDue() {
+	if m.paused() {
+		return
+	}
 	lib := m.sessionLibrary()
 	if !lib.Analysis.On || lib.Totals.Analyzed < uiCoachMin {
 		return

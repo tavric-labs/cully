@@ -545,6 +545,9 @@ func uiParseAnalysis(out string) (title, summary, different string, ok bool) {
 // It does nothing while analysis is off, within the hourly limit, or for
 // sessions that were active in the last few minutes.
 func (m *uiManager) analyzeNext() int {
+	if m.paused() {
+		return 0
+	}
 	m.idxMu.Lock()
 	m.loadIndexLocked()
 	if !m.index.Analyze {

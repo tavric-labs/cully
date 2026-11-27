@@ -364,6 +364,9 @@ func (m *uiManager) rulesDismiss(id string) error {
 // rulesIfDue drafts an update at most once a day, when analysis is on, enough
 // sessions are named, and several new ones have been named since the last look.
 func (m *uiManager) rulesIfDue() {
+	if m.paused() {
+		return
+	}
 	lib := m.sessionLibrary()
 	if !lib.Analysis.On || lib.Totals.Analyzed < uiRulesMinNamed {
 		return

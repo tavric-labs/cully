@@ -23,6 +23,10 @@ type uiCapability struct {
 	Codex  string `json:"codex"`
 	Cursor string `json:"cursor"`
 	Note   string `json:"note,omitempty"`
+	// Why each harness has the value it has, in one line, for the rows that say so.
+	ClaudeWhy string `json:"claudeWhy,omitempty"`
+	CodexWhy  string `json:"codexWhy,omitempty"`
+	CursorWhy string `json:"cursorWhy,omitempty"`
 }
 
 type uiCapabilities struct {
@@ -103,11 +107,11 @@ func (m *uiManager) capabilities() uiCapabilities {
 		{ID: "run", Label: "Run a task from Cully", Why: "Start a task from the browser and keep talking to it.", Claude: yn(have("--input-format") && have("--output-format")), Codex: "no", Cursor: "no", Note: "Tasks run in Claude today. Codex and Cursor sessions are read, continued by handoff and compared."},
 		{ID: "permission", Label: "Ask you before a risky call", Why: "A card in the task window instead of a refusal.", Claude: yn(have("--permission-prompt-tool") && have("--settings")), Codex: "no", Cursor: "no", Note: "Codex decides approvals in its own policy; Cursor in its own app."},
 		{ID: "mcp", Label: "Choose which servers a task loads", Why: "Fewer servers means fewer tool descriptions sent every turn.", Claude: yn(have("--strict-mcp-config")), Codex: "no", Cursor: "no"},
-		{ID: "resume", Label: "Resume and fork a session", Why: "Carry on the same conversation, or branch from it.", Claude: yn(have("--resume") && have("--fork-session")), Codex: "partial", Cursor: "partial", Note: "Codex and Cursor sessions continue as a new task from a handoff."},
 		{ID: "events", Label: "See each tool call as it happens", Why: "Plan checklist, tool rows, stuck detection and live activity.", Claude: "yes", Codex: "partial", Cursor: "partial", Note: "Claude streams them. Codex and Cursor record them in transcripts, read afterwards."},
 		{ID: "usage", Label: "Usage limits and context size", Why: "How much room is left in the window and in your plan.", Claude: "yes", Codex: "partial", Cursor: "no", Note: "Cursor does not record limits or tokens."},
 		{ID: "history", Label: "Session library, health and evals", Why: "Every past session, scored, searchable and turned into tests.", Claude: "yes", Codex: "yes", Cursor: "yes"},
 	}
+	out.List = append(out.List, uiSteeringCaps(yn, have)...)
 	return out
 }
 

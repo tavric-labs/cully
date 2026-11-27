@@ -115,6 +115,9 @@ func (m *uiManager) coachRun() (uiCoach, error) {
 // coachIfDue runs the coach when analysis is on, enough sessions are named,
 // and either it never ran or an hour has passed with new sessions named.
 func (m *uiManager) coachIfDue() {
+	if m.paused() {
+		return
+	}
 	lib := m.sessionLibrary()
 	if !lib.Analysis.On || lib.Totals.Analyzed < uiCoachMin {
 		return

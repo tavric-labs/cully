@@ -1193,3 +1193,11 @@ details.sgroup > summary { cursor: pointer; } details.sgroup > summary::-webkit-
 .jedit { display: flex; flex-direction: column; gap: 10px; padding-top: 4px; border-top: 1px solid var(--line); }
 .jtext { width: 100%; min-height: 56px; margin: 8px 0; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: var(--ink); padding: 8px 10px; font: inherit; resize: vertical; }
 .jtail { white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--mono, monospace); font-size: 12px; }
+
+/* ---- probes and pause ---- */
+.cap-drift { margin-left: 6px; background: var(--amber); color: #2a1a05; }
+.probebar { justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.pausebtn { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--hd-line); background: transparent; color: var(--hd-ink); border-radius: 16px; padding: 3px 12px; font: inherit; font-size: var(--t-s); cursor: pointer; margin-right: 8px; }
+.pausebtn svg { width: 14px; height: 14px; }
+.pausebtn.on { background: var(--amber); border-color: var(--amber); color: #2a1a05; font-weight: 600; }
+@media (max-width: 720px) { .pausebtn span { display: none; } .pausebtn.on span { display: inline; } }
