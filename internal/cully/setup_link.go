@@ -14,7 +14,7 @@ import (
 // skills/dev-workflow-rules pointing at that folder: a symlink when the
 // filesystem allows it, otherwise a copy carrying a header comment that says
 // where it came from. A real folder the user wrote is never overwritten: it is
-// renamed to .bak.<timestamp> first.
+// moved to ~/.cully/backups/skills first.
 
 const setupCopyMarker = "<!-- cully:linked-copy of "
 
@@ -97,12 +97,19 @@ func setupLinkRules(h setupHarnessHome, text string) (string, error) {
 		return "copy", setupWriteFile(filepath.Join(link, "SKILL.md"), setupCopyWithHeader(text)) // refresh the copy
 	}
 	if _, err := os.Lstat(link); err == nil {
-		bak := link + ".bak." + time.Now().Format("20060102-150405")
+		// The backup goes under ~/.cully/backups, not next to the skill: a copy beside it carries the same
+		// skill name and a harness would list it twice.
+		dir := filepath.Join(cullyDir(), "backups", "skills", h.ID)
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			return "", fmt.Errorf("could not make a backup folder: %w", err)
+		}
+		stamp := time.Now().Format("20060102-150405")
+		bak := filepath.Join(dir, uiRulesName+".bak."+stamp)
 		for i := 1; ; i++ {
 			if _, err := os.Lstat(bak); err != nil {
 				break
 			}
-			bak = fmt.Sprintf("%s.bak.%s-%d", link, time.Now().Format("20060102-150405"), i)
+			bak = filepath.Join(dir, fmt.Sprintf("%s.bak.%s-%d", uiRulesName, stamp, i))
 		}
 		if err := os.Rename(link, bak); err != nil {
 			return "", fmt.Errorf("could not back up %s: %w", link, err)

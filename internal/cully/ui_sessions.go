@@ -33,17 +33,18 @@ type uiProc struct {
 }
 
 type uiSession struct {
-	PID      int       `json:"pid"`
-	Agent    string    `json:"agent"` // claude, codex or cursor
-	Cwd      string    `json:"cwd"`
-	Repo     string    `json:"repo,omitempty"` // git root, when the folder is in a repository
-	Name     string    `json:"name"`
-	Branch   string    `json:"branch,omitempty"`
-	Remote   string    `json:"remote,omitempty"`
-	Via      string    `json:"via"`                // cully or terminal
-	Detached bool      `json:"detached,omitempty"` // running, but its terminal window is gone
-	InUse    bool      `json:"inUse"`              // an agent you launch Cully with
-	Started  time.Time `json:"started"`
+	PID       int       `json:"pid"`
+	SessionID string    `json:"sessionId,omitempty"`
+	Agent     string    `json:"agent"` // claude, codex or cursor
+	Cwd       string    `json:"cwd"`
+	Repo      string    `json:"repo,omitempty"` // git root, when the folder is in a repository
+	Name      string    `json:"name"`
+	Branch    string    `json:"branch,omitempty"`
+	Remote    string    `json:"remote,omitempty"`
+	Via       string    `json:"via"`                // cully or terminal
+	Detached  bool      `json:"detached,omitempty"` // running, but its terminal window is gone
+	InUse     bool      `json:"inUse"`              // an agent you launch Cully with
+	Started   time.Time `json:"started"`
 	// What the harness recorded about this session's context and usage, when it did.
 	Snapshot *uiSnapshot `json:"snapshot,omitempty"`
 }
@@ -84,6 +85,21 @@ func uiAgentOf(cmd []string) (agent string, args []string) {
 		}
 	}
 	return "", nil
+}
+
+// A resume argument identifies the transcript explicitly. A folder can
+// have several open sessions, so it does not identify one on its own.
+func uiExplicitSessionID(cmd []string) string {
+	_, args := uiAgentOf(cmd)
+	for i, arg := range args {
+		switch arg {
+		case "resume", "--resume", "--session-id":
+			if i+1 < len(args) && uiSessionID.MatchString(args[i+1]) {
+				return strings.ToLower(args[i+1])
+			}
+		}
+	}
+	return ""
 }
 
 type uiFolder struct {
@@ -162,6 +178,7 @@ func (m *uiManager) sessions() []uiSession {
 		}
 		info := uiFolderInfo(cwd)
 		s := uiSession{PID: f.p.PID, Agent: f.agent, Cwd: cwd, Repo: info.root, Branch: info.branch, Remote: info.remote, Via: "terminal", Started: f.p.Started, Detached: f.p.Detached, InUse: m.mcp.isInUse(f.agent)}
+		s.SessionID = uiExplicitSessionID(f.p.Cmd)
 		if f.p.InCully {
 			s.Via = "cully"
 		}

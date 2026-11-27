@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Open a dedicated page from Sessions, Session library, or Session health to review the goal, summary, health, tool calls and results, edited files, and available usage. Search recent sessions and continue from a session handoff. Generate or refresh more specific titles and summaries from the session page.
+
 - Add a guided Setup page and an interactive `cully setup` wizard, a dev-workflow rules interview with approval before anything is written, the shared rules skill linked into every harness (Claude Code, Codex, Cursor), suggestions of agents and background jobs from your sessions, and a guide to choosing local or MCP mode. See [Set up Cully](docs/setup.md) and [One machine or many?](docs/choose-a-mode.md).
 
 ## 0.32.0

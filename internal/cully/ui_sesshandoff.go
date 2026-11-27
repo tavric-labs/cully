@@ -16,19 +16,37 @@ func (m *uiManager) sessionEntry(id string) (uiIndexed, error) {
 	if !uiSessionID.MatchString(id) {
 		return uiIndexed{}, errors.New("no such session")
 	}
-	m.indexSessions(500)
 	m.idxMu.Lock()
 	m.loadIndexLocked()
-	e := m.index.Sessions[id]
 	var cp uiIndexed
-	if e != nil {
+	if e := m.index.Sessions[id]; e != nil {
 		cp = *e
 	}
 	m.idxMu.Unlock()
-	if e == nil || uiHidden(cp.Cwd, m.cfg.HideSessionsIn) {
+	if cp.File != "" {
+		if st, err := os.Stat(cp.File); err == nil {
+			if e, _ := m.indexSession(cp.Agent, uiHistFile{path: cp.File, mod: st.ModTime()}); m.visibleSession(e) {
+				return e, nil
+			}
+		}
 		return uiIndexed{}, errors.New("no such session")
 	}
-	return cp, nil
+	for _, agent := range []string{"claude", "codex", "cursor"} {
+		for _, f := range uiHistoryFiles(agent) {
+			if uiSessionIDFromFile(f.path) != id {
+				continue
+			}
+			if e, _ := m.indexSession(agent, f); m.visibleSession(e) {
+				return e, nil
+			}
+		}
+	}
+	return uiIndexed{}, errors.New("no such session")
+}
+
+func (m *uiManager) visibleSession(e uiIndexed) bool {
+	return e.ID != "" && !uiHidden(e.Cwd, m.cfg.HideSessionsIn) &&
+		!uiHidden(e.Cwd, []string{filepath.Join(ConfigDir(), "ui-worktrees")})
 }
 
 // uiSessionHandoffNext is the handoff plus, when the user typed one, what to do next.
@@ -81,6 +99,12 @@ func uiSessionHandoff(e uiIndexed) string {
 	b.WriteString("Its size: " + uiItoa(e.Turns) + " requests, " + uiItoa(e.Tools) + " tool calls, " + uiItoa(e.Files) + " files changed, " + uiItoa(e.Checks) + " test runs, about " + uiItoa(e.ActiveSec/60) + " minutes.\n")
 	if e.Unverified {
 		b.WriteString("It changed files and never ran the tests afterwards.\n")
+	}
+	if len(e.Criteria) > 0 {
+		b.WriteString("How to verify the goal:\n")
+		for _, criterion := range e.Criteria {
+			b.WriteString("- " + criterion + "\n")
+		}
 	}
 	if e.File != "" {
 		b.WriteString("\nThe full record of that session is at " + e.File + ". Read it only if you need exact details.\n")

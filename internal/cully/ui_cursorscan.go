@@ -106,13 +106,14 @@ func uiCursorUserText(t string) string {
 	return strings.TrimSpace(t)
 }
 
-func scanCursor(path string, withDigest bool) (uiSessionFacts, uiDigest, bool) {
+func scanCursor(path string, withDigest bool, capture ...*uiSessionActivity) (uiSessionFacts, uiDigest, bool) {
 	f, err := os.Open(path)
 	if err != nil {
 		return uiSessionFacts{}, uiDigest{}, false
 	}
 	defer f.Close()
 	var facts uiSessionFacts
+	activity := uiActivityCapture(capture)
 	var dg uiDigest
 	files := map[string]struct{}{}
 	last, run, sinceCheck := "", 0, false
@@ -127,13 +128,13 @@ func scanCursor(path string, withDigest bool) (uiSessionFacts, uiDigest, bool) {
 					case rec.Role == "user" && b.Type == "text":
 						if t := uiCursorUserText(b.Text); t != "" {
 							facts.Turns++
-							if withDigest && dg.First == "" {
-								dg.First = t
+							if withDigest {
+								dg.request(t)
 							}
 						}
 					case rec.Role == "assistant" && b.Type == "text":
 						if withDigest && strings.TrimSpace(b.Text) != "" {
-							dg.Last = b.Text
+							dg.reply(b.Text)
 						}
 					case b.Type == "tool_use":
 						facts.Tools++
@@ -141,6 +142,7 @@ func scanCursor(path string, withDigest bool) (uiSessionFacts, uiDigest, bool) {
 							facts.ToolNames = map[string]int{}
 						}
 						facts.ToolNames[b.Name]++
+						activity.call("", b.Name, "")
 						in, _ := json.Marshal(b.Input)
 						hash := b.Name + string(in)
 						if hash == last {
@@ -154,6 +156,7 @@ func scanCursor(path string, withDigest bool) (uiSessionFacts, uiDigest, bool) {
 						switch b.Name {
 						case "StrReplace", "Write", "EditNotebook", "Delete":
 							facts.Edits++
+							activity.classify("edit")
 							sinceCheck = true
 							if p, ok := b.Input["path"].(string); ok {
 								files[p] = struct{}{}
@@ -161,6 +164,7 @@ func scanCursor(path string, withDigest bool) (uiSessionFacts, uiDigest, bool) {
 						case "Shell":
 							if cmd, ok := b.Input["command"].(string); ok && uiCheckCommand.MatchString(cmd) {
 								facts.Checks++
+								activity.classify("verification")
 								sinceCheck = false
 							}
 						}
@@ -175,7 +179,9 @@ func scanCursor(path string, withDigest bool) (uiSessionFacts, uiDigest, bool) {
 			break
 		}
 	}
+	activity.setFiles(files)
 	facts.Files = len(files)
+	facts.FocusFile = uiFocusFile(files)
 	facts.Unverified = facts.Edits > 0 && sinceCheck
 	if withDigest {
 		for p := range files {

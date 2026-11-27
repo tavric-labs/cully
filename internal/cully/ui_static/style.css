@@ -1574,3 +1574,14 @@ button.chip.harness { cursor: pointer; }
   .su-step { width: auto; white-space: nowrap; }
   .su-body { padding: 16px 14px; }
 }
+
+.session-link { color: var(--ink); text-decoration: underline; text-underline-offset: 3px; overflow-wrap: anywhere; }
+.session-search { width: min(100%, 420px); margin-top: 12px; }
+.session-section { margin-top: 12px; overflow-wrap: anywhere; }
+.session-section h2 { margin: 0 0 10px; font-size: 1rem; }
+.session-calls { padding-left: 3ch; }
+.session-calls li { padding-block: 6px; border-bottom: 1px solid var(--line); }
+.session-calls li > * { margin-inline-end: 12px; }
+.session-files { padding-left: 2ch; }
+.session-meta { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 6px 16px; }
+.session-meta dd { margin: 0; }

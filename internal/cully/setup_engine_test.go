@@ -257,7 +257,7 @@ func TestSetupApproveNeverOverwritesARealFolderWithoutABackup(t *testing.T) {
 		t.Fatal(err)
 	}
 	approveWith(t, e, map[string]*string{"test_cmd": strp("make test")})
-	baks, _ := filepath.Glob(mine + ".bak.*")
+	baks, _ := filepath.Glob(filepath.Join(cullyDir(), "backups", "skills", "*", "*.bak.*"))
 	if len(baks) != 1 {
 		t.Fatalf("backups = %v", baks)
 	}

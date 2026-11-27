@@ -199,6 +199,7 @@ func newUIServer(m *uiManager, token string, loopback bool) http.Handler {
 	mux.Handle("POST /api/job-suggestions/{id}/dismiss", s.api(s.jobSuggestDismissH))
 	mux.Handle("POST /api/coach/run", s.api(s.coachRunH))
 	mux.Handle("POST /api/evals/{id}/run", s.api(s.evalRunStart))
+	mux.Handle("GET /api/sessions/{id}", s.api(s.sessionDetailGet))
 	mux.Handle("POST /api/sessions/{id}/summarize", s.api(s.summarize))
 	mux.Handle("GET /api/sessions/{id}/handoff", s.api(s.sessionHandoffGet))
 	mux.Handle("POST /api/sessions/{id}/continue", s.api(s.sessionContinue))
@@ -1171,6 +1172,24 @@ func (s *uiServer) identityApproveH(w http.ResponseWriter, r *http.Request) {
 
 func (s *uiServer) runningGet(w http.ResponseWriter, r *http.Request) {
 	uiJSON(w, http.StatusOK, s.m.running())
+}
+
+func (s *uiServer) sessionDetailGet(w http.ResponseWriter, r *http.Request) {
+	offset := 0
+	if q := r.URL.Query().Get("offset"); q != "" {
+		n, err := strconv.Atoi(q)
+		if err != nil || n < 0 {
+			uiError(w, http.StatusBadRequest, "offset must be a nonnegative integer")
+			return
+		}
+		offset = n
+	}
+	detail, err := s.m.sessionDetail(r.PathValue("id"), offset)
+	if err != nil {
+		uiError(w, http.StatusNotFound, err.Error())
+		return
+	}
+	uiJSON(w, http.StatusOK, detail)
 }
 
 func (s *uiServer) sessionHandoffGet(w http.ResponseWriter, r *http.Request) {

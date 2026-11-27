@@ -54,13 +54,14 @@ func uiCodexText(raw json.RawMessage) string {
 	return b.String()
 }
 
-func scanCodex(path string, withDigest bool) (uiSessionFacts, uiDigest, bool) {
+func scanCodex(path string, withDigest bool, capture ...*uiSessionActivity) (uiSessionFacts, uiDigest, bool) {
 	f, err := os.Open(path)
 	if err != nil {
 		return uiSessionFacts{}, uiDigest{}, false
 	}
 	defer f.Close()
 	var facts uiSessionFacts
+	activity := uiActivityCapture(capture)
 	var dg uiDigest
 	files := map[string]struct{}{}
 	var prev time.Time
@@ -85,15 +86,18 @@ func scanCodex(path string, withDigest bool) (uiSessionFacts, uiDigest, bool) {
 						text := strings.TrimSpace(uiCodexText(p.Content))
 						if p.Role == "user" && text != "" && !strings.HasPrefix(text, "<") {
 							facts.Turns++
-							if withDigest && dg.First == "" {
-								dg.First = text
+							if withDigest {
+								dg.request(text)
 							}
 						}
 						if p.Role == "assistant" && withDigest && text != "" {
-							dg.Last = text
+							dg.reply(text)
 						}
 					case "function_call_output", "custom_tool_call_output":
-						if m := uiCodexExit.FindStringSubmatch(uiCodexText(p.Output)); m != nil && m[1] != "0" {
+						m := uiCodexExit.FindStringSubmatch(uiCodexText(p.Output))
+						failed := m != nil && m[1] != "0"
+						activity.result(p.CallID, failed)
+						if failed {
 							facts.Errors++
 							if h, ok := hashes[p.CallID]; ok {
 								fails[h]++
@@ -108,6 +112,7 @@ func scanCodex(path string, withDigest bool) (uiSessionFacts, uiDigest, bool) {
 							facts.ToolNames = map[string]int{}
 						}
 						facts.ToolNames[p.Name]++
+						activity.call(p.CallID, p.Name, rec.Timestamp)
 						body := p.Input + p.Arguments
 						hash := p.Name + "|" + body
 						if p.CallID != "" {
@@ -123,6 +128,7 @@ func scanCodex(path string, withDigest bool) (uiSessionFacts, uiDigest, bool) {
 						}
 						if strings.Contains(body, "apply_patch") || strings.Contains(body, "*** Begin Patch") {
 							facts.Edits++
+							activity.classify("edit")
 							sinceCheck = true
 							for _, m := range uiPatchFile.FindAllStringSubmatch(body, -1) {
 								files[strings.TrimSpace(m[1])] = struct{}{}
@@ -130,6 +136,7 @@ func scanCodex(path string, withDigest bool) (uiSessionFacts, uiDigest, bool) {
 						}
 						if uiCheckCommand.MatchString(uiCodexCommandText(body)) {
 							facts.Checks++
+							activity.classify("verification")
 							sinceCheck = false
 						}
 					}
@@ -143,7 +150,9 @@ func scanCodex(path string, withDigest bool) (uiSessionFacts, uiDigest, bool) {
 			break
 		}
 	}
+	activity.setFiles(files)
 	facts.Files = len(files)
+	facts.FocusFile = uiFocusFile(files)
 	facts.Unverified = facts.Edits > 0 && sinceCheck
 	if withDigest {
 		for p := range files {
@@ -158,14 +167,14 @@ func scanCodex(path string, withDigest bool) (uiSessionFacts, uiDigest, bool) {
 }
 
 // uiScanAgent counts a session file of any supported harness.
-func uiScanAgent(agent, path string, withDigest bool) (uiSessionFacts, uiDigest, bool) {
+func uiScanAgent(agent, path string, withDigest bool, capture ...*uiSessionActivity) (uiSessionFacts, uiDigest, bool) {
 	switch agent {
 	case "codex":
-		return scanCodex(path, withDigest)
+		return scanCodex(path, withDigest, capture...)
 	case "cursor":
-		return scanCursor(path, withDigest)
+		return scanCursor(path, withDigest, capture...)
 	}
-	return scanTranscript(path, withDigest)
+	return scanTranscript(path, withDigest, capture...)
 }
 
 // uiSessionIDFromFile reads a session's id from its file name: a Claude

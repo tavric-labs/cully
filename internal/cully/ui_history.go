@@ -121,13 +121,14 @@ func uiReadEnds(path string) (head, tail [][]byte) {
 }
 
 type uiClaudeRec struct {
-	Type      string `json:"type"`
-	Cwd       string `json:"cwd"`
-	GitBranch string `json:"gitBranch"`
-	Timestamp string `json:"timestamp"`
-	AITitle   string `json:"aiTitle"`
-	Sidechain bool   `json:"isSidechain"`
-	Entry     string `json:"entrypoint"`
+	Type        string `json:"type"`
+	Cwd         string `json:"cwd"`
+	GitBranch   string `json:"gitBranch"`
+	Timestamp   string `json:"timestamp"`
+	AITitle     string `json:"aiTitle"`
+	CustomTitle string `json:"customTitle"`
+	Sidechain   bool   `json:"isSidechain"`
+	Entry       string `json:"entrypoint"`
 }
 
 func uiParseTime(s string) time.Time {
@@ -142,6 +143,7 @@ func uiClaudeSession(f uiHistFile) (uiPastSession, bool) {
 	}
 	head, tail := uiReadEnds(f.path)
 	s := uiPastSession{ID: id, Agent: "claude", Updated: f.mod}
+	var customTitle string
 	for _, line := range head {
 		var r uiClaudeRec
 		if json.Unmarshal(line, &r) != nil {
@@ -162,6 +164,9 @@ func uiClaudeSession(f uiHistFile) (uiPastSession, bool) {
 		if r.AITitle != "" {
 			s.Title = r.AITitle
 		}
+		if r.CustomTitle != "" {
+			customTitle = r.CustomTitle
+		}
 	}
 	for _, line := range tail {
 		var r uiClaudeRec
@@ -170,6 +175,9 @@ func uiClaudeSession(f uiHistFile) (uiPastSession, bool) {
 		}
 		if r.AITitle != "" {
 			s.Title = r.AITitle
+		}
+		if r.CustomTitle != "" {
+			customTitle = r.CustomTitle
 		}
 		if t := uiParseTime(r.Timestamp); !t.IsZero() && t.After(s.Updated) {
 			s.Updated = t
@@ -181,7 +189,7 @@ func uiClaudeSession(f uiHistFile) (uiPastSession, bool) {
 	if s.Started.IsZero() {
 		s.Started = f.mod
 	}
-	s.Title = strings.TrimSpace(strings.Join(strings.Fields(s.Title), " "))
+	s.Title = strings.TrimSpace(strings.Join(strings.Fields(firstNonEmpty(customTitle, s.Title)), " "))
 	if r := []rune(s.Title); len(r) > 100 {
 		s.Title = string(r[:100]) + "…"
 	}

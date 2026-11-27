@@ -176,7 +176,11 @@
     if ((p[0] === 'task' || p[0] === 'agent') && p[1]) return { name: 'agent', id: p[1] }; // #/agent/ is the old address
     if (p[0] === 'mcp') return { name: 'home', mcp: p[1] || 'claude' };
     if (p[0] === 'tasks') return { name: 'tasks' };
-    if (p[0] === 'sessions') return { name: 'sessions' };
+    if (p[0] === 'sessions') {
+      if (p[1] === 'live' && p[2]) return { name: 'session-live', id: p[2] };
+      if (p[1]) return { name: 'session', id: p[1] };
+      return { name: 'sessions' };
+    }
     if (p[0] === 'board') return { name: 'board' };
     if (p[0] === 'agents') return { name: 'team' };
     if (p[0] === 'harness') return { name: 'harness', tab: p[1] || '' };
@@ -190,7 +194,7 @@
     if (/^#\/agent\//.test(location.hash)) { location.replace(location.hash.replace('#/agent/', '#/task/')); return; }
     S.route = parseHash();
     if (S.route.name === 'dashboard' && REDIRECT[S.route.panel]) { location.replace('#/dashboard/' + REDIRECT[S.route.panel]); return; }
-    const section = S.route.name === 'harness' ? 'harness' : S.route.name === 'team' ? 'team' : S.route.name === 'board' ? 'board' : S.route.name === 'setup' ? 'setup' : S.route.name === 'dashboard' ? 'dashboard' : S.route.name === 'sessions' ? 'sessions' : 'agents';
+    const section = S.route.name === 'harness' ? 'harness' : S.route.name === 'team' ? 'team' : S.route.name === 'board' ? 'board' : S.route.name === 'setup' ? 'setup' : S.route.name === 'dashboard' ? 'dashboard' : ['sessions', 'session', 'session-live'].includes(S.route.name) ? 'sessions' : 'agents';
     for (const a of $('nav').querySelectorAll('a')) a.classList.toggle('active', a.dataset.route === section);
     { // Agents, Harness and Dashboard live under More: it lights up when you are on one of them, and shows their badge
       const more = $('navmore');
@@ -210,6 +214,8 @@
     else if (S.route.name === 'harness') renderHarness();
     else if (S.route.name === 'setup') renderSetupPage();
     else if (S.route.name === 'sessions') { S.sessSig = ''; renderSessions(); }
+    else if (S.route.name === 'session') renderSessionDetail(S.route.id);
+    else if (S.route.name === 'session-live') renderLiveSession(S.route.id);
     else mountDashboard(S.route.panel);
   }
   window.CullyKit = { h, api, toast, icon, toolbar, emptyCard, confirmDialog, ago };
@@ -1050,7 +1056,7 @@
         btn.disabled = true;
         try { const v = await api('/api/sessions/' + id + '/continue', { method: 'POST' }); await refresh(); location.hash = '#/task/' + v.id; } catch (e) { toast(e.message, true); btn.disabled = false; }
       });
-      node.append(h('div', { class: 'sessact' }, harnessChip(x.agent), h('div', {}, h('b', {}, x.title || x.name), h('div', { class: 'faint small' }, x.cwd + ', ' + ago(x.updated))),
+      node.append(h('div', { class: 'sessact' }, harnessChip(x.agent), h('div', {}, sessionLink(x), h('div', { class: 'faint small' }, x.cwd + ', ' + ago(x.updated))),
         h('span', { class: 'faint small' }, 'Out of room or closed? Carry on in a fresh task.'), btn));
     }
   }
@@ -2169,19 +2175,13 @@
         h('div', { class: 'row legend' }, h('span', { class: 'chip ok' }, 'Completed ' + done), h('span', { class: 'chip' }, 'Partly ' + partly), h('span', { class: 'chip warn' }, 'Not completed ' + notDone))) : null,
       judged.length ? h('h3', { class: 'section-h' }, 'Sessions that need a look first') : null,
       rows.length ? h('ul', { class: 'hrows' }, ...rows.map((x) => {
-        const tools = Object.entries(x.toolNames || {}).sort((a, b) => b[1] - a[1]).slice(0, 5);
         return h('li', { class: 'hrow' },
           ring(x.health, 46),
           h('div', { class: 'hmain' },
-            h('div', { class: 'ht' }, harnessChip(x.agent), x.title || x.name, h('span', { class: 'chip ' + (x.completed === 'yes' ? 'ok' : x.completed === 'no' ? 'warn' : '') }, DONE_LABEL[x.completed] || 'Unclear'), x.onTask === 'drifted' ? h('span', { class: 'chip warn' }, 'Drifted') : null),
-            x.task ? h('p', { class: 'hdesc' }, h('b', {}, 'Goal: '), x.task) : null,
-            x.description ? h('p', { class: 'hdesc' }, h('b', {}, 'What it did: '), x.description) : null,
-            x.drift ? h('p', { class: 'hdiff' }, h('b', {}, 'Drift: '), x.drift) : null,
-            (x.signals || []).length ? h('ul', { class: 'signals' }, ...x.signals.map((g) => h('li', {}, icon('alert'), g))) : null,
-            x.different && x.different !== 'Nothing notable.' ? h('p', { class: 'hdiff' }, h('b', {}, 'Could go better: '), x.different) : null,
-            h('div', { class: 'row' }, h('span', { class: 'chip' }, icon('folder'), x.name), h('span', { class: 'chip' }, ago(x.updated)), h('span', { class: 'chip' }, dur(x.activeSec) + ' worked'),
-              h('span', { class: 'chip' }, (x.tools || 0) + ' tool calls'), x.errors ? h('span', { class: 'chip warn' }, x.errors + ' errors') : null, x.checks ? h('span', { class: 'chip' }, x.checks + ' test runs') : null),
-            tools.length ? h('div', { class: 'row' }, ...tools.map(([n, c]) => h('span', { class: 'chip mono', title: 'Calls to ' + n }, n + ' ' + c))) : null),
+            h('div', { class: 'ht' }, harnessChip(x.agent), sessionLink(x), h('span', { class: 'chip ' + (x.completed === 'yes' ? 'ok' : x.completed === 'no' ? 'warn' : '') }, DONE_LABEL[x.completed] || 'Unclear'), x.onTask === 'drifted' ? h('span', { class: 'chip warn' }, 'Drifted') : null),
+            x.signals && x.signals.length ? h('p', { class: 'hdesc' }, x.signals[0]) : null,
+            h('div', { class: 'row' }, h('span', { class: 'chip' }, icon('folder'), x.name), h('span', { class: 'chip' }, ago(x.updated)),
+              h('span', { class: 'chip' }, (x.tools || 0) + ' tool calls'), x.errors ? h('span', { class: 'chip warn' }, x.errors + ' errors') : null)),
           h('div', { class: 'row hact' },
             evalIDs.has(x.id) ? h('button', { class: 'btn ghost small', onclick: () => copyEval(x) }, icon('copy'), 'Copy eval case')
               : h('button', { class: 'btn small', disabled: x.completed !== 'yes' || !x.task, title: x.completed === 'yes' ? 'Save this session as a test case for future agents' : 'Only completed sessions can become an eval', onclick: () => makeEval(x) }, icon('check'), 'Make an eval')));
@@ -2229,7 +2229,7 @@
         h('div', {}, h('span', { class: 'opt-label' }, 'Where sessions start'), h('ul', { class: 'fbars' }, ...Object.entries(origins).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([k, v]) => h('li', {}, h('span', { class: 'fname' }, k), h('span', { class: 'fbar' }, fill(Math.round(v / all.length * 100))), h('span', { class: 'faint small' }, String(v)))))),
         judged.length ? h('div', {}, h('span', { class: 'opt-label' }, 'How sessions ended'), h('div', { class: 'stackbar' }, ...[['Completed', done, 'good'], ['Partly', partly, 'mid'], ['Not completed', notDone, 'bad'], ['Unclear', judged.length - done - partly - notDone, 'dim']].filter((p) => p[1]).map(([l, n, c]) => { const i = h('i', { class: c, title: l + ': ' + n }); i.style.width = (n / judged.length * 100) + '%'; return i; })),
           h('div', { class: 'row legend' }, h('span', { class: 'chip ok' }, 'Completed ' + done), h('span', { class: 'chip' }, 'Partly ' + partly), h('span', { class: 'chip warn' }, 'Not completed ' + notDone))) : null),
-      attention.length ? h('div', {}, h('span', { class: 'opt-label' }, 'Look at these first'), h('ul', { class: 'attn-list' }, ...attention.map((x) => h('li', {}, ring(x.health, 34), h('div', {}, h('b', {}, x.title || x.name), harnessChip(x.agent), h('div', { class: 'faint small' }, (x.signals || []).join('. ') || 'Low health'))))), h('a', { class: 'linkbtn', href: '#/dashboard/health' }, 'See all in Session health')) : null);
+      attention.length ? h('div', {}, h('span', { class: 'opt-label' }, 'Look at these first'), h('ul', { class: 'attn-list' }, ...attention.map((x) => h('li', {}, ring(x.health, 34), h('div', {}, sessionLink(x), harnessChip(x.agent), h('div', { class: 'faint small' }, (x.signals || []).join('. ') || 'Low health'))))), h('a', { class: 'linkbtn', href: '#/dashboard/health' }, 'See all in Session health')) : null);
     return { kpis, card };
   }
   async function renderLibrary(out, head) {
@@ -2254,7 +2254,7 @@
     const shown = S.libShown || 30;
     const rows = lib.sessions.slice(0, shown).map((x) => h('li', { class: 'hrow' },
       h('div', { class: 'hmain' },
-        h('div', { class: 'ht' }, harnessChip(x.agent), x.title || x.name, x.source === 'ai' ? null : h('span', { class: 'chip' }, 'Not named yet')),
+        h('div', { class: 'ht' }, harnessChip(x.agent), sessionLink(x)),
         x.description ? h('p', { class: 'hdesc' }, x.description) : null,
         h('div', { class: 'row' }, h('span', { class: 'chip' }, icon('folder'), x.name), x.origin ? h('span', { class: 'chip' }, x.origin) : null, x.branch ? h('span', { class: 'chip mono' }, icon('branch'), x.branch) : null,
           h('span', { class: 'chip' }, ago(x.updated)), h('span', { class: 'chip' }, dur(x.activeSec) + ' worked'),
@@ -3192,7 +3192,7 @@
       !live.length && !open.length && !(running && running.agents.length) ? h('p', { class: 'faint small' }, 'Nothing is running. Start a task, or open Claude, Codex or Cursor in a terminal and it shows here.') : null);
     const attention = judged.filter((x) => x.health < 70).sort((x, y) => x.health - y.health).slice(0, 3);
     const lookCard = h('section', { class: 'lib-card' }, h('div', { class: 'row' }, h('b', {}, 'Worth a look'), h('a', { class: 'linkbtn sp', href: '#/dashboard/health' }, 'Session health')),
-      attention.length ? h('ul', { class: 'attn-list' }, ...attention.map((x) => h('li', {}, ring(x.health, 34), h('div', {}, h('b', {}, x.title || x.name), harnessChip(x.agent), h('div', { class: 'faint small' }, (x.signals || []).join('. ') || 'Low health')))))
+      attention.length ? h('ul', { class: 'attn-list' }, ...attention.map((x) => h('li', {}, ring(x.health, 34), h('div', {}, sessionLink(x), harnessChip(x.agent), h('div', { class: 'faint small' }, (x.signals || []).join('. ') || 'Low health')))))
         : h('p', { class: 'faint small' }, judged.length ? 'Every session this week looks healthy.' : 'Once your sessions are analysed, the ones that went wrong show here.'),
       coach && coach.items.length ? h('div', { class: 'coachline' }, h('span', { class: 'kind' }, COACH_KIND[coach.items[0].kind] || coach.items[0].kind), h('div', {}, h('b', {}, coach.items[0].title), h('div', { class: 'faint small' }, coach.items[0].how)), h('button', { class: 'btn small', onclick: () => pushSuggestion(coach.items[0]) }, 'Apply')) : null);
     // Harness mix and agents.
@@ -3980,18 +3980,14 @@
   async function startHere(sess) {
     try { await addFolder(sess.repo || sess.cwd); location.hash = '#/'; toast('Ready to start a task in ' + sess.name); } catch (e) { toast(e.message, true); }
   }
-  async function viewHistory(sess) {
-    try { await addFolder(sess.repo || sess.cwd); location.hash = '#/dashboard/status'; } catch (e) { toast(e.message, true); }
-  }
   function renderSessions() {
     const box = $('sessions');
     const all = S.sessions || [];
     const list = all.filter((x) => S.showClosedSessions || !x.detached);
     const hiddenClosed = all.filter((x) => x.detached).length;
-    const sig = JSON.stringify([list.map((x) => [x.pid, x.cwd, x.branch, x.via, x.detached]), hiddenClosed, !!S.showClosedSessions]);
+    const sig = JSON.stringify([list.map((x) => [x.pid, x.cwd, x.branch, x.via, x.detached, x.sessionId]), hiddenClosed, !!S.showClosedSessions]);
     if (sig === S.sessSig && box.childElementCount) return;
     S.sessSig = sig;
-    const names = 'Claude, Codex and Cursor';
     const sub = 'Every session on this computer, whichever harness it ran in: the ones open now first, then recent ones by when they were last active.';
     const kids = [toolbar('Sessions', sub, refreshBtn(async () => { S.sessions = await api('/api/sessions'); S.sessSig = ''; S.hist = null; renderSessions(); }))];
     kids.push(h('div', { id: 'active' }));
@@ -4000,7 +3996,9 @@
     if (toggles.length) kids.push(h('div', { class: 'row' }, ...toggles));
     const mine = S.agents.length;
     if (mine) kids.push(h('p', { class: 'faint small' }, mine + (mine === 1 ? ' agent was' : ' agents were') + ' started from this page. ', h('a', { class: 'ext', href: '#/' }, 'See them on the Tasks tab')));
-    kids.push(h('div', { id: 'history' }));
+    const search = h('input', { type: 'search', class: 'session-search', placeholder: 'Search sessions by title, project, or ID', 'aria-label': 'Search sessions', oninput: (e) => { S.sessionQuery = e.target.value; drawHistory(); } });
+    search.value = S.sessionQuery || '';
+    kids.push(search, h('div', { id: 'history' }));
     box.replaceChildren(...kids);
     drawActive();
     drawHistory();
@@ -4064,8 +4062,8 @@
         h('p', {}, harnessChip(x.agent), ' ', h('b', {}, x.title || x.name)),
         h('p', { class: 'faint small path' }, x.cwd),
         h('p', { class: 'faint' }, 'A new task starts in ' + target + ', Cully\'s harness, with this handoff as its first message and the original session record available to read. ' + (x.agent === target.toLowerCase() ? '' : 'The session stays in ' + (AGENT_NAMES[x.agent] || x.agent) + ' as it was; the work carries on here.')),
-        named ? null : h('p', { class: 'callout' }, 'This session has not been analysed yet, so the handoff has only its size and checks. Analysis runs in the background; start it from the Session library.'),
-        h('details', { class: 'rl' }, h('summary', {}, h('span', { class: 'rq' }, 'The handoff the task starts with')), h('div', { class: 'rbody' }, pre)),
+        named ? null : h('p', { class: 'callout' }, 'Generate a summary from the session page to include the goal, outcome, and remaining work in the handoff.'),
+        h('details', { class: 'rl', open: true }, h('summary', {}, h('span', { class: 'rq' }, 'The handoff the task starts with')), h('div', { class: 'rbody' }, pre)),
         ta, err, h('div', { class: 'row' }, go)));
     const bg = h('div', { class: 'modal-bg', onclick: (e) => { if (e.target === bg) closeMCP(); } }, modal);
     $('modal-root').replaceChildren(bg);
@@ -4120,12 +4118,11 @@
     if (!box) return;
     const list = (S.sessions || []).filter((x) => S.showClosedSessions || !x.detached);
     if (!list.length) { box.replaceChildren(h('h3', { class: 'section-h' }, 'Open now'), emptyCard('Nothing is open right now', 'Open Claude, Codex or Cursor in a terminal and it appears here. Or start a task from this page.', 'Start a task', '#/')); return; }
-    const recorded = (S.hist && S.hist.sessions) || [];
     box.replaceChildren(h('h3', { class: 'section-h' }, 'Open now'), h('ul', { class: 'hrows active' }, ...list.map((x) => {
-      const rec = recorded.find((r) => r.open && r.cwd === x.cwd);
+      const rec = S.hist && S.hist.sessions.find((r) => r.id === x.sessionId && r.agent === x.agent && r.cwd === x.cwd);
       return h('li', { class: 'hrow' + (x.detached ? ' detached' : '') },
         h('div', { class: 'hmain' },
-          h('div', { class: 'ht' }, harnessChip(x.agent), (rec && rec.title) || x.name, h('span', { class: 'chip ok' }, x.detached ? 'Terminal closed' : 'Active')),
+          h('div', { class: 'ht' }, harnessChip(x.agent), rec ? sessionLink(rec) : h('a', { class: 'session-link', href: '#/sessions/live/' + x.pid }, x.name), h('span', { class: 'chip ok' }, x.detached ? 'Terminal closed' : 'Active')),
           rec && rec.description ? h('p', { class: 'hdesc' }, rec.description) : null,
           h('div', { class: 'faint small path' }, x.cwd),
           h('div', { class: 'row' }, x.branch ? h('span', { class: 'chip mono' }, icon('branch'), x.branch) : null,
@@ -4133,9 +4130,9 @@
             x.started && !x.started.startsWith('0001') ? h('span', { class: 'chip' }, 'open for ' + ago(x.started).replace(' ago', '')) : null,
             snapChip(x.snapshot))),
         h('div', { class: 'row hact' },
-          rec && S.hist && S.hist.agent === 'claude' ? h('button', { class: 'btn small', title: 'Start a new session from this one; the original stays as it is', onclick: () => continueSession(rec, true) }, icon('branch'), 'Fork') : null,
+          rec && rec.agent === 'claude' ? h('button', { class: 'btn small', title: 'Start a new session from this one; the original stays as it is', onclick: () => continueSession(rec, true) }, icon('branch'), 'Fork') : null,
           h('button', { class: rec ? 'btn ghost small' : 'btn small', disabled: !(x.repo || x.cwd), onclick: () => startHere(x) }, icon('plus'), 'New task here'),
-          h('button', { class: 'btn ghost small', disabled: !(x.repo || x.cwd), onclick: () => viewHistory(x) }, 'View history')));
+          h('a', { class: 'btn ghost small', href: rec ? sessionHref(rec.id) : '#/sessions/live/' + x.pid }, 'Open session')));
     })));
   }
   function drawHistory() {
@@ -4152,19 +4149,23 @@
       ['d30', 'Last 30 days', (x) => ageDays(x.updated) > 15 && ageDays(x.updated) <= 30], ['older', 'Older', (x) => ageDays(x.updated) > 30]];
     const recent = hist.sessions.filter((x) => !x.open);
     const inBucket = (k) => recent.filter(BUCKETS.find((b) => b[0] === k)[2]);
+    const query = (S.sessionQuery || '').trim().toLowerCase();
     if (!S.histPicked || !S.histBucket) S.histBucket = (BUCKETS.find((b) => inBucket(b[0]).length) || BUCKETS[0])[0];
-    const bucket = S.histBucket; const items = inBucket(bucket); const shown = (S.histShown && S.histShown[bucket]) || 20;
-    const parts = [h('h3', { class: 'section-h' }, 'Recent'), h('p', { class: 'faint small' }, 'Sessions of every harness on this computer (Claude, Codex and Cursor), named from what each one did. Each one is marked with the harness it ran in.')];
+    const bucket = query ? 'search' : S.histBucket;
+    const items = query ? hist.sessions.filter((x) => [x.title, x.description, x.name, x.cwd, x.agent, x.branch, x.id].join(' ').toLowerCase().includes(query)) : inBucket(bucket);
+    const shown = (S.histShown && S.histShown[bucket]) || 20;
+    const parts = [h('h3', { class: 'section-h' }, query ? 'Search results' : 'Recent')];
     if (hist.note) parts.push(h('p', { class: 'faint' }, hist.note));
-    parts.push(h('div', { class: 'seg tabs-seg', role: 'tablist', 'aria-label': 'How long ago' }, ...BUCKETS.map(([k, label]) => h('button', { type: 'button', role: 'tab', class: k === bucket ? 'on' : '', 'aria-selected': String(k === bucket), onclick: () => { S.histBucket = k; S.histPicked = true; drawHistory(); } }, label + ' ' + inBucket(k).length))));
-    if (!items.length) parts.push(emptyCard('Nothing in this period', recent.length ? 'Pick another period above.' : 'Sessions you run appear here so you can continue them.', 'Start a task', '#/'));
+    if (!query) parts.push(h('div', { class: 'seg tabs-seg', role: 'tablist', 'aria-label': 'How long ago' }, ...BUCKETS.map(([k, label]) => h('button', { type: 'button', role: 'tab', class: k === bucket ? 'on' : '', 'aria-selected': String(k === bucket), onclick: () => { S.histBucket = k; S.histPicked = true; drawHistory(); } }, label + ' ' + inBucket(k).length))));
+    if (query && !items.length) parts.push(h('p', { class: 'faint' }, 'No matching sessions.'));
+    else if (!items.length) parts.push(emptyCard('Nothing in this period', recent.length ? 'Pick another period above.' : 'Sessions you run appear here so you can continue them.', 'Start a task', '#/'));
     const copyCmd = (cmd, what) => async () => {
       try { await writeClip(cmd); toast('Copied. Paste it in a terminal to ' + what + '.'); } catch (_) { showCommand(cmd); }
     };
     if (items.length) {
       parts.push(h('ul', { class: 'hrows' }, ...items.slice(0, shown).map((x) => { const runnable = x.agent === 'claude'; return h('li', { class: 'hrow' },
         h('div', { class: 'hmain' },
-          h('div', { class: 'ht' }, harnessChip(x.agent), x.title || x.name),
+          h('div', { class: 'ht' }, harnessChip(x.agent), sessionLink(x)),
           x.description ? h('p', { class: 'hdesc' }, x.description) : null,
           h('div', { class: 'faint small path' }, x.cwd),
           h('div', { class: 'row' }, x.origin ? h('span', { class: 'chip', title: 'Where this session was started' }, x.origin) : null, x.activeSec ? h('span', { class: 'chip', title: 'Time spent working in this session' }, dur(x.activeSec) + ' worked') : null, x.branch ? h('span', { class: 'chip mono' }, icon('branch'), x.branch) : null, h('span', { class: 'chip' }, ago(x.updated)), x.exists ? null : h('span', { class: 'chip warn' }, 'Folder is gone'))),
@@ -4180,6 +4181,128 @@
     }
     if (hist.older) parts.push(h('p', { class: 'faint small' }, 'Showing the most recent sessions of each harness. Older ones are kept by the agents themselves.'));
     box.replaceChildren(...parts);
+  }
+
+  const sessionHref = (id) => '#/sessions/' + encodeURIComponent(id);
+  const sessionLink = (x) => h('a', { class: 'session-link', href: sessionHref(x.id) }, x.title || x.name);
+  const sessionDate = (d) => d && !d.startsWith('0001') ? new Date(d).toLocaleString() : 'Unavailable';
+
+  function sessionSection(title, ...children) {
+    return h('section', { class: 'lib-card session-section' }, h('h2', {}, title), ...children);
+  }
+
+  function sessionUsage(snapshot) {
+    if (!snapshot || !snapshot.available) return h('p', { class: 'faint' }, (snapshot && snapshot.note) || 'Usage is unavailable.');
+    return h('div', { class: 'row' }, snapshot.model ? h('span', { class: 'chip' }, snapshot.model) : null,
+      snapChip(snapshot), snapshot.tokens ? h('span', { class: 'chip' }, fmtTokens(snapshot.tokens) + ' tokens') : null);
+  }
+
+  async function renderLiveSession(pid) {
+    const current = S.route;
+    const box = $('sessions');
+    const back = h('a', { class: 'linkbtn', href: '#/sessions' }, 'All sessions');
+    box.replaceChildren(back, toolbar('Live session', 'Loading…'));
+    try {
+      const [live, hist] = await Promise.all([api('/api/sessions'), api('/api/history?agent=all&days=7')]);
+      if (S.route !== current) return;
+      const x = live.find((v) => String(v.pid) === pid);
+      if (!x) { box.replaceChildren(back, emptyCard('Session closed', 'Look for its record in Sessions.', 'Open Sessions', '#/sessions')); return; }
+      const related = hist.sessions.filter((v) => v.agent === x.agent && v.cwd === x.cwd);
+      const exact = related.find((v) => v.id === x.sessionId);
+      if (exact) { location.replace(sessionHref(exact.id)); return; }
+      box.replaceChildren(back, toolbar(x.name, x.cwd, refreshBtn(() => renderLiveSession(pid))),
+        sessionSection('Live session', h('div', { class: 'row' }, harnessChip(x.agent), h('span', { class: 'chip' }, x.detached ? 'Terminal closed' : 'Active'),
+          x.branch ? h('span', { class: 'chip mono' }, x.branch) : null, h('code', {}, 'PID ' + x.pid)),
+          h('p', {}, 'Started ' + sessionDate(x.started))),
+        sessionSection('Recorded sessions in this folder',
+          h('p', { class: 'faint' }, 'Cully could not confirm which record belongs to this terminal.'),
+          related.length ? h('ul', { class: 'rules' }, ...related.slice(0, 12).map((v) => h('li', {}, sessionLink(v), h('span', { class: 'faint' }, ago(v.updated)))))
+            : h('p', { class: 'faint' }, 'No recent records for this harness and folder.')));
+    } catch (e) {
+      if (S.route === current) box.replaceChildren(back, h('p', { class: 'err' }, e.message));
+    }
+  }
+
+  async function renderSessionDetail(id) {
+    const current = S.route;
+    const box = $('sessions');
+    const back = h('a', { class: 'linkbtn', href: '#/sessions' }, 'All sessions');
+    const path = '/api/sessions/' + encodeURIComponent(id);
+    box.replaceChildren(back, toolbar('Session', 'Loading…'));
+    try {
+      const { session: x, activity, snapshot, exists } = await api(path);
+      if (S.route !== current) return;
+      const summary = h('button', { class: 'btn ghost small', disabled: !x.turns, onclick: async () => {
+        summary.disabled = true;
+        summary.textContent = 'Reading the session…';
+        try {
+          await api(path + '/summarize', { method: 'POST' });
+          S.hist = null; S.libMapAt = 0;
+          if (S.route === current) renderSessionDetail(id);
+        } catch (e) { toast(e.message, true); summary.disabled = false; summary.textContent = summaryLabel; }
+      } }, icon('spark'), x.source === 'ai' ? 'Refresh summary' : 'Generate summary');
+      const summaryLabel = summary.textContent;
+      const tools = Object.entries(x.toolNames || {}).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+      const callRows = h('ol', { class: 'session-calls' });
+      const drawCalls = (calls) => {
+        callRows.replaceChildren(...calls.map((v) => h('li', { value: v.number },
+          h('code', {}, v.name || 'Unnamed tool'),
+          v.kind ? h('span', { class: 'faint small' }, v.kind === 'verification' ? 'Verification' : 'File edit') : null,
+          v.at ? h('time', { datetime: v.at, class: 'faint small' }, sessionDate(v.at)) : null,
+          h('span', { class: 'chip ' + (v.result === 'failed' ? 'warn' : '') }, v.result === 'failed' ? 'Failed' : v.result === 'returned' ? 'Returned' : 'Result unavailable'))));
+        pageLabel.textContent = calls.length ? calls[0].number + '–' + calls[calls.length - 1].number + ' of ' + callCount : 'No calls on this page';
+        previous.disabled = offset === 0;
+        next.disabled = offset + calls.length >= callCount || calls.length === 0;
+      };
+      let offset = 0, callCount = x.tools;
+      const pageLabel = h('span', { 'aria-live': 'polite', class: 'faint small' });
+      const loadCalls = async (target) => {
+        previous.disabled = next.disabled = true;
+        try {
+          const page = await api(path + '?offset=' + target);
+          if (S.route !== current) return;
+          offset = target; callCount = page.session.tools;
+          drawCalls(page.activity.calls);
+        } catch (e) { toast(e.message, true); previous.disabled = offset === 0; next.disabled = false; }
+      };
+      const previous = h('button', { class: 'btn ghost small', onclick: () => loadCalls(Math.max(0, offset - activity.calls.length)) }, 'Previous calls');
+      const next = h('button', { class: 'btn ghost small', onclick: () => loadCalls(offset + activity.calls.length) }, 'Next calls');
+      drawCalls(activity.calls);
+      box.replaceChildren(back, toolbar(x.title || x.name, x.cwd,
+        refreshBtn(() => renderSessionDetail(id)),
+        h('button', { class: 'btn', disabled: !exists, onclick: () => continueAsTask(x) }, icon('plus'), 'Continue as a task')),
+        h('div', { class: 'row' }, harnessChip(x.agent), x.origin ? h('span', { class: 'chip' }, x.origin) : null,
+          x.branch ? h('span', { class: 'chip mono' }, icon('branch'), x.branch) : null,
+          exists ? null : h('span', { class: 'chip warn' }, 'Folder is gone')),
+        sessionSection('What happened',
+          x.task ? h('p', {}, h('b', {}, 'Goal '), x.task) : null,
+          h('p', {}, x.description || 'No activity summary is available yet.'),
+          x.criteria && x.criteria.length ? h('details', {}, h('summary', {}, 'How to verify the goal'), h('ul', {}, ...x.criteria.map((v) => h('li', {}, v)))) : null,
+          h('div', { class: 'row' }, summary)),
+        sessionSection('Session health',
+          h('div', { class: 'row' }, x.turns || x.tools ? ring(x.health, 48) : null,
+            h('b', {}, DONE_LABEL[x.completed] || 'Outcome unassessed'),
+            x.onTask === 'drifted' ? h('span', { class: 'chip warn' }, 'Drifted') : null),
+          x.drift ? h('p', {}, x.drift) : null,
+          x.signals && x.signals.length ? h('ul', { class: 'signals' }, ...x.signals.map((v) => h('li', {}, icon('alert'), v))) : h('p', { class: 'faint' }, 'No health flags in the recorded activity.'),
+          x.different && x.different !== 'Nothing notable.' ? h('p', {}, h('b', {}, 'What could go better '), x.different) : null),
+        h('div', { class: 'kpis' }, ...[['Requests', x.turns], ['Tool calls', x.tools], ['Tool errors', x.agent === 'cursor' ? 'Unavailable' : x.errors], ['Verification calls', x.checks], ['Files with edits', x.files]].map(([label, n]) => h('div', { class: 'kpi' }, h('b', {}, n), h('span', {}, label)))),
+        sessionSection('Tool activity',
+          tools.length ? h('div', { class: 'row' }, ...tools.map(([name, n]) => h('span', { class: 'chip mono' }, name + ' × ' + n))) : null,
+          x.tools ? callRows : h('p', { class: 'faint' }, 'No tool calls were recorded.'),
+          x.tools > activity.calls.length ? h('div', { class: 'row' }, previous, pageLabel, next) : null),
+        sessionSection('Files with recorded edits',
+          activity.files.length ? h('ul', { class: 'session-files' }, ...activity.files.map((v) => h('li', {}, h('code', {}, v)))) : h('p', { class: 'faint' }, 'No file paths were recorded for edits.')),
+        sessionSection('Session information',
+          h('dl', { class: 'session-meta' },
+            h('dt', {}, 'Session ID'), h('dd', {}, h('code', {}, x.id)),
+            h('dt', {}, 'Started'), h('dd', {}, sessionDate(x.started)),
+            h('dt', {}, 'Last activity'), h('dd', {}, sessionDate(x.updated)),
+            h('dt', {}, 'Active time'), h('dd', {}, x.agent === 'cursor' ? 'Unavailable' : dur(x.activeSec))),
+          sessionUsage(snapshot)));
+    } catch (e) {
+      if (S.route === current) box.replaceChildren(back, toolbar('Session unavailable', ''), h('p', { class: 'err' }, e.message));
+    }
   }
 
   // ---------- working together ----------
