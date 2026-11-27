@@ -1034,3 +1034,6 @@ details.sgroup > summary { cursor: pointer; } details.sgroup > summary::-webkit-
 .dg-note { color: var(--faint); font-size: var(--t-s); text-align: center; padding: 6px; }
 .dg-note.bad { color: var(--red); }
 .diagram .codeblock { margin: 0; border: 0; border-top: 1px solid var(--line); border-radius: 0; }
+.describe { display: flex; gap: 8px; margin: 0 0 16px; padding: 8px; border: 1px solid var(--line); border-radius: 14px; background: var(--raised); }
+.describe .desc-in { flex: 1; min-width: 0; border: 0; background: transparent; padding: 6px 8px; outline: none; }
+.describe:focus-within { border-color: var(--forest-hi); box-shadow: 0 0 0 3px var(--focus); }

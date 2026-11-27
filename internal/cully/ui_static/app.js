@@ -1431,8 +1431,10 @@
     const STATE_WORD = { running: 'Running now', draft: 'Draft', scheduled: 'Scheduled', idle: 'On demand' };
     const avatar = (a) => { const el = h('div', { class: 'avatar st-' + stateOf(a), 'aria-hidden': 'true' }, h('span', {}, initials(a.name)), h('i', { class: 'pulse' })); el.style.setProperty('--hue', String(hue(a.name))); return el; };
     const runBars = (a) => { const rs = a.runs.slice(0, 12).reverse(); if (!rs.length) return h('div', { class: 'runbars empty' }, 'No runs yet'); return h('div', { class: 'runbars', role: 'img', 'aria-label': 'The last ' + rs.length + ' runs, oldest first' }, ...rs.map((r) => { const b = h('i', { class: 'rb rb-' + r.status, title: r.status + ', ' + ago(r.started) }); b.style.height = (r.status === 'running' ? 60 : 40 + Math.min(60, Math.round((r.seconds || 0) / 6))) + '%'; return b; })); };
+    const streak = (a) => { let n = 0; for (const r of a.runs) { if (r.status === 'failed') n++; else if (r.status !== 'running') break; } return n; };
     const okRate = (a) => { const done = a.runs.filter((r) => r.status !== 'running'); return done.length ? Math.round((100 * done.filter((r) => r.status === 'done').length) / done.length) : null; };
     const runNow = async (a) => { try { await api('/api/identities/' + a.id + '/run', { method: 'POST' }); toast(a.name + ' is running. See it on the Tasks tab.'); again(); } catch (e) { toast(e.message, true); } };
+    const togglePause = async (a) => { try { await api('/api/identities/' + a.id, { method: 'PUT', body: JSON.stringify({ name: a.name, role: a.role, instructions: a.instructions, scope: a.scope, folder: a.folder, groups: a.groups, mode: a.mode, schedule: a.schedule, enabled: !a.enabled, approve: a.approved }) }); toast(a.enabled ? a.name + ' is paused' : a.name + ' will run ' + a.schedule); again(); } catch (e) { toast(e.message, true); } };
     const approve = async (a) => { try { await api('/api/identities/' + a.id + '/approve', { method: 'POST' }); toast(a.name + ' is now one of your agents'); again(); } catch (e) { toast(e.message, true); } };
     const remove = (a) => confirmDialog({ title: 'Remove ' + a.name + '?', body: ['Its notes and run history are deleted. Tasks it already ran stay on the Tasks tab.'], confirmLabel: 'Remove', onConfirm: async () => { await api('/api/identities/' + a.id, { method: 'DELETE' }); again(); } });
     const card = (a) => {
@@ -1445,7 +1447,7 @@
         groups.length ? h('div', { class: 'ac-tools' }, ...groups.map((g) => h('span', { class: 'tg' }, g))) : null,
         h('div', { class: 'ac-runs' }, runBars(a),
           h('div', { class: 'ac-runtext' },
-            last ? h('div', { class: 'row' }, h('span', { class: 'chip run-' + (last.status === 'done' ? 'pass' : last.status === 'failed' ? 'fail' : 'running') }, last.status === 'done' ? 'Last run finished' : last.status === 'failed' ? 'Last run failed' : 'Running now'), h('span', { class: 'faint small' }, ago(last.started) + (last.seconds ? ', ' + dur(last.seconds) : '')), rate != null && a.runs.length > 1 ? h('span', { class: 'faint small' }, rate + '% finished') : null) : h('span', { class: 'faint small' }, 'Has not run yet.'))),
+            last ? h('div', { class: 'row' }, h('span', { class: 'chip run-' + (last.status === 'done' ? 'pass' : last.status === 'failed' ? 'fail' : 'running') }, last.status === 'done' ? 'Last run finished' : last.status === 'failed' ? 'Last run failed' : 'Running now'), h('span', { class: 'faint small' }, ago(last.started) + (last.seconds ? ', ' + dur(last.seconds) : '')), rate != null && a.runs.length > 1 ? h('span', { class: 'faint small' }, rate + '% finished') : null, streak(a) > 1 ? h('span', { class: 'chip run-fail' }, streak(a) + ' failed in a row') : null) : h('span', { class: 'faint small' }, 'Has not run yet.'))),
         last && last.summary ? h('div', { class: 'quote ac-quote' }, markdown(last.summary)) : null,
         !a.approved ? h('p', { class: 'faint small' }, 'A draft does not run and is not scheduled. Approve it to make it one of your agents.') : null,
         h('div', { class: 'ac-foot' },
@@ -1454,6 +1456,8 @@
             : h('button', { class: 'btn small', title: 'Make this part of your agents, so it can run and be scheduled', onclick: () => approve(a) }, icon('check'), 'Approve as agent'),
           last && last.taskId ? h('a', { class: 'btn ghost small', href: '#/task/' + last.taskId }, 'Open the task') : null,
           h('span', { class: 'sp' }),
+          a.approved && a.schedule ? h('button', { class: 'btn ghost small', title: a.enabled ? 'Stop the schedule but keep the agent' : 'Start the schedule again', onclick: () => togglePause(a) }, a.enabled ? 'Pause' : 'Resume') : null,
+          h('a', { class: 'btn ghost small', href: '/api/identities/' + a.id + '/export', download: '', title: 'Save this agent as a Markdown file: its settings and instructions, with no notes or paths' }, 'Export'),
           h('button', { class: 'btn ghost small', onclick: () => openAgentForm(a, tools, again) }, 'Edit'),
           h('button', { class: 'btn ghost small', 'aria-label': 'Remove ' + a.name, onclick: () => remove(a) }, icon('x'))),
         a.memory ? h('details', { class: 'rl' }, h('summary', {}, h('span', { class: 'rq' }, 'Its notes'), h('span', { class: 'faint small' }, a.memory.length + ' of 2200 characters')), h('div', { class: 'rbody' }, markdown(a.memory))) : null,
@@ -1473,6 +1477,18 @@
     const applyFilter = (f) => { want = f; try { sessionStorage.setItem('cully.agentfilter', f); } catch (_) { /* ignore */ } for (const b of pills.children) b.setAttribute('aria-selected', b.dataset.f === f ? 'true' : 'false'); for (const c of grid.children) c.hidden = f !== 'all' && c.dataset.state !== f; };
     for (const [f, label, n] of filters) { if (f !== 'all' && !n) continue; pills.append(h('button', { class: 'pill', role: 'tab', 'data-f': f, onclick: () => applyFilter(f) }, label, h('span', { class: 'pn' }, String(n)))); }
     if (![...pills.children].some((b) => b.dataset.f === want)) want = 'all';
+    const descIn = h('input', { type: 'text', class: 'desc-in', autocomplete: 'off', 'aria-label': 'Describe an agent', placeholder: 'Describe a job in a sentence, for example: every weekday morning, check my open pull requests and say which need me' });
+    const descBtn = h('button', { class: 'btn' }, icon('spark'), 'Draft it');
+    const draftIt = async () => {
+      const text = descIn.value.trim(); if (!text) return;
+      descBtn.disabled = true; descBtn.textContent = 'Drafting…';
+      try { const d = await api('/api/identities/draft', { method: 'POST', body: JSON.stringify({ text }) }); descIn.value = ''; openAgentForm({ ...d, id: null, scope: 'project', enabled: !!d.schedule, folder: S.opts.repo || (S.info && S.info.repos[0]) || '' }, tools, again); }
+      catch (e) { toast(e.message, true); }
+      descBtn.disabled = false; descBtn.replaceChildren(icon('spark'), 'Draft it');
+    };
+    descBtn.addEventListener('click', draftIt);
+    descIn.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); draftIt(); } });
+    const describeBar = h('div', { class: 'describe' }, descIn, descBtn);
     const askNow = async (btn) => { btn.disabled = true; try { const r = await api('/api/agent-suggestions/run', { method: 'POST' }); toast(r.added ? r.added + ' new ' + (r.added === 1 ? 'proposal' : 'proposals') : 'Nothing new to propose right now'); again(); } catch (e) { toast(e.message, true); btn.disabled = false; } };
     const askBtn = h('button', { class: 'btn ghost small sp' }, icon('spark'), proposals.length ? 'Look again' : 'Ask Cully for ideas');
     askBtn.addEventListener('click', () => askNow(askBtn));
@@ -1495,6 +1511,7 @@
       h('section', { class: 'lib-card' }, h('div', { class: 'row' }, h('b', {}, 'Suggested for you'), askBtn),
         proposals.length ? h('ul', { class: 'hrows' }, ...proposals.map(proposalCard))
           : h('p', { class: 'faint small' }, 'Cully reads your analysed sessions and proposes agents for work you repeat or skip, such as watching pull requests or running the tests. You review each one before it exists. It looks again about once an hour while naming is on.')),
+      describeBar,
       list.length ? h('div', { class: 'astats' }, stat(list.length, list.length === 1 ? 'agent' : 'agents'), stat(counts.running, 'running now', counts.running ? 'hot' : ''), stat(counts.scheduled, 'on a schedule'), stat(weekRuns.length, 'runs this week'), stat(weekRuns.length ? Math.round((100 * weekOk) / weekRuns.length) + '%' : 'none', 'finished well')) : null,
       list.length ? pills : null,
       list.length ? grid : emptyCard('No agents yet', 'Create one for work you repeat: watching pull requests, guarding the tests, checking dependencies.', null, null));
@@ -1520,7 +1537,7 @@
     const groups = h('div', { class: 'toolgroups' }, ...tools.presets.map((p) => { const cb = h('input', Object.assign({ type: 'checkbox', id: 'ag-' + p.id, onchange: (e) => { val.groups[p.id] = e.target.checked; } }, val.groups[p.id] ? { checked: true } : {})); return h('label', { class: 'toolgroup', for: 'ag-' + p.id }, cb, h('span', {}, h('b', {}, p.label), h('small', {}, p.description))); }));
     const mode = h('select', { 'aria-label': 'Mode' }, h('option', Object.assign({ value: 'edit' }, val.mode === 'edit' ? { selected: true } : {}), 'Can edit files'), h('option', Object.assign({ value: 'plan' }, val.mode === 'plan' ? { selected: true } : {}), 'Read only (plan mode)'));
     mode.addEventListener('change', () => { val.mode = mode.value; });
-    const sched = h('select', { 'aria-label': 'Schedule' }, ...[['', 'Only when I run it'], ['hourly', 'Every hour'], ['daily', 'Every day']].map(([v, l]) => h('option', Object.assign({ value: v }, val.schedule === v ? { selected: true } : {}), l)));
+    const sched = h('select', { 'aria-label': 'Schedule' }, ...[['', 'Only when I run it'], ['every 30m', 'Every 30 minutes'], ['hourly', 'Every hour'], ['every 6h', 'Every 6 hours'], ['daily', 'Every day'], ['weekdays', 'Every weekday'], ...(val.schedule && !['', 'every 30m', 'hourly', 'every 6h', 'daily', 'weekdays'].includes(val.schedule) ? [[val.schedule, 'Every ' + val.schedule.replace(/^every /, '')]] : [])].map(([v, l]) => h('option', Object.assign({ value: v }, val.schedule === v ? { selected: true } : {}), l)));
     sched.addEventListener('change', () => { val.schedule = sched.value; val.enabled = !!sched.value; });
     const clear = a && a.memory ? h('label', { class: 'check' }, h('input', { type: 'checkbox', onchange: (e) => { val.clearMemory = e.target.checked; } }), 'Forget its notes') : null;
     const doSave = async (approve, btn) => {
